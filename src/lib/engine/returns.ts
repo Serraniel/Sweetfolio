@@ -32,15 +32,17 @@ export function cumulativeReturn(prices: PricePoint[]): number {
 }
 
 /**
- * Annualized return: (1 + cumulative)^(365.25 / days) - 1
+ * Annualized return using trading days (252) for consistency with volatility.
+ * Calendar days are converted to approximate trading days for the exponent.
  */
 export function annualizedReturn(prices: PricePoint[]): number {
   if (prices.length < 2) return 0;
   const cumRet = cumulativeReturn(prices);
-  const days = daysBetween(prices[0].date, prices[prices.length - 1].date);
-  if (days <= 0) return 0;
+  const calendarDays = daysBetween(prices[0].date, prices[prices.length - 1].date);
+  if (calendarDays <= 0) return 0;
+  const tradingDays = calendarDays * 252 / 365.25;
   // Handle negative cumulative returns that would make base negative
   const base = 1 + cumRet;
   if (base <= 0) return -1;
-  return Math.pow(base, 365.25 / days) - 1;
+  return Math.pow(base, 252 / tradingDays) - 1;
 }
