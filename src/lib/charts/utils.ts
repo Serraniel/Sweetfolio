@@ -142,8 +142,10 @@ export function tooltipPlugin(formatValue?: TooltipFormatter): uPlot.Plugin {
 			const s = u.series[i];
 			if (!s.show) continue;
 			const val = u.data[i]?.[idx];
-			const color = (s as { _stroke?: string })._stroke ?? s.stroke?.toString() ?? COLORS.mikuTeal;
-			const label = s.label ?? `Series ${i}`;
+			const rawStroke = s.stroke;
+			const color = typeof rawStroke === 'string' ? rawStroke : COLORS.mikuTeal;
+			const rawLabel = s.label;
+			const label = typeof rawLabel === 'string' ? rawLabel : `Series ${i}`;
 			const formatted = formatValue
 				? formatValue(i, idx, val ?? null)
 				: val != null
