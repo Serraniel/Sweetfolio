@@ -3,6 +3,7 @@
  * All calculations use pure TypeScript — no external dependencies.
  */
 
+/** Arithmetic mean of an array of numbers. Returns 0 for empty arrays. */
 export function mean(values: number[]): number {
   if (values.length === 0) return 0;
   let sum = 0;
@@ -12,6 +13,7 @@ export function mean(values: number[]): number {
   return sum / values.length;
 }
 
+/** Variance of an array. Uses population variance by default; pass `false` for sample variance. */
 export function variance(values: number[], populationVariance = true): number {
   if (values.length < 2) return 0;
   const avg = mean(values);
@@ -23,10 +25,12 @@ export function variance(values: number[], populationVariance = true): number {
   return sumSq / (populationVariance ? values.length : values.length - 1);
 }
 
+/** Standard deviation. Uses population variance by default; pass `false` for sample. */
 export function stddev(values: number[], populationVariance = true): number {
   return Math.sqrt(variance(values, populationVariance));
 }
 
+/** Covariance between two arrays. Uses population covariance by default. */
 export function covariance(
   x: number[],
   y: number[],
@@ -43,6 +47,7 @@ export function covariance(
   return sum / (populationCovariance ? n : n - 1);
 }
 
+/** Pearson correlation coefficient between two arrays. Returns 0 if either has zero variance. */
 export function pearsonCorrelation(x: number[], y: number[]): number {
   const n = Math.min(x.length, y.length);
   if (n < 2) return 0;
@@ -52,10 +57,12 @@ export function pearsonCorrelation(x: number[], y: number[]): number {
   return covariance(x, y) / (sx * sy);
 }
 
+/** Natural logarithm. Alias for `Math.log`. */
 export function ln(x: number): number {
   return Math.log(x);
 }
 
+/** Compute logarithmic returns from a price series: `ln(P[i] / P[i-1])`. */
 export function logReturns(prices: number[]): number[] {
   const returns: number[] = [];
   for (let i = 1; i < prices.length; i++) {
