@@ -27,11 +27,15 @@ export function forwardFillPrices(prices: PricePoint[]): PricePoint[] {
   current.setDate(current.getDate() + 1);
 
   while (current <= endDate) {
-    const dateStr = toISODate(current);
-    if (priceMap.has(dateStr)) {
-      lastClose = priceMap.get(dateStr)!;
+    const dayOfWeek = current.getDay();
+    // Skip weekends (Saturday=6, Sunday=0)
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dateStr = toISODate(current);
+      if (priceMap.has(dateStr)) {
+        lastClose = priceMap.get(dateStr)!;
+      }
+      result.push({ date: dateStr, close: lastClose });
     }
-    result.push({ date: dateStr, close: lastClose });
     current.setDate(current.getDate() + 1);
   }
 
