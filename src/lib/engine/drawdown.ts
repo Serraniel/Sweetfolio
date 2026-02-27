@@ -18,7 +18,7 @@ export function maxDrawdown(prices: PricePoint[]): number {
     if (price > peak) {
       peak = price;
     }
-    const dd = (price - peak) / peak;
+    const dd = peak <= 0 ? 0 : (price - peak) / peak;
     if (dd < maxDD) {
       maxDD = dd;
     }
