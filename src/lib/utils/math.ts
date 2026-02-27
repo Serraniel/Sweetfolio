@@ -13,8 +13,8 @@ export function mean(values: number[]): number {
   return sum / values.length;
 }
 
-/** Variance of an array. Uses population variance by default; pass `false` for sample variance. */
-export function variance(values: number[], populationVariance = true): number {
+/** Variance of an array. Uses sample variance (N-1) by default; pass `true` for population variance. */
+export function variance(values: number[], populationVariance = false): number {
   if (values.length < 2) return 0;
   const avg = mean(values);
   let sumSq = 0;
@@ -25,16 +25,16 @@ export function variance(values: number[], populationVariance = true): number {
   return sumSq / (populationVariance ? values.length : values.length - 1);
 }
 
-/** Standard deviation. Uses population variance by default; pass `false` for sample. */
-export function stddev(values: number[], populationVariance = true): number {
+/** Standard deviation. Uses sample variance (N-1) by default; pass `true` for population. */
+export function stddev(values: number[], populationVariance = false): number {
   return Math.sqrt(variance(values, populationVariance));
 }
 
-/** Covariance between two arrays. Uses population covariance by default. */
+/** Covariance between two arrays. Uses sample covariance (N-1) by default. */
 export function covariance(
   x: number[],
   y: number[],
-  populationCovariance = true,
+  populationCovariance = false,
 ): number {
   const n = Math.min(x.length, y.length);
   if (n < 2) return 0;
