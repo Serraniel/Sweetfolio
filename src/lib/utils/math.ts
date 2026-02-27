@@ -62,14 +62,18 @@ export function ln(x: number): number {
   return Math.log(x);
 }
 
-/** Compute logarithmic returns from a price series: `ln(P[i] / P[i-1])`. */
-export function logReturns(prices: number[]): number[] {
+/** Compute logarithmic returns from a price series: `ln(P[i] / P[i-1])`.
+ * Non-positive prices are skipped and a warning is added if a warnings array is provided.
+ */
+export function logReturns(prices: number[], warnings?: string[]): number[] {
   const returns: number[] = [];
   for (let i = 1; i < prices.length; i++) {
     if (prices[i - 1] > 0 && prices[i] > 0) {
       returns.push(Math.log(prices[i] / prices[i - 1]));
     } else {
-      returns.push(0);
+      warnings?.push(
+        `Non-positive price at index ${prices[i - 1] <= 0 ? i - 1 : i}, skipping data point`,
+      );
     }
   }
   return returns;

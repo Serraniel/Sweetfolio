@@ -7,14 +7,20 @@ import { daysBetween } from '$lib/utils/dates';
 
 /**
  * Compute log returns: r(t) = ln(P(t) / P(t-1))
+ * Non-positive prices are skipped and a warning is added.
  */
-export function computeLogReturns(prices: PricePoint[]): number[] {
+export function computeLogReturns(
+  prices: PricePoint[],
+  warnings?: string[],
+): number[] {
   const returns: number[] = [];
   for (let i = 1; i < prices.length; i++) {
     if (prices[i - 1].close > 0 && prices[i].close > 0) {
       returns.push(Math.log(prices[i].close / prices[i - 1].close));
     } else {
-      returns.push(0);
+      warnings?.push(
+        `Non-positive price at ${prices[i - 1].close <= 0 ? prices[i - 1].date : prices[i].date}, skipping data point`,
+      );
     }
   }
   return returns;
