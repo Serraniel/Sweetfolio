@@ -1,0 +1,219 @@
+/* ===== Sweetfolio Global Styles ===== */
+
+/* --- Reset --- */
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+/* --- Light theme (default) --- */
+:root {
+	--color-charcoal: #3c3f44;
+	--color-silver: #b4b8bf;
+	--color-miku-teal: #8dd0c4;
+	--color-deep-teal: #1a8a8a;
+	--color-hot-pink: #e8175d;
+
+	--color-bg-primary: #f8f9fa;
+	--color-bg-secondary: #ffffff;
+	--color-bg-tertiary: #eef0f2;
+	--color-text-primary: #2e3035;
+	--color-text-secondary: #555860;
+	--color-text-muted: #8a8d94;
+	--color-border: rgba(180, 184, 191, 0.4);
+	--color-accent: #1a8a8a;
+	--color-accent-light: #8dd0c4;
+	--color-negative: #e8175d;
+	--color-positive: #1a8a8a;
+
+	/* Glass effect */
+	--glass-bg: rgba(255, 255, 255, 0.6);
+	--glass-border: rgba(255, 255, 255, 0.4);
+	--glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+	--glass-blur: 16px;
+
+	/* Sidebar */
+	--sidebar-bg: rgba(255, 255, 255, 0.75);
+	--sidebar-width: 240px;
+	--sidebar-collapsed-width: 64px;
+
+	/* Spacing */
+	--spacing-xs: 4px;
+	--spacing-sm: 8px;
+	--spacing-md: 16px;
+	--spacing-lg: 24px;
+	--spacing-xl: 32px;
+	--spacing-2xl: 48px;
+
+	/* Radius */
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 16px;
+	--radius-xl: 24px;
+
+	/* Typography */
+	--font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+		sans-serif;
+	--font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+	--font-size-xs: 0.75rem;
+	--font-size-sm: 0.8125rem;
+	--font-size-base: 0.9375rem;
+	--font-size-lg: 1.125rem;
+	--font-size-xl: 1.375rem;
+	--font-size-2xl: 1.75rem;
+	--font-size-3xl: 2.25rem;
+
+	/* Transitions */
+	--transition-fast: 150ms ease;
+	--transition-base: 250ms ease;
+	--transition-slow: 400ms ease;
+}
+
+/* --- Dark theme --- */
+[data-theme='dark'] {
+	--color-bg-primary: #1e2025;
+	--color-bg-secondary: #2a2c31;
+	--color-bg-tertiary: #33363b;
+	--color-text-primary: #eaebed;
+	--color-text-secondary: #b4b8bf;
+	--color-text-muted: #777b83;
+	--color-border: rgba(255, 255, 255, 0.08);
+	--color-accent: #8dd0c4;
+	--color-accent-light: #b4e4dc;
+	--color-negative: #f04e7f;
+	--color-positive: #8dd0c4;
+
+	--glass-bg: rgba(42, 44, 49, 0.65);
+	--glass-border: rgba(255, 255, 255, 0.06);
+	--glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+
+	--sidebar-bg: rgba(30, 32, 37, 0.8);
+}
+
+/* --- Base --- */
+html {
+	font-family: var(--font-family);
+	font-size: 16px;
+	line-height: 1.6;
+	color: var(--color-text-primary);
+	background-color: var(--color-bg-primary);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body {
+	min-height: 100vh;
+	overflow-x: hidden;
+	transition: background-color var(--transition-base),
+		color var(--transition-base);
+}
+
+a {
+	color: var(--color-accent);
+	text-decoration: none;
+	transition: color var(--transition-fast);
+}
+
+a:hover {
+	color: var(--color-accent-light);
+}
+
+button {
+	cursor: pointer;
+	font-family: inherit;
+	font-size: inherit;
+	border: none;
+	background: none;
+	color: inherit;
+}
+
+input,
+select,
+textarea {
+	font-family: inherit;
+	font-size: inherit;
+	color: inherit;
+	background: var(--color-bg-secondary);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	padding: var(--spacing-sm) var(--spacing-md);
+	transition: border-color var(--transition-fast),
+		box-shadow var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none;
+	border-color: var(--color-accent);
+	box-shadow: 0 0 0 3px rgba(141, 208, 196, 0.2);
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+th,
+td {
+	text-align: left;
+	padding: var(--spacing-sm) var(--spacing-md);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+	line-height: 1.3;
+	font-weight: 600;
+}
+
+h1 {
+	font-size: var(--font-size-3xl);
+}
+h2 {
+	font-size: var(--font-size-2xl);
+}
+h3 {
+	font-size: var(--font-size-xl);
+}
+h4 {
+	font-size: var(--font-size-lg);
+}
+
+/* --- Scrollbar --- */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}
+
+/* --- Utility --- */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
