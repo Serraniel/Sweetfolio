@@ -113,8 +113,8 @@ function generateRandomWeights(n: number): number[] {
   const raw = new Array(n);
   let sum = 0;
   for (let i = 0; i < n; i++) {
-    // -ln(U) gives exponential distribution
-    raw[i] = -Math.log(Math.random());
+    // -ln(U) gives exponential distribution; clamp away from 0 to avoid -Infinity
+    raw[i] = -Math.log(Math.random() || 1e-10);
     sum += raw[i];
   }
   for (let i = 0; i < n; i++) {
