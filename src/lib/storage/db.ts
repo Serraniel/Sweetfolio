@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'sweetfolio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbInstance: IDBDatabase | null = null;
 
@@ -33,6 +33,7 @@ export function getDB(): Promise<IDBDatabase> {
         const assetStore = db.createObjectStore('assets', { keyPath: 'id' });
         assetStore.createIndex('by-isin', 'isin', { unique: false });
         assetStore.createIndex('by-name', 'name', { unique: false });
+        assetStore.createIndex('by-classification', 'classification', { unique: false });
       }
 
       // portfolios store
@@ -54,6 +55,27 @@ export function getDB(): Promise<IDBDatabase> {
       // simulations store
       if (!db.objectStoreNames.contains('simulations')) {
         db.createObjectStore('simulations', { keyPath: 'id' });
+      }
+
+      // Migration v1 → v2: add classification to existing assets
+      if (event.oldVersion >= 1 && event.oldVersion < 2) {
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        const store = tx.objectStore('assets');
+        store.createIndex('by-classification', 'classification', { unique: false });
+
+        // Backfill existing assets with 'unknown'
+        const cursorReq = store.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor) {
+            const asset = cursor.value;
+            if (!asset.classification) {
+              asset.classification = 'unknown';
+              cursor.update(asset);
+            }
+            cursor.continue();
+          }
+        };
       }
     };
 
