@@ -38,22 +38,37 @@
 			const midAngle = startAngle + sweep / 2;
 			const largeArc = sweep > Math.PI ? 1 : 0;
 
-			const x1 = cx + r * Math.cos(startAngle);
-			const y1 = cy + r * Math.sin(startAngle);
-			const x2 = cx + r * Math.cos(endAngle);
-			const y2 = cy + r * Math.sin(endAngle);
-			const ix1 = cx + innerR * Math.cos(endAngle);
-			const iy1 = cy + innerR * Math.sin(endAngle);
-			const ix2 = cx + innerR * Math.cos(startAngle);
-			const iy2 = cy + innerR * Math.sin(startAngle);
+			let path: string;
 
-			const path = [
-				`M ${x1} ${y1}`,
-				`A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`,
-				`L ${ix1} ${iy1}`,
-				`A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix2} ${iy2}`,
-				'Z'
-			].join(' ');
+			if (sweep >= Math.PI * 2 - 0.001) {
+				// Full circle: SVG arc can't draw start==end, use two semicircles
+				path = [
+					`M ${cx} ${cy - r}`,
+					`A ${r} ${r} 0 1 1 ${cx} ${cy + r}`,
+					`A ${r} ${r} 0 1 1 ${cx} ${cy - r}`,
+					`M ${cx} ${cy - innerR}`,
+					`A ${innerR} ${innerR} 0 1 0 ${cx} ${cy + innerR}`,
+					`A ${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR}`,
+					'Z'
+				].join(' ');
+			} else {
+				const x1 = cx + r * Math.cos(startAngle);
+				const y1 = cy + r * Math.sin(startAngle);
+				const x2 = cx + r * Math.cos(endAngle);
+				const y2 = cy + r * Math.sin(endAngle);
+				const ix1 = cx + innerR * Math.cos(endAngle);
+				const iy1 = cy + innerR * Math.sin(endAngle);
+				const ix2 = cx + innerR * Math.cos(startAngle);
+				const iy2 = cy + innerR * Math.sin(startAngle);
+
+				path = [
+					`M ${x1} ${y1}`,
+					`A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`,
+					`L ${ix1} ${iy1}`,
+					`A ${innerR} ${innerR} 0 ${largeArc} 0 ${ix2} ${iy2}`,
+					'Z'
+				].join(' ');
+			}
 
 			slices.push({
 				path,
