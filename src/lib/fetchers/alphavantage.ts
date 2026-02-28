@@ -107,7 +107,8 @@ export async function fetchPriceData(query: string, apiKey: string): Promise<Fet
 			name: instrument.name,
 			isin: null,
 			wkn: null,
-			currency: instrument.currency
+			currency: instrument.currency,
+			classification: null
 		};
 
 		return { success: true, data: result };
