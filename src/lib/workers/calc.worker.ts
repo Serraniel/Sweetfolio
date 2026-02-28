@@ -6,6 +6,7 @@
 import type { CalcWorkerRequest, CalcWorkerResponse } from '$lib/types';
 import { computeAllMetrics } from '$lib/engine/metrics';
 import { computeCorrelationMatrix } from '$lib/engine/correlation';
+import { convertPrices } from '$lib/engine/currency';
 
 self.onmessage = (event: MessageEvent<CalcWorkerRequest>) => {
   const msg = event.data;
@@ -13,7 +14,22 @@ self.onmessage = (event: MessageEvent<CalcWorkerRequest>) => {
   try {
     switch (msg.type) {
       case 'calculate-metrics': {
-        const { assetId, prices, riskFreeRate } = msg.payload;
+        const { assetId, riskFreeRate, currencyConversion } = msg.payload;
+        let { prices } = msg.payload;
+
+        // Apply currency conversion if provided
+        if (currencyConversion) {
+          const converted = convertPrices(
+            prices,
+            currencyConversion.currencyRate,
+            currencyConversion.sourceCurrency,
+            currencyConversion.targetCurrency,
+          );
+          if (converted) {
+            prices = converted;
+          }
+        }
+
         const result = computeAllMetrics(assetId, prices, riskFreeRate);
         const response: CalcWorkerResponse = {
           type: 'metrics-result',

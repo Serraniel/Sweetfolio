@@ -118,6 +118,11 @@ export type CalcWorkerRequest =
         assetId: string;
         prices: PricePoint[];
         riskFreeRate: number;
+        currencyConversion?: {
+          currencyRate: CurrencyRate;
+          sourceCurrency: string;
+          targetCurrency: string;
+        };
       };
     }
   | {
