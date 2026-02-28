@@ -5,12 +5,21 @@ export interface PricePoint {
   close: number;
 }
 
+export const ASSET_CLASSIFICATIONS = [
+  'stock', 'etf', 'etn', 'etc',
+  'fund', 'bond', 'certificate',
+  'crypto', 'commodity', 'unknown',
+] as const;
+
+export type AssetClassification = (typeof ASSET_CLASSIFICATIONS)[number];
+
 export interface Asset {
   id: string;
   name: string;
   isin: string | null;
   wkn: string | null;
   currency: string;
+  classification: AssetClassification;
   prices: PricePoint[];
   formatConfig: DetectedFormat | null;
   rawCSV: string | null;
