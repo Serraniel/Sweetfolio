@@ -127,7 +127,7 @@
 			isin: fetchedIdentifierType === 'isin' ? fetchedIdentifier : null,
 			wkn: fetchedIdentifierType === 'wkn' ? fetchedIdentifier : null,
 			currency: lookupEditCurrency,
-			prices: lookupResult.prices,
+			prices: $state.snapshot(lookupResult.prices),
 			formatConfig: null,
 			rawCSV: null,
 			rawCSVStoredAt: null,
