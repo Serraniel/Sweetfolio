@@ -31,7 +31,25 @@
 	}
 
 	function textColor(val: number): string {
-		return Math.abs(val) > 0.6 ? '#fff' : dark ? '#f0f0f0' : COLORS.charcoal;
+		// WCAG-based: compute relative luminance from the background
+		const abs = Math.min(1, Math.abs(val));
+		let r: number, g: number, b: number;
+		if (val >= 0) {
+			r = 141 + (26 - 141) * abs;
+			g = 208 + (138 - 208) * abs;
+			b = 196 + (138 - 196) * abs;
+		} else {
+			r = 180 + (232 - 180) * abs;
+			g = 180 + (23 - 180) * abs;
+			b = 180 + (93 - 180) * abs;
+		}
+		// sRGB to linear
+		const toLinear = (c: number) => {
+			const s = c / 255;
+			return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+		};
+		const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+		return luminance > 0.18 ? '#1a1a1a' : '#f0f0f0';
 	}
 
 	$effect(() => {
