@@ -214,25 +214,31 @@
 	});
 </script>
 
-<div class="chart-wrapper">
-	<div class="controls">
-		<button
-			class="view-btn"
-			class:active={viewMode === 'volatility'}
-			onclick={() => (viewMode = 'volatility')}
-		>
-			Volatility View
-		</button>
-		<button
-			class="view-btn"
-			class:active={viewMode === 'sharpe'}
-			onclick={() => (viewMode = 'sharpe')}
-		>
-			Sharpe Ratio View
-		</button>
+{#if portfolios.length === 0}
+	<div class="chart-empty">
+		<p>No simulation results to display.</p>
 	</div>
-	<div bind:this={container} class="chart-container"></div>
-</div>
+{:else}
+	<div class="chart-wrapper">
+		<div class="controls">
+			<button
+				class="view-btn"
+				class:active={viewMode === 'volatility'}
+				onclick={() => (viewMode = 'volatility')}
+			>
+				Volatility View
+			</button>
+			<button
+				class="view-btn"
+				class:active={viewMode === 'sharpe'}
+				onclick={() => (viewMode = 'sharpe')}
+			>
+				Sharpe Ratio View
+			</button>
+		</div>
+		<div bind:this={container} class="chart-container"></div>
+	</div>
+{/if}
 
 <style>
 	.chart-wrapper {
@@ -272,5 +278,14 @@
 		background: var(--color-accent-deep, #1a8a8a);
 		color: #fff;
 		border-color: var(--color-accent-deep, #1a8a8a);
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>

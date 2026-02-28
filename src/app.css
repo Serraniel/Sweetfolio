@@ -25,6 +25,7 @@
 	--color-text-muted: #8a8d94;
 	--color-border: rgba(180, 184, 191, 0.4);
 	--color-accent: #1a8a8a;
+	--color-accent-deep: #1a8a8a;
 	--color-accent-light: #8dd0c4;
 	--color-negative: #e8175d;
 	--color-positive: #1a8a8a;
@@ -82,6 +83,7 @@
 	--color-text-muted: #777b83;
 	--color-border: rgba(255, 255, 255, 0.08);
 	--color-accent: #8dd0c4;
+	--color-accent-deep: #1a8a8a;
 	--color-accent-light: #b4e4dc;
 	--color-negative: #f04e7f;
 	--color-positive: #8dd0c4;

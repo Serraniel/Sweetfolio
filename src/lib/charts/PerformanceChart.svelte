@@ -153,20 +153,26 @@
 	});
 </script>
 
-<div class="chart-wrapper">
-	<div class="range-selector">
-		{#each (['1y', '3y', '5y', '10y', 'all'] as TimeRange[]) as range}
-			<button
-				class="range-btn"
-				class:active={selectedRange === range}
-				onclick={() => setRange(range)}
-			>
-				{range.toUpperCase()}
-			</button>
-		{/each}
+{#if series.length === 0 || series.every((s) => s.prices.length < 2)}
+	<div class="chart-empty">
+		<p>Not enough data to display the performance chart.</p>
 	</div>
-	<div bind:this={container} class="chart-container"></div>
-</div>
+{:else}
+	<div class="chart-wrapper">
+		<div class="range-selector">
+			{#each (['1y', '3y', '5y', '10y', 'all'] as TimeRange[]) as range}
+				<button
+					class="range-btn"
+					class:active={selectedRange === range}
+					onclick={() => setRange(range)}
+				>
+					{range.toUpperCase()}
+				</button>
+			{/each}
+		</div>
+		<div bind:this={container} class="chart-container"></div>
+	</div>
+{/if}
 
 <style>
 	.chart-wrapper {
@@ -211,5 +217,14 @@
 	.chart-container :global(.u-legend) {
 		font-size: 12px;
 		font-family: system-ui, -apple-system, sans-serif;
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>

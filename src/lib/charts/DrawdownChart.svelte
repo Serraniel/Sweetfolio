@@ -146,9 +146,15 @@
 	});
 </script>
 
-<div class="chart-wrapper">
-	<div bind:this={container} class="chart-container"></div>
-</div>
+{#if prices.length < 2}
+	<div class="chart-empty">
+		<p>Not enough data to display the drawdown chart.</p>
+	</div>
+{:else}
+	<div class="chart-wrapper">
+		<div bind:this={container} class="chart-container"></div>
+	</div>
+{/if}
 
 <style>
 	.chart-wrapper {
@@ -158,5 +164,14 @@
 
 	.chart-container {
 		width: 100%;
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>

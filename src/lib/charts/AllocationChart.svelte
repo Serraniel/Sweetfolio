@@ -79,10 +79,13 @@
 	});
 </script>
 
+{#if allocations.length === 0}
+	<div class="chart-empty">
+		<p>No allocation data to display.</p>
+	</div>
+{:else}
 <div class="allocation-wrapper">
 	<svg
-		width={size}
-		height={size}
 		viewBox={`0 0 ${size} ${size}`}
 		class="allocation-chart"
 	>
@@ -106,6 +109,7 @@
 		{/each}
 	</div>
 </div>
+{/if}
 
 <style>
 	.allocation-wrapper {
@@ -117,6 +121,9 @@
 
 	.allocation-chart {
 		flex-shrink: 0;
+		width: 100%;
+		max-width: 240px;
+		height: auto;
 	}
 
 	.allocation-chart path {
@@ -156,5 +163,14 @@
 	.legend-value {
 		color: var(--color-text-muted, #b4b8bf);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>

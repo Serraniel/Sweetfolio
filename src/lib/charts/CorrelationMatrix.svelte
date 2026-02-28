@@ -42,6 +42,11 @@
 	});
 </script>
 
+{#if data.assetIds.length === 0 || data.matrix.length === 0}
+	<div class="chart-empty">
+		<p>Not enough assets to display the correlation matrix.</p>
+	</div>
+{:else}
 <div class="correlation-wrapper">
 	<div
 		class="correlation-grid"
@@ -85,6 +90,7 @@
 		</div>
 	{/if}
 </div>
+{/if}
 
 <style>
 	.correlation-wrapper {
@@ -144,5 +150,14 @@
 		font-size: 13px;
 		color: var(--color-text-primary, #3c3f44);
 		font-family: system-ui, -apple-system, sans-serif;
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>

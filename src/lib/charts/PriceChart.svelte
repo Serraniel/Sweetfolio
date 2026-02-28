@@ -119,9 +119,15 @@
 	});
 </script>
 
-<div class="chart-wrapper">
-	<div bind:this={container} class="chart-container"></div>
-</div>
+{#if series.length === 0 || series.every((s) => s.prices.length < 2)}
+	<div class="chart-empty">
+		<p>Not enough data to display the price chart.</p>
+	</div>
+{:else}
+	<div class="chart-wrapper">
+		<div bind:this={container} class="chart-container"></div>
+	</div>
+{/if}
 
 <style>
 	.chart-wrapper {
@@ -136,5 +142,14 @@
 	.chart-container :global(.u-legend) {
 		font-size: 12px;
 		font-family: system-ui, -apple-system, sans-serif;
+	}
+
+	.chart-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 200px;
+		color: var(--color-text-muted, #8a8d94);
+		font-size: 13px;
 	}
 </style>
