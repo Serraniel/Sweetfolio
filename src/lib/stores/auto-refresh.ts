@@ -98,3 +98,39 @@ export async function autoRefreshAssets(): Promise<void> {
   progress.active = false;
   refreshProgress.set({ ...progress });
 }
+
+/**
+ * Apply user's conflict resolution choices.
+ * For each asset, replace prices on conflicting dates where the user chose "use new".
+ */
+export async function resolveConflicts(
+  resolutions: Array<{
+    assetId: string;
+    resolved: Array<{ date: string; useNew: boolean; newClose: number }>;
+  }>,
+): Promise<void> {
+  const allAssets = get(assets);
+
+  for (const resolution of resolutions) {
+    const asset = allAssets.find((a) => a.id === resolution.assetId);
+    if (!asset) continue;
+
+    const updatedPrices = asset.prices.map((p) => {
+      const match = resolution.resolved.find((r) => r.date === p.date && r.useNew);
+      if (match) {
+        return { ...p, close: match.newClose };
+      }
+      return p;
+    });
+
+    await updateAsset({
+      ...asset,
+      prices: updatedPrices,
+      updatedAt: new Date().toISOString(),
+      lastRefreshedAt: new Date().toISOString(),
+    });
+  }
+
+  // Clear conflicts from progress
+  refreshProgress.update((p) => ({ ...p, conflicts: [] }));
+}

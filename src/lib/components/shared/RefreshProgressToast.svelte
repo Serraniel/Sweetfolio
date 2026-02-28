@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { refreshProgress } from '$lib/stores/auto-refresh';
+	import ConflictResolutionModal from './ConflictResolutionModal.svelte';
 
 	const progress = $derived($refreshProgress);
 	const visible = $derived(progress.active || progress.errors.length > 0 || progress.conflicts.length > 0);
 	const percent = $derived(progress.total > 0 ? (progress.current / progress.total) * 100 : 0);
 
 	let dismissed = $state(false);
+	let showConflictModal = $state(false);
 
 	function dismiss() {
 		dismissed = true;
@@ -31,19 +33,21 @@
 				</div>
 			{:else}
 				<div class="refresh-done">
-					{#if progress.errors.length > 0}
-						<span class="refresh-errors">
-							{progress.errors.length} asset{progress.errors.length > 1 ? 's' : ''} failed to refresh
-						</span>
-					{/if}
-					{#if progress.conflicts.length > 0}
-						<span class="refresh-conflicts">
-							{progress.conflicts.length} asset{progress.conflicts.length > 1 ? 's' : ''} have price conflicts
-						</span>
-					{/if}
-					{#if progress.errors.length === 0 && progress.conflicts.length === 0}
-						<span class="refresh-success">All assets refreshed</span>
-					{/if}
+					<div class="refresh-messages">
+						{#if progress.errors.length > 0}
+							<span class="refresh-errors">
+								{progress.errors.length} asset{progress.errors.length > 1 ? 's' : ''} failed to refresh
+							</span>
+						{/if}
+						{#if progress.conflicts.length > 0}
+							<button class="review-btn" onclick={() => showConflictModal = true}>
+								{progress.conflicts.length} asset{progress.conflicts.length > 1 ? 's' : ''} have price conflicts — Review
+							</button>
+						{/if}
+						{#if progress.errors.length === 0 && progress.conflicts.length === 0}
+							<span class="refresh-success">All assets refreshed</span>
+						{/if}
+					</div>
 					<button class="dismiss-btn" onclick={dismiss} aria-label="Dismiss">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="18" y1="6" x2="6" y2="18"/>
@@ -55,6 +59,8 @@
 		</div>
 	</div>
 {/if}
+
+<ConflictResolutionModal bind:open={showConflictModal} />
 
 <style>
 	.refresh-toast {
@@ -122,14 +128,32 @@
 		gap: var(--spacing-sm);
 	}
 
+	.refresh-messages {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
 	.refresh-errors {
 		font-size: var(--font-size-sm);
 		color: var(--color-warning, #e6a817);
 	}
 
-	.refresh-conflicts {
+	.review-btn {
 		font-size: var(--font-size-sm);
 		color: var(--color-warning, #e6a817);
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		text-align: left;
+		text-decoration: underline;
+		text-decoration-style: dotted;
+		text-underline-offset: 2px;
+	}
+
+	.review-btn:hover {
+		color: var(--color-accent);
 	}
 
 	.refresh-success {
