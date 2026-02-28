@@ -274,12 +274,13 @@
 		}
 
 		const uSeries: uPlot.Series[] = [
-			{}, // x-axis
+			{ value: () => '' }, // x-axis – hide date from legend
 			...series.map((s, i) => ({
 				label: s.label,
 				stroke: s.isBenchmark ? BENCHMARK_COLOR : getAssetColor(i),
 				width: s.isBenchmark ? 2 : 1.5,
-				points: { show: false }
+				points: { show: false },
+				value: () => ''
 			}))
 		];
 
@@ -290,7 +291,7 @@
 				drag: { x: true, y: false },
 				focus: { prox: 16 }
 			},
-			legend: { show: true },
+			legend: { show: true, live: false },
 			scales: {
 				x: { time: true },
 				y: { distr: logScale ? 3 : 1 }
