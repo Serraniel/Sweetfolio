@@ -12,7 +12,6 @@
 	import { currencies } from '$lib/stores/currencies';
 	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { calculateMetrics } from '$lib/workers/manager';
-	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
 	import PriceDataSection from '$lib/components/PriceDataSection.svelte';
 	import { slugify } from '$lib/utils/slug';
 	import type { MetricsResult, CurrencyRate } from '$lib/types';
@@ -45,17 +44,6 @@
 		return series;
 	});
 
-	const performanceChartSeries = $derived.by(() => {
-		if (!asset) return [];
-		const series: Array<{ label: string; prices: typeof asset.prices; isBenchmark?: boolean }> = [
-			{ label: asset.name, prices: asset.prices }
-		];
-		const bm = $benchmark;
-		if (bm && bm.ref.id !== assetId && bm.prices.length > 0) {
-			series.push({ label: bm.name, prices: bm.prices, isBenchmark: true });
-		}
-		return series;
-	});
 
 	let metrics: MetricsResult | null = $state(null);
 	let metricsLoading = $state(false);
@@ -259,13 +247,6 @@
 				<Card padding="lg">
 					<PriceChart series={priceChartSeries} />
 				</Card>
-
-				{#if performanceChartSeries.length > 1}
-					<h2>Performance Comparison</h2>
-					<Card padding="lg">
-						<PerformanceChart series={performanceChartSeries} />
-					</Card>
-				{/if}
 
 				<h2>Drawdown</h2>
 				<Card padding="lg">

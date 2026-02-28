@@ -6,7 +6,6 @@
 	import Modal from '$lib/components/shared/Modal.svelte';
 	import MetricsTable from '$lib/components/shared/MetricsTable.svelte';
 	import AllocationChart from '$lib/charts/AllocationChart.svelte';
-	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
 	import CorrelationMatrix from '$lib/charts/CorrelationMatrix.svelte';
 	import PriceChart from '$lib/charts/PriceChart.svelte';
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
@@ -278,9 +277,9 @@
 			{/if}
 
 			{#if chartSeries().length > 0}
-				<h2>Performance Comparison</h2>
+				<h2>Asset Comparison</h2>
 				<Card padding="lg">
-					<PerformanceChart series={chartSeries()} />
+					<PriceChart series={chartSeries()} initialMode="relative" />
 				</Card>
 			{/if}
 
