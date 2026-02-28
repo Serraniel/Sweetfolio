@@ -89,19 +89,6 @@
 			</div>
 		</Card>
 
-		<Card variant="accent">
-			<div class="summary-card">
-				<div class="summary-icon simulations-icon">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-					</svg>
-				</div>
-				<div class="summary-info">
-					<span class="summary-value">0</span>
-					<span class="summary-label">Simulations</span>
-				</div>
-			</div>
-		</Card>
 	</div>
 
 	<section class="quick-actions">
@@ -237,11 +224,6 @@
 	.portfolios-icon {
 		background: rgba(26, 138, 138, 0.15);
 		color: var(--color-deep-teal);
-	}
-
-	.simulations-icon {
-		background: rgba(232, 23, 93, 0.1);
-		color: var(--color-hot-pink);
 	}
 
 	.summary-info {
