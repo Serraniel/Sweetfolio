@@ -67,6 +67,8 @@
 	let lookupResult: ScraperResult | null = $state(null);
 	let lookupEditName = $state('');
 	let lookupEditCurrency = $state('');
+	let fetchedIdentifier: string | null = $state(null);
+	let fetchedIdentifierType: IdentifierType = $state(null);
 
 	type IdentifierType = 'isin' | 'wkn' | null;
 
@@ -94,31 +96,36 @@
 		lookupFetching = true;
 		lookupError = null;
 		lookupResult = null;
+		fetchedIdentifier = identifier;
+		fetchedIdentifierType = lookupIdentifierType;
 
-		const outcome = lookupIdentifierType === 'isin'
-			? await fetchByISIN(identifier)
-			: await fetchByWKN(identifier);
+		try {
+			const outcome = fetchedIdentifierType === 'isin'
+				? await fetchByISIN(identifier)
+				: await fetchByWKN(identifier);
 
-		lookupFetching = false;
-
-		if (outcome.success) {
-			lookupResult = outcome.data;
-			lookupEditName = outcome.data.name ?? identifier;
-			lookupEditCurrency = outcome.data.currency ?? 'EUR';
-		} else {
-			lookupError = outcome.error.message;
+			if (outcome.success) {
+				lookupResult = outcome.data;
+				lookupEditName = outcome.data.name ?? identifier;
+				lookupEditCurrency = outcome.data.currency ?? 'EUR';
+			} else {
+				lookupError = outcome.error.message;
+			}
+		} catch {
+			lookupError = 'An unexpected error occurred. Please try again or upload a CSV file instead.';
+		} finally {
+			lookupFetching = false;
 		}
 	}
 
 	async function handleLookupConfirm() {
-		if (!lookupResult) return;
+		if (!lookupResult || !fetchedIdentifier) return;
 
-		const identifier = lookupInput.trim().toUpperCase();
 		const asset = {
 			id: crypto.randomUUID(),
-			name: lookupEditName || identifier,
-			isin: lookupIdentifierType === 'isin' ? identifier : null,
-			wkn: lookupIdentifierType === 'wkn' ? identifier : null,
+			name: lookupEditName || fetchedIdentifier,
+			isin: fetchedIdentifierType === 'isin' ? fetchedIdentifier : null,
+			wkn: fetchedIdentifierType === 'wkn' ? fetchedIdentifier : null,
 			currency: lookupEditCurrency,
 			prices: lookupResult.prices,
 			formatConfig: null,
@@ -137,6 +144,8 @@
 		lookupError = null;
 		lookupEditName = '';
 		lookupEditCurrency = '';
+		fetchedIdentifier = null;
+		fetchedIdentifierType = null;
 	}
 
 	// Queue for multi-file import
@@ -392,7 +401,7 @@
 							/>
 						</label>
 						<div class="preview-meta">
-							<span class="mono">{lookupInput.trim().toUpperCase()}</span>
+							<span class="mono">{fetchedIdentifier}</span>
 							<span class="muted">{lookupResult.prices.length.toLocaleString()} data points</span>
 							{#if lookupResult.prices.length >= 2}
 								<span class="muted">
