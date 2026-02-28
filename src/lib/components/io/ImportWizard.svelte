@@ -103,6 +103,14 @@
 		}
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	function conflictLabel(item: any): string {
+		if (typeof item?.name === 'string') return item.name;
+		if (typeof item?.pair === 'string') return item.pair;
+		if (typeof item?.id === 'string') return item.id;
+		return 'Unknown';
+	}
+
 	function setResolution<T>(conflict: ConflictItem<T>, resolution: 'keep' | 'replace' | 'skip') {
 		conflict.resolution = resolution;
 		conflictReport = conflictReport; // trigger reactivity
@@ -234,15 +242,7 @@
 						{#each report.conflicts as conflict}
 							<div class="conflict-item">
 								<div class="conflict-names">
-									<span class="conflict-label">
-										{#if 'name' in conflict.existing}
-											{(conflict.existing as {name: string}).name}
-										{:else if 'pair' in conflict.existing}
-											{(conflict.existing as {pair: string}).pair}
-										{:else if 'id' in conflict.existing}
-											{(conflict.existing as {id: string}).id}
-										{/if}
-									</span>
+									<span class="conflict-label">{conflictLabel(conflict.existing)}</span>
 								</div>
 								<div class="conflict-actions">
 									<button

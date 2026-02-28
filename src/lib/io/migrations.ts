@@ -8,7 +8,7 @@ const migrations: Record<number, Migration> = {
 };
 
 export function migrateToLatest(data: SweetfolioExport): SweetfolioExport {
-  let current = data as Record<string, unknown>;
+  let current: Record<string, unknown> = data as unknown as Record<string, unknown>;
 
   if ((current.version as number) > CURRENT_VERSION) {
     throw new Error(
