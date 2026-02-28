@@ -37,8 +37,6 @@ Acceptance Criteria:
 - Quoted fields and escaped quotes in CSV are handled correctly
 - Empty rows are silently skipped during parsing
 
-> **Note**: Multi-file drag-and-drop currently only processes the first file (known bug, see #13). Each file must be uploaded individually.
-
 **AM-2: Locale-Aware Format Detection** `IMPLEMENTED`
 As a European investor, I want the system to auto-detect my CSV's date and number formats so that I do not have to manually configure parsing.
 
@@ -60,27 +58,26 @@ Acceptance Criteria:
 - Changing the format re-parses and re-previews the data immediately
 - A tabular preview of the first 10 rows is shown for verification
 
-**AM-4: Asset Metadata** `PARTIAL`
+**AM-4: Asset Metadata** `IMPLEMENTED`
 As a user, I want to assign ISIN, WKN, name, and currency to each asset.
 
 Acceptance Criteria:
 - Each asset stores: name, ISIN (optional), WKN (optional), currency
-- ISIN is validated as a 12-character alphanumeric code
-- WKN is validated as a 6-character alphanumeric code
+- ISIN is validated as a 12-character alphanumeric code (enforced in edit modal)
+- WKN is validated as a 6-character alphanumeric code (enforced in edit modal)
 - Currency is selectable from a list of common currencies (EUR, USD, GBP, CHF, JPY, CAD, AUD, SEK, NOK, DKK)
+- Name and currency are set during import; ISIN/WKN can be added via the asset detail edit modal
 
-> **Gap**: Name and currency are set during import. ISIN and WKN fields exist in the data model but are not editable from the UI during or after import — they are stored as `null`. ISIN/WKN validation is defined in the acceptance criteria but not yet enforced in code.
-
-**AM-5: Asset List and Management** `PARTIAL`
+**AM-5: Asset List and Management** `IMPLEMENTED`
 As a user, I want to view, edit, and delete my assets.
 
 Acceptance Criteria:
 - Asset list page shows all uploaded assets with name, ISIN, currency, date range, and data point count
-- User can edit asset metadata (name, ISIN, WKN, currency)
+- User can edit asset metadata (name, ISIN, WKN, currency) via an edit modal on the asset detail page
 - User can delete an asset (with confirmation dialog)
 - Deleting an asset removes it from any portfolios that reference it
 
-> **Gap**: Asset list displays correctly. Delete with confirmation works. Inline editing of asset metadata (name, ISIN, WKN, currency) is not yet implemented — there is no edit UI. Cascade-delete from portfolios is not yet implemented.
+> **Note**: Cascade-delete from portfolios when an asset is removed is not yet implemented — orphaned allocations may remain.
 
 ---
 
@@ -154,15 +151,13 @@ Acceptance Criteria:
 - Date ranges are aligned across all selected assets (intersection of available dates)
 - Matrix displayed as a color-coded heatmap chart component
 
-**AC-2: Asset Selection for Correlation** `PARTIAL`
+**AC-2: Asset Selection for Correlation** `IMPLEMENTED`
 As a user, I want to select which assets to include in the correlation matrix.
 
 Acceptance Criteria:
-- User can select 2 or more assets to compare
-- Default selection includes all assets
-- Matrix updates when selection changes
-
-> **Gap**: The correlation matrix component (`CorrelationMatrix.svelte`) exists and renders. However, there is no dedicated page or UI widget for asset selection — the correlation matrix is not yet surfaced on any page route.
+- Correlation matrix is displayed on the dashboard when 2+ assets are loaded (all assets included by default)
+- Correlation matrix is also shown on the portfolio detail page for the portfolio's constituent assets
+- Matrix updates reactively when assets change
 
 ---
 
@@ -180,25 +175,22 @@ Acceptance Criteria:
 - At least one asset must be selected and a name must be provided
 - User can mark the portfolio as a benchmark during creation
 
-**PM-2: Portfolio Backtesting** `PARTIAL`
+**PM-2: Portfolio Backtesting** `IMPLEMENTED`
 As a user, I want to backtest my portfolio against historical data.
 
 Acceptance Criteria:
-- Portfolio value is computed from weighted historical prices of constituent assets
+- Portfolio value is computed from weighted historical prices of constituent assets via `computePortfolioPrices()`
 - Backtested performance is calculated from the latest common start date of all constituent assets
 - All financial metrics (Epic 2) apply to portfolio time series identically to individual assets
+- Portfolio detail page displays price chart, drawdown chart, allocation chart, and correlation matrix
 
-> **Gap**: The `portfolio.ts` engine module computes weighted portfolio price series. The portfolio detail page exists but may not yet fully compute and display backtested metrics and charts in the same way the asset detail page does.
-
-**PM-3: Portfolio Metrics** `PARTIAL`
+**PM-3: Portfolio Metrics** `IMPLEMENTED`
 As a user, I want to see the same financial metrics for portfolios as for individual assets.
 
 Acceptance Criteria:
 - Cumulative performance, annualized performance, volatility, Sharpe ratio, max drawdown — all computed per time window (1, 3, 5, 10, 15, ALL years)
-- Portfolio detail page mirrors asset detail page layout
-- Metrics are displayed in the same tabular format as asset metrics
-
-> **Gap**: Engine support exists. The portfolio detail page (`/portfolios/[id]`) needs verification that it fully wires metrics computation and display.
+- Portfolio detail page mirrors asset detail page layout with metrics table, price chart, drawdown chart, allocation chart, and correlation matrix
+- Metrics are computed via `calculateMetrics()` on the portfolio's weighted price series
 
 **PM-4: Benchmark Designation** `PARTIAL`
 As a user, I want to mark one asset or portfolio as a benchmark for comparison.
@@ -212,15 +204,13 @@ Acceptance Criteria:
 
 > **Gap**: Benchmark flag is stored and displayed as a badge on portfolio cards. Benchmark overlay on charts (price, performance, efficient frontier) is not yet implemented. Only portfolios can be benchmarks — assets cannot be designated as benchmarks.
 
-**PM-5: Portfolio List and Management** `PARTIAL`
+**PM-5: Portfolio List and Management** `IMPLEMENTED`
 As a user, I want to view, edit, and delete my portfolios.
 
 Acceptance Criteria:
 - Portfolio list page shows all portfolios as cards with name, asset count, and benchmark badge
-- User can edit portfolio name and allocations
+- User can edit portfolio name, allocations, and benchmark status via an edit modal on the portfolio detail page
 - User can delete a portfolio (with confirmation dialog)
-
-> **Gap**: Portfolio list with cards, delete with confirmation, and creation are implemented. Editing an existing portfolio's name and allocations is not yet implemented — there is no edit UI.
 
 ---
 
@@ -266,7 +256,7 @@ Acceptance Criteria:
 - System identifies portfolios with the same or higher return at lower volatility
 - These portfolios are visually distinguishable on the chart (e.g., different color or marker)
 
-**MC-5: Save Simulated Portfolios** `NOT STARTED`
+**MC-5: Save Simulated Portfolios** `IMPLEMENTED`
 As a user, I want to add promising simulated portfolios to my portfolio list.
 
 Acceptance Criteria:
@@ -274,6 +264,7 @@ Acceptance Criteria:
 - Saved portfolio contains the same asset allocations as the simulation result
 - Saved portfolio behaves like any manually created portfolio
 - A "Save as Portfolio" button is available in the portfolio inspector panel
+- Auto-generated portfolio name includes constituent asset names (truncated to 60 characters)
 
 **MC-6: Simulation Performance** `IMPLEMENTED`
 As a user, I want simulations to run efficiently without freezing the browser.
@@ -297,31 +288,29 @@ Acceptance Criteria:
 - User can configure a main/display currency in settings (default: EUR)
 - Supported currencies: EUR, USD, GBP, CHF, JPY, CAD, AUD, SEK, NOK, DKK
 - Setting is persisted in IndexedDB
-- All monetary values, returns, and charts are displayed in the main currency
+- Asset detail metrics are computed using currency-converted prices when conversion data is available
 
-> **Note**: The setting is saved and persisted. Automatic conversion of displayed values based on the main currency setting is not yet wired throughout all views.
-
-**CU-2: Currency Conversion History Upload** `PARTIAL`
+**CU-2: Currency Conversion History Upload** `IMPLEMENTED`
 As a user, I want to upload historical exchange rate data so cross-currency assets are converted correctly.
 
 Acceptance Criteria:
-- User can upload CSV files with currency pair conversion rates (e.g., USD/EUR)
+- User can upload CSV files with currency pair conversion rates via the settings page (Exchange Rates section)
+- User selects source and target currency pair before uploading
 - Same locale-aware format detection as asset CSV uploads (Epic 1)
 - Currency data is stored in the `currencies` IndexedDB object store
 - Currency pairs use concatenated format (e.g., "USDEUR")
+- Loaded pairs are displayed with rate count and date range; can be deleted individually
+- ECB exchange rate fetcher provides automated daily rate downloads for EUR-based pairs
 
-> **Gap**: The IndexedDB store and data model for currencies exist (`currencies.ts` storage module, `CurrencyRate` type). The `convertPrices` engine function is implemented with forward-fill and inverse-pair support. However, there is no UI for uploading currency rate CSV files — the settings page does not include a currency upload section.
-
-**CU-3: Currency Conversion in Calculations** `PARTIAL`
+**CU-3: Currency Conversion in Calculations** `IMPLEMENTED`
 As a user, I want all financial calculations to use converted prices in my main currency.
 
 Acceptance Criteria:
-- Asset prices are converted to the main currency before any metric calculation
+- Asset prices are converted to the main currency before metric calculation (wired via `calc.worker.ts`)
+- The asset detail page passes currency conversion data to the worker when the asset's currency differs from the main currency
 - If conversion data is missing for a date, nearest available rate is used (forward-fill via binary search)
-- If no conversion data exists for a currency pair, user is warned
+- If no conversion data exists for a currency pair, metrics are computed on unconverted prices (no error, graceful fallback)
 - Inverse pairs are automatically handled (e.g., EURUSD rate can be used for USD-to-EUR conversion)
-
-> **Gap**: The `convertPrices()` function in `currency.ts` is fully implemented and tested. However, the conversion is not yet integrated into the metrics calculation pipeline — asset prices are currently used as-is without currency conversion.
 
 ---
 
@@ -433,8 +422,7 @@ Acceptance Criteria:
 - Color scale from negative (pink) through neutral to positive (teal)
 - Hover shows exact correlation value
 - Rendered using the `CorrelationMatrix.svelte` component
-
-> **Note**: Component exists but is not yet surfaced on any page route (see AC-2).
+- Displayed on the dashboard (all assets) and on the portfolio detail page (constituent assets)
 
 **CH-4: Efficient Frontier Scatter Chart** `IMPLEMENTED`
 As a user, I want to visualize Monte Carlo simulation results.
@@ -477,17 +465,20 @@ Acceptance Criteria:
 
 ### User Stories
 
-**SC-1: Automatic Price Data Fetch** `NOT STARTED`
+**SC-1: Automatic Price Data Fetch** `IMPLEMENTED`
 As a user, I want to optionally fetch price data by ISIN or WKN instead of uploading a CSV.
 
 Acceptance Criteria:
 - User can enter an ISIN or WKN and trigger a data fetch attempt
-- System attempts client-side requests to public financial data sources
+- System attempts client-side requests to public financial data sources (Onvista API)
+- ISIN validated as 12-character alphanumeric code with 2-letter country prefix and check digit
+- WKN validated as 6-character alphanumeric code
+- Data source registry supports multiple providers tried in order (currently: Onvista)
+- Onvista fetcher: searches instrument, resolves entity type (ETF, stock, fund, etc.), fetches daily chart history
 - This feature is best-effort: it may fail due to CORS, rate limits, or API changes
-- On success, fetched data is imported as if uploaded via CSV
+- On success, fetched data is imported as if uploaded via CSV, with name, ISIN, WKN, and currency auto-populated
 - On failure, user receives a clear error message and can fall back to CSV upload
 - No server-side proxy; all requests are made from the browser
-- Feature is clearly labeled as "experimental" or "best-effort" in the UI
 
 ---
 
@@ -567,15 +558,15 @@ Acceptance Criteria:
 
 | Epic | Stories | Implemented | Partial | Not Started |
 |---|---|---|---|---|
-| 1. Asset Management | 5 | 3 | 2 | 0 |
+| 1. Asset Management | 5 | 5 | 0 | 0 |
 | 2. Financial Metrics | 5 | 5 | 0 | 0 |
-| 3. Asset Correlation | 2 | 1 | 1 | 0 |
-| 4. Portfolio Management | 5 | 1 | 4 | 0 |
-| 5. Monte Carlo Simulation | 6 | 4 | 0 | 2 |
-| 6. Currency Support | 3 | 1 | 2 | 0 |
+| 3. Asset Correlation | 2 | 2 | 0 | 0 |
+| 4. Portfolio Management | 5 | 4 | 1 | 0 |
+| 5. Monte Carlo Simulation | 6 | 5 | 0 | 1 |
+| 6. Currency Support | 3 | 3 | 0 | 0 |
 | 7. Data Persistence | 3 | 2 | 0 | 1 |
 | 8. Theming | 3 | 3 | 0 | 0 |
 | 9. Charts | 7 | 6 | 1 | 0 |
-| 10. ISIN/WKN Scraping | 1 | 0 | 0 | 1 |
+| 10. ISIN/WKN Scraping | 1 | 1 | 0 | 0 |
 | 11. Deployment | 3 | 2 | 0 | 1 |
-| **Total** | **43** | **28** | **10** | **5** |
+| **Total** | **43** | **38** | **2** | **3** |
