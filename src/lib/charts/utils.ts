@@ -248,5 +248,11 @@ export function dateToUnix(date: string): number {
 
 /** Format a percentage value for display. */
 export function fmtPct(val: number): string {
-	return (val * 100).toFixed(2) + '%';
+	const pct = val * 100;
+	const abs = Math.abs(pct);
+	if (abs >= 1_000_000) return (pct / 1_000_000).toFixed(1) + 'M%';
+	if (abs >= 10_000) return (pct / 1_000).toFixed(0) + 'k%';
+	if (abs >= 1_000) return (pct / 1_000).toFixed(1) + 'k%';
+	if (abs >= 100) return pct.toFixed(0) + '%';
+	return pct.toFixed(2) + '%';
 }
