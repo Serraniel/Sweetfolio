@@ -9,6 +9,7 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
     isin: null,
     wkn: null,
     currency: 'EUR',
+    classification: 'unknown',
     prices: [{ date: '2024-01-01', close: 100 }],
     formatConfig: null,
     rawCSV: null,

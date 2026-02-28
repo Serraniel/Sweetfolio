@@ -42,6 +42,7 @@ describe('Storage: assets', () => {
       isin: 'US1234567890',
       wkn: null,
       currency: 'USD',
+      classification: 'unknown',
       prices: [
         { date: '2024-01-01', close: 100 },
         { date: '2024-01-02', close: 110 },
