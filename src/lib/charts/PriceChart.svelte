@@ -14,7 +14,7 @@
 	} from './utils';
 
 	type ViewMode = 'absolute' | 'relative';
-	type TimeRange = '1y' | '3y' | '5y' | '10y' | 'all';
+	type TimeRange = '1m' | '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y' | '10y' | 'max' | 'all';
 
 	interface SeriesData {
 		label: string;
@@ -52,20 +52,128 @@
 		selectedRange = initialRange;
 	});
 
-	const RANGE_YEARS: Record<TimeRange, number | null> = {
-		'1y': 1,
-		'3y': 3,
-		'5y': 5,
-		'10y': 10,
-		all: null
-	};
+	/** Ordered fixed-duration ranges with their span in months. */
+	const FIXED_RANGES: { key: TimeRange; months: number }[] = [
+		{ key: '1m', months: 1 },
+		{ key: '3m', months: 3 },
+		{ key: '6m', months: 6 },
+		{ key: '1y', months: 12 },
+		{ key: '3y', months: 36 },
+		{ key: '5y', months: 60 },
+		{ key: '10y', months: 120 }
+	];
+
+	/** Compute the data span in months (uses the union of all series dates). */
+	const dataSpanMonths = $derived.by(() => {
+		if (series.length === 0) return 0;
+		let earliest = '';
+		let latest = '';
+		for (const s of series) {
+			if (s.prices.length === 0) continue;
+			const first = s.prices[0].date;
+			const last = s.prices[s.prices.length - 1].date;
+			if (!earliest || first < earliest) earliest = first;
+			if (!latest || last > latest) latest = last;
+		}
+		if (!earliest || !latest) return 0;
+		const diffMs = new Date(latest).getTime() - new Date(earliest).getTime();
+		return diffMs / (30.4375 * 24 * 60 * 60 * 1000);
+	});
+
+	/**
+	 * A fixed-duration button is disabled when a shorter range already covers all data.
+	 * Once a range's months >= dataSpanMonths, all subsequent ones are redundant.
+	 * YTD is disabled when the data doesn't span back before Jan 1 of the latest data year.
+	 */
+	const disabledRanges = $derived.by(() => {
+		const disabled = new Set<TimeRange>();
+		let coveredByPrevious = false;
+		for (const { key, months } of FIXED_RANGES) {
+			if (coveredByPrevious) {
+				disabled.add(key);
+			}
+			if (months >= dataSpanMonths) {
+				coveredByPrevious = true;
+			}
+		}
+
+		// YTD: disable if data doesn't reach before Jan 1 of the latest year
+		if (series.length > 0) {
+			let earliest = '';
+			let latest = '';
+			for (const s of series) {
+				if (s.prices.length === 0) continue;
+				const first = s.prices[0].date;
+				const last = s.prices[s.prices.length - 1].date;
+				if (!earliest || first < earliest) earliest = first;
+				if (!latest || last > latest) latest = last;
+			}
+			if (earliest && latest) {
+				const jan1 = `${latest.slice(0, 4)}-01-01`;
+				if (earliest >= jan1) disabled.add('ytd');
+			}
+		}
+
+		return disabled;
+	});
+
+	/**
+	 * For multi-series: "MAX" shows the longest overlapping span across all series.
+	 * It filters to the date range where every series has data.
+	 */
+	const maxRange = $derived.by(() => {
+		if (series.length <= 1) return null;
+		let overlapStart = '';
+		let overlapEnd = '';
+		for (const s of series) {
+			if (s.prices.length === 0) return null;
+			const first = s.prices[0].date;
+			const last = s.prices[s.prices.length - 1].date;
+			if (!overlapStart || first > overlapStart) overlapStart = first;
+			if (!overlapEnd || last < overlapEnd) overlapEnd = last;
+		}
+		if (!overlapStart || !overlapEnd || overlapStart >= overlapEnd) return null;
+		return { start: overlapStart, end: overlapEnd };
+	});
+
+	/** Available range buttons in display order. */
+	const rangeButtons = $derived.by(() => {
+		const buttons: TimeRange[] = ['ytd', '1m', '3m', '6m', '1y', '3y', '5y', '10y'];
+		if (maxRange) buttons.push('max');
+		buttons.push('all');
+		return buttons;
+	});
+
+	// If the selected range becomes disabled, fall back to 'all'
+	$effect(() => {
+		if (disabledRanges.has(selectedRange)) {
+			selectedRange = 'all';
+		}
+	});
 
 	function filterByRange(prices: PricePoint[]): PricePoint[] {
-		const years = RANGE_YEARS[selectedRange];
-		if (years == null || prices.length === 0) return prices;
+		if (prices.length === 0) return prices;
+
+		// "max" range: clip to the overlap window of all series
+		if (selectedRange === 'max' && maxRange) {
+			return prices.filter((p) => p.date >= maxRange.start && p.date <= maxRange.end);
+		}
+
+		// "all" passes everything through
+		if (selectedRange === 'all') return prices;
+
 		const lastDate = new Date(prices[prices.length - 1].date);
-		const cutoff = new Date(lastDate);
-		cutoff.setFullYear(cutoff.getFullYear() - years);
+		let cutoff: Date;
+
+		if (selectedRange === 'ytd') {
+			cutoff = new Date(lastDate.getFullYear(), 0, 1); // Jan 1 of last data year
+		} else {
+			const rangeEntry = FIXED_RANGES.find((r) => r.key === selectedRange);
+			if (!rangeEntry) return prices;
+			cutoff = new Date(lastDate);
+			cutoff.setMonth(cutoff.getMonth() - rangeEntry.months);
+		}
+
 		const cutoffStr = cutoff.toISOString().slice(0, 10);
 		return prices.filter((p) => p.date >= cutoffStr);
 	}
@@ -257,10 +365,11 @@
 			</div>
 			<span class="controls-separator"></span>
 			<div class="control-group">
-				{#each (['1y', '3y', '5y', '10y', 'all'] as TimeRange[]) as range}
+				{#each rangeButtons as range}
 					<button
 						class="view-btn"
 						class:active={selectedRange === range}
+						disabled={disabledRanges.has(range)}
 						onclick={() => (selectedRange = range)}
 					>
 						{range.toUpperCase()}
@@ -316,9 +425,14 @@
 		transition: background 0.15s, color 0.15s;
 	}
 
-	.view-btn:hover {
+	.view-btn:hover:not(:disabled) {
 		background: var(--color-accent, #8dd0c4);
 		color: var(--color-bg-primary, #fff);
+	}
+
+	.view-btn:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.view-btn.active {
