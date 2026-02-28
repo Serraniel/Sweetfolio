@@ -502,4 +502,18 @@
 		font-size: var(--font-size-xs);
 		color: var(--color-text-muted);
 	}
+
+	.inspector-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding-top: var(--spacing-sm);
+	}
+
+	.save-feedback {
+		font-size: var(--font-size-xs);
+		color: var(--color-positive);
+		font-weight: 500;
+		animation: fadeIn 200ms ease;
+	}
 </style>
