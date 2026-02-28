@@ -191,7 +191,16 @@
 											step="1"
 											bind:value={asset.weight}
 										/>
-										<span class="allocation-weight">{asset.weight}%</span>
+										<input
+											class="allocation-weight"
+											type="number"
+											min="0"
+											max="100"
+											step="1"
+											value={asset.weight}
+											onchange={(e) => { asset.weight = Math.max(0, Math.min(100, parseInt(e.currentTarget.value) || 0)); }}
+										/>
+										<span class="allocation-percent">%</span>
 									</div>
 								{/if}
 							</div>
@@ -395,7 +404,24 @@
 	.allocation-weight {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);
-		min-width: 40px;
+		width: 48px;
 		text-align: right;
+		padding: 2px 4px;
+		border: 1px solid var(--color-border, #ddd);
+		border-radius: var(--radius-sm, 4px);
+		background: var(--color-bg-secondary, #fff);
+		color: var(--color-text-primary, #3c3f44);
+		-moz-appearance: textfield;
+	}
+
+	.allocation-weight::-webkit-outer-spin-button,
+	.allocation-weight::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.allocation-percent {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
 	}
 </style>
