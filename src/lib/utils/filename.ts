@@ -17,35 +17,28 @@ export interface FilenameIdentifier {
 	value: string;
 }
 
-// ISIN: 2 uppercase letters + 9 alphanumeric + 1 check digit
-const ISIN_PATTERN = /\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b/;
-
-// WKN: exactly 6 alphanumeric, not all letters (to avoid matching random words)
-const WKN_PATTERN = /\b([A-Z0-9]{6})\b/;
-
 /**
  * Extract an ISIN or WKN from a filename string.
  * ISIN takes priority over WKN if both are found.
  * Returns null if no identifier is found.
  */
 export function extractIdentifier(filename: string): FilenameIdentifier | null {
-	// Strip file extension
+	// Strip file extension and split on common separators (underscore, hyphen, space, dot)
 	const name = filename.replace(/\.[^.]+$/, '');
-	const upper = name.toUpperCase();
+	const tokens = name.toUpperCase().split(/[_\-\s.]+/);
 
 	// Try ISIN first (more specific pattern)
-	const isinMatch = upper.match(ISIN_PATTERN);
-	if (isinMatch) {
-		return { type: 'isin', value: isinMatch[1] };
+	for (const token of tokens) {
+		const isinMatch = token.match(/^([A-Z]{2}[A-Z0-9]{9}[0-9])$/);
+		if (isinMatch) {
+			return { type: 'isin', value: isinMatch[1] };
+		}
 	}
 
 	// Try WKN (6-char alphanumeric that contains at least one digit)
-	const wknCandidates = upper.matchAll(/\b([A-Z0-9]{6})\b/g);
-	for (const match of wknCandidates) {
-		const candidate = match[1];
-		// WKN must have at least one digit to avoid matching plain words
-		if (/\d/.test(candidate)) {
-			return { type: 'wkn', value: candidate };
+	for (const token of tokens) {
+		if (/^[A-Z0-9]{6}$/.test(token) && /\d/.test(token)) {
+			return { type: 'wkn', value: token };
 		}
 	}
 
