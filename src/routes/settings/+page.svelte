@@ -20,6 +20,7 @@
 	let riskFreeRate = $state(0);
 	let autoImportMode = $state(true);
 	let autoResolveNames = $state(true);
+	let autoRefreshOnStartup = $state(true);
 	let alphaVantageApiKey = $state('');
 	let corsProxyUrl = $state('');
 	let dataSourcePrimary = $state('onvista');
@@ -78,6 +79,7 @@
 		if (s.riskFreeRate !== undefined) riskFreeRate = s.riskFreeRate as number;
 		if (s.autoImportMode !== undefined) autoImportMode = s.autoImportMode as boolean;
 		if (s.autoResolveNames !== undefined) autoResolveNames = s.autoResolveNames as boolean;
+		if (s.autoRefreshAssets !== undefined) autoRefreshOnStartup = s.autoRefreshAssets as boolean;
 		if (s.alphaVantageApiKey !== undefined) alphaVantageApiKey = s.alphaVantageApiKey as string;
 		if (s.corsProxyUrl !== undefined) corsProxyUrl = s.corsProxyUrl as string;
 		if (s.dataSourcePrimary) dataSourcePrimary = s.dataSourcePrimary as string;
@@ -95,6 +97,7 @@
 			setSetting('riskFreeRate', riskFreeRate),
 			setSetting('autoImportMode', autoImportMode),
 			setSetting('autoResolveNames', autoResolveNames),
+			setSetting('autoRefreshAssets', autoRefreshOnStartup),
 			setSetting('alphaVantageApiKey', alphaVantageApiKey),
 			setSetting('corsProxyUrl', corsProxyUrl),
 			setSetting('dataSourcePrimary', dataSourcePrimary),
@@ -441,6 +444,22 @@
 						>
 							<span class="theme-option" class:active={autoImportMode}>On</span>
 							<span class="theme-option" class:active={!autoImportMode}>Off</span>
+						</button>
+					</div>
+				</div>
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
+					<div class="setting-info">
+						<span class="setting-label">Auto-Refresh on Startup</span>
+						<span class="setting-description">Automatically fetch latest prices for assets with ISIN/WKN when opening Sweetfolio</span>
+					</div>
+					<div class="setting-control">
+						<button
+							class="theme-switch"
+							onclick={() => autoRefreshOnStartup = !autoRefreshOnStartup}
+						>
+							<span class="theme-option" class:active={autoRefreshOnStartup}>On</span>
+							<span class="theme-option" class:active={!autoRefreshOnStartup}>Off</span>
 						</button>
 					</div>
 				</div>
