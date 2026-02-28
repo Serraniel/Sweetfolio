@@ -4,6 +4,7 @@
 	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
+	import { validateISIN, validateWKN, fetchByISIN, fetchByWKN, type ScraperResult } from '$lib/scraper/index';
 	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
@@ -58,6 +59,85 @@
 	const autoImportEnabled = $derived($settings.autoImportMode !== false);
 	const autoResolveEnabled = $derived($settings.autoResolveNames !== false);
 	let resolving = $state(false);
+
+	// Identifier lookup state
+	let lookupInput = $state('');
+	let lookupFetching = $state(false);
+	let lookupError: string | null = $state(null);
+	let lookupResult: ScraperResult | null = $state(null);
+	let lookupEditName = $state('');
+	let lookupEditCurrency = $state('');
+
+	type IdentifierType = 'isin' | 'wkn' | null;
+
+	const lookupIdentifierType: IdentifierType = $derived.by(() => {
+		const v = lookupInput.trim().toUpperCase();
+		if (v.length === 0) return null;
+		if (validateISIN(v)) return 'isin';
+		if (validateWKN(v)) return 'wkn';
+		return null;
+	});
+
+	const lookupValid = $derived(lookupIdentifierType !== null);
+	const lookupHint = $derived.by(() => {
+		const v = lookupInput.trim();
+		if (v.length === 0) return '';
+		if (lookupIdentifierType === 'isin') return 'Valid ISIN';
+		if (lookupIdentifierType === 'wkn') return 'Valid WKN';
+		return 'Not a valid ISIN or WKN';
+	});
+
+	async function handleLookup() {
+		const identifier = lookupInput.trim().toUpperCase();
+		if (!lookupValid || lookupFetching) return;
+
+		lookupFetching = true;
+		lookupError = null;
+		lookupResult = null;
+
+		const outcome = lookupIdentifierType === 'isin'
+			? await fetchByISIN(identifier)
+			: await fetchByWKN(identifier);
+
+		lookupFetching = false;
+
+		if (outcome.success) {
+			lookupResult = outcome.data;
+			lookupEditName = outcome.data.name ?? identifier;
+			lookupEditCurrency = outcome.data.currency ?? 'EUR';
+		} else {
+			lookupError = outcome.error.message;
+		}
+	}
+
+	async function handleLookupConfirm() {
+		if (!lookupResult) return;
+
+		const identifier = lookupInput.trim().toUpperCase();
+		const asset = {
+			id: crypto.randomUUID(),
+			name: lookupEditName || identifier,
+			isin: lookupIdentifierType === 'isin' ? identifier : null,
+			wkn: lookupIdentifierType === 'wkn' ? identifier : null,
+			currency: lookupEditCurrency,
+			prices: lookupResult.prices,
+			formatConfig: null,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString()
+		};
+
+		await addAsset(asset);
+		showToast(`Imported "${asset.name}" (${asset.prices.length} data points)`);
+		handleLookupCancel();
+	}
+
+	function handleLookupCancel() {
+		lookupInput = '';
+		lookupResult = null;
+		lookupError = null;
+		lookupEditName = '';
+		lookupEditCurrency = '';
+	}
 
 	// Queue for multi-file import
 	let pendingFiles: File[] = $state([]);
@@ -243,6 +323,92 @@
 
 	<section class="upload-section">
 		<FileDropzone onfiles={handleFiles} />
+	</section>
+
+	<section class="lookup-section">
+		<Card>
+			<div class="lookup-header">
+				<h3>Or look up by identifier</h3>
+				<p class="lookup-subtitle">Fetch historical price data by ISIN or WKN from Onvista</p>
+			</div>
+
+			<div class="lookup-input-row">
+				<div class="lookup-field">
+					<input
+						type="text"
+						class="lookup-input"
+						placeholder="Enter ISIN or WKN..."
+						bind:value={lookupInput}
+						disabled={lookupFetching}
+						onkeydown={(e) => { if (e.key === 'Enter' && lookupValid) handleLookup(); }}
+					/>
+					{#if lookupHint}
+						<span class="lookup-hint" class:valid={lookupValid} class:invalid={!lookupValid}>
+							{lookupHint}
+						</span>
+					{/if}
+				</div>
+				<Button
+					variant="primary"
+					disabled={!lookupValid || lookupFetching}
+					onclick={handleLookup}
+				>
+					{#if lookupFetching}
+						Fetching...
+					{:else}
+						Fetch
+					{/if}
+				</Button>
+			</div>
+
+			{#if lookupError}
+				<div class="lookup-error">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="12" cy="12" r="10"/>
+						<line x1="15" y1="9" x2="9" y2="15"/>
+						<line x1="9" y1="9" x2="15" y2="15"/>
+					</svg>
+					<span>{lookupError}</span>
+				</div>
+			{/if}
+
+			{#if lookupResult}
+				<div class="lookup-preview">
+					<div class="preview-grid">
+						<label class="preview-label">
+							Name
+							<input
+								type="text"
+								class="preview-input"
+								bind:value={lookupEditName}
+							/>
+						</label>
+						<label class="preview-label">
+							Currency
+							<input
+								type="text"
+								class="preview-input preview-input--short"
+								bind:value={lookupEditCurrency}
+							/>
+						</label>
+						<div class="preview-meta">
+							<span class="mono">{lookupInput.trim().toUpperCase()}</span>
+							<span class="muted">{lookupResult.prices.length.toLocaleString()} data points</span>
+							{#if lookupResult.prices.length >= 2}
+								<span class="muted">
+									{lookupResult.prices[0].date} – {lookupResult.prices[lookupResult.prices.length - 1].date}
+								</span>
+							{/if}
+							<span class="muted">Source: {lookupResult.source}</span>
+						</div>
+					</div>
+					<div class="preview-actions">
+						<Button variant="primary" onclick={handleLookupConfirm}>Add Asset</Button>
+						<Button variant="ghost" onclick={handleLookupCancel}>Cancel</Button>
+					</div>
+				</div>
+			{/if}
+		</Card>
 	</section>
 
 	<section class="asset-list">
@@ -553,5 +719,143 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+
+	.lookup-section {
+		margin-bottom: var(--spacing-xl);
+	}
+
+	.lookup-header {
+		margin-bottom: var(--spacing-md);
+	}
+
+	.lookup-header h3 {
+		font-size: var(--font-size-base);
+		font-weight: 600;
+		margin-bottom: var(--spacing-xs);
+	}
+
+	.lookup-subtitle {
+		color: var(--color-text-muted);
+		font-size: var(--font-size-sm);
+	}
+
+	.lookup-input-row {
+		display: flex;
+		gap: var(--spacing-sm);
+		align-items: flex-start;
+	}
+
+	.lookup-field {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.lookup-input {
+		width: 100%;
+		padding: var(--spacing-sm) var(--spacing-md);
+		font-size: var(--font-size-sm);
+		font-family: var(--font-mono);
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-primary);
+		letter-spacing: 0.05em;
+		transition: border-color var(--transition-fast);
+	}
+
+	.lookup-input:focus {
+		outline: none;
+		border-color: var(--color-accent);
+	}
+
+	.lookup-input:disabled {
+		opacity: 0.6;
+	}
+
+	.lookup-hint {
+		font-size: var(--font-size-xs);
+	}
+
+	.lookup-hint.valid {
+		color: var(--color-accent);
+	}
+
+	.lookup-hint.invalid {
+		color: var(--color-text-muted);
+	}
+
+	.lookup-error {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--spacing-sm);
+		margin-top: var(--spacing-md);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: rgba(232, 23, 93, 0.08);
+		border: 1px solid rgba(232, 23, 93, 0.2);
+		border-radius: var(--radius-sm);
+		color: var(--color-negative, #e55);
+		font-size: var(--font-size-sm);
+	}
+
+	.lookup-error svg {
+		flex-shrink: 0;
+		margin-top: 1px;
+	}
+
+	.lookup-preview {
+		margin-top: var(--spacing-md);
+		padding-top: var(--spacing-md);
+		border-top: 1px solid var(--color-border);
+	}
+
+	.preview-grid {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-md);
+	}
+
+	.preview-label {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-text-muted);
+	}
+
+	.preview-input {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-sm);
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-primary);
+	}
+
+	.preview-input:focus {
+		outline: none;
+		border-color: var(--color-accent);
+	}
+
+	.preview-input--short {
+		max-width: 120px;
+	}
+
+	.preview-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--spacing-sm) var(--spacing-md);
+		font-size: var(--font-size-sm);
+	}
+
+	.preview-actions {
+		display: flex;
+		gap: var(--spacing-sm);
 	}
 </style>
