@@ -17,6 +17,7 @@ export interface Asset {
   rawCSVStoredAt: string | null;
   createdAt: string;
   updatedAt: string;
+  lastRefreshedAt: string | null;
 }
 
 export interface Portfolio {

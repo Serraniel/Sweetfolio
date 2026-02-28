@@ -133,7 +133,8 @@
 			rawCSV: null,
 			rawCSVStoredAt: null,
 			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString()
+			updatedAt: new Date().toISOString(),
+			lastRefreshedAt: new Date().toISOString()
 		};
 
 		await addAsset(asset);
@@ -235,7 +236,8 @@
 					rawCSV: text,
 					rawCSVStoredAt: new Date().toISOString(),
 					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString()
+					updatedAt: new Date().toISOString(),
+					lastRefreshedAt: null
 				};
 
 				await addAsset(asset);
@@ -298,7 +300,8 @@
 			rawCSV: rawText,
 			rawCSVStoredAt: new Date().toISOString(),
 			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString()
+			updatedAt: new Date().toISOString(),
+			lastRefreshedAt: null
 		};
 
 		await addAsset(asset);
