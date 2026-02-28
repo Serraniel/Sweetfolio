@@ -1,7 +1,6 @@
 export { CURRENT_VERSION, ALL_SCOPES, isValidExportEnvelope } from './schema';
 export type { SweetfolioExport, SweetfolioScope } from './schema';
-export { buildExport } from './export';
-export { triggerDownload } from './download';
+export { streamExport } from './download';
 export { parseImportFile } from './import';
 export { detectConflicts } from './conflicts';
 export type { ConflictReport, ConflictItem, SettingConflict, ScopeReport, SettingScopeReport } from './conflicts';

@@ -2,8 +2,7 @@
 	import Modal from '$lib/components/shared/Modal.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
 	import { ALL_SCOPES, type SweetfolioScope } from '$lib/io/schema';
-	import { buildExport } from '$lib/io/export';
-	import { triggerDownload } from '$lib/io/download';
+	import { streamExport } from '$lib/io/download';
 
 	let {
 		open = $bindable(false),
@@ -38,10 +37,9 @@
 		error = null;
 		exporting = true;
 		try {
-			exportPhase = 'Reading data...';
-			const data = await buildExport([...selectedScopes]);
-			exportPhase = 'Preparing file...';
-			triggerDownload(data);
+			await streamExport([...selectedScopes], (phase) => {
+				exportPhase = phase;
+			});
 			open = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Export failed';
