@@ -21,6 +21,7 @@
 
 	let selectedScopes: Set<SweetfolioScope> = $state(new Set(ALL_SCOPES));
 	let exporting = $state(false);
+	let exportPhase: string = $state('');
 	let error: string | null = $state(null);
 
 	function toggleScope(scope: SweetfolioScope) {
@@ -37,13 +38,16 @@
 		error = null;
 		exporting = true;
 		try {
+			exportPhase = 'Reading data...';
 			const data = await buildExport([...selectedScopes]);
-			triggerDownload(data);
+			exportPhase = 'Preparing file...';
+			await triggerDownload(data);
 			open = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Export failed';
 		} finally {
 			exporting = false;
+			exportPhase = '';
 		}
 	}
 </script>
@@ -57,6 +61,7 @@
 				<input
 					type="checkbox"
 					checked={selectedScopes.has(scope)}
+					disabled={exporting}
 					onchange={() => toggleScope(scope)}
 				/>
 				<span>{scopeLabels[scope]}</span>
@@ -64,12 +69,19 @@
 		{/each}
 	</div>
 
+	{#if exporting}
+		<div class="export-progress">
+			<div class="spinner"></div>
+			<span>{exportPhase}</span>
+		</div>
+	{/if}
+
 	{#if error}
 		<div class="export-error">{error}</div>
 	{/if}
 
 	{#snippet footer()}
-		<Button variant="default" onclick={() => open = false}>Cancel</Button>
+		<Button variant="default" onclick={() => open = false} disabled={exporting}>Cancel</Button>
 		<Button
 			variant="primary"
 			onclick={handleExport}
@@ -104,6 +116,28 @@
 
 	.scope-item input[type="checkbox"] {
 		accent-color: var(--color-accent);
+	}
+
+	.export-progress {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		margin-top: var(--spacing-md);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+	}
+
+	.spinner {
+		width: 16px;
+		height: 16px;
+		border: 2px solid var(--color-border);
+		border-top-color: var(--color-accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 
 	.export-error {
