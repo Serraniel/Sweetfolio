@@ -7,9 +7,13 @@ const DB_NAME = 'sweetfolio';
 const DB_VERSION = 2;
 
 let dbInstance: IDBDatabase | null = null;
+let dbPending: Promise<IDBDatabase> | null = null;
 
 export function getDB(): Promise<IDBDatabase> {
   if (dbInstance && dbInstance.version >= DB_VERSION) return Promise.resolve(dbInstance);
+
+  // Return the in-flight open request if one exists (prevents concurrent opens)
+  if (dbPending) return dbPending;
 
   // Close stale connection before re-opening at new version
   if (dbInstance) {
@@ -17,7 +21,7 @@ export function getDB(): Promise<IDBDatabase> {
     dbInstance = null;
   }
 
-  return new Promise((resolve, reject) => {
+  dbPending = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onblocked = () => {
@@ -81,6 +85,7 @@ export function getDB(): Promise<IDBDatabase> {
 
     request.onsuccess = (event) => {
       dbInstance = (event.target as IDBOpenDBRequest).result;
+      dbPending = null;
 
       dbInstance.onclose = () => {
         dbInstance = null;
@@ -95,9 +100,12 @@ export function getDB(): Promise<IDBDatabase> {
     };
 
     request.onerror = () => {
+      dbPending = null;
       reject(request.error);
     };
   });
+
+  return dbPending;
 }
 
 export function transaction(
