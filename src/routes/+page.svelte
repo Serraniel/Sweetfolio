@@ -1,8 +1,41 @@
 <script lang="ts">
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
+	import CorrelationMatrix from '$lib/charts/CorrelationMatrix.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios } from '$lib/stores/portfolios';
+	import { calculateCorrelation } from '$lib/workers/manager';
+	import type { CorrelationMatrix as CorrelationMatrixData } from '$lib/types';
+
+	let correlation: CorrelationMatrixData | null = $state(null);
+	let correlationLoading = $state(false);
+
+	// Compute correlation when we have 2+ assets
+	$effect(() => {
+		const assetData = $assets
+			.filter((a) => a.prices.length >= 2)
+			.map((a) => ({ id: a.id, prices: a.prices }));
+
+		if (assetData.length < 2) {
+			correlation = null;
+			return;
+		}
+
+		correlationLoading = true;
+		calculateCorrelation(assetData).then((result) => {
+			correlation = result;
+			correlationLoading = false;
+		});
+	});
+
+	const correlationLabels = $derived(
+		correlation
+			? correlation.assetIds.map((id) => {
+					const asset = $assets.find((a) => a.id === id);
+					return asset?.name ?? id.slice(0, 8);
+				})
+			: []
+	);
 </script>
 
 <div class="dashboard">
@@ -95,6 +128,15 @@
 			</a>
 		</div>
 	</section>
+
+	{#if correlation && correlationLabels.length > 0}
+		<section class="correlation-section">
+			<h2>Asset Correlations</h2>
+			<Card padding="lg">
+				<CorrelationMatrix data={correlation} labels={correlationLabels} />
+			</Card>
+		</section>
+	{/if}
 
 	<section class="getting-started">
 		<Card padding="lg">
@@ -234,6 +276,15 @@
 
 	.action-card:hover .action-content {
 		color: var(--color-accent);
+	}
+
+	.correlation-section {
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.correlation-section h2 {
+		font-size: var(--font-size-lg);
+		margin-bottom: var(--spacing-md);
 	}
 
 	.getting-started h2 {
