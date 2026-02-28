@@ -14,7 +14,7 @@
 	import { calculateMetrics } from '$lib/workers/manager';
 	import PriceDataSection from '$lib/components/PriceDataSection.svelte';
 	import { slugify } from '$lib/utils/slug';
-	import type { MetricsResult, CurrencyRate } from '$lib/types';
+	import { ASSET_CLASSIFICATIONS, type AssetClassification, type MetricsResult, type CurrencyRate } from '$lib/types';
 
 	const slug = $derived(page.params.slug ?? '');
 	const asset = $derived($assets.find((a) => slugify(a.name) === slug));
@@ -54,6 +54,7 @@
 	let editIsin = $state('');
 	let editWkn = $state('');
 	let editCurrency = $state('EUR');
+	let editClassification: AssetClassification = $state('unknown');
 	let editErrors: Record<string, string> = $state({});
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
@@ -64,6 +65,7 @@
 		editIsin = asset.isin ?? '';
 		editWkn = asset.wkn ?? '';
 		editCurrency = asset.currency;
+		editClassification = asset.classification;
 		editErrors = {};
 		showEditModal = true;
 	}
@@ -102,6 +104,7 @@
 			isin: editIsin.trim().toUpperCase() || null,
 			wkn: editWkn.trim().toUpperCase() || null,
 			currency: editCurrency,
+			classification: editClassification,
 			updatedAt: new Date().toISOString()
 		});
 		showEditModal = false;
@@ -285,6 +288,14 @@
 					<select id="edit-currency" bind:value={editCurrency}>
 						{#each supportedCurrencies as c}
 							<option value={c}>{c}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="form-field">
+					<label for="edit-classification">Classification</label>
+					<select id="edit-classification" bind:value={editClassification}>
+						{#each ASSET_CLASSIFICATIONS as cls}
+							<option value={cls}>{cls.toUpperCase()}</option>
 						{/each}
 					</select>
 				</div>
