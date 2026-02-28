@@ -2,6 +2,7 @@
 	import '../app.css';
 	import Shell from '$lib/components/layout/Shell.svelte';
 	import RefreshProgressToast from '$lib/components/shared/RefreshProgressToast.svelte';
+	import MigrationToast from '$lib/components/shared/MigrationToast.svelte';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { initStores } from '$lib/stores/init';
@@ -25,3 +26,4 @@
 </Shell>
 
 <RefreshProgressToast />
+<MigrationToast />

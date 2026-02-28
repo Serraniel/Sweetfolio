@@ -4,6 +4,8 @@ import { loadSettings, settings } from './settings';
 import { loadCurrencies } from './currencies';
 import { setBenchmark } from './benchmark';
 import { get } from 'svelte/store';
+import '$lib/migrations/classify-assets';
+import { runPendingMigrations } from '$lib/migrations/runner';
 
 let initialized = false;
 
@@ -26,4 +28,7 @@ export async function initStores(): Promise<void> {
       await setBenchmark({ type: 'portfolio', id: legacy.id });
     }
   }
+
+  // Run any pending data migrations (non-blocking)
+  runPendingMigrations();
 }
