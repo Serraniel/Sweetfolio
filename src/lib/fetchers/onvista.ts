@@ -171,10 +171,8 @@ export async function getChartHistory(
 ): Promise<PricePoint[]> {
   const start = formatDate(startDate ?? new Date(2000, 0, 1));
   const end = formatDate(endDate ?? new Date());
-  const typePath = entityTypePath(entityType).toUpperCase();
-
   const url =
-    `${BASE_URL}/instruments/${typePath}/${encodeURIComponent(entityValue)}/chart_history` +
+    `${BASE_URL}/instruments/${encodeURIComponent(entityType)}/${encodeURIComponent(entityValue)}/chart_history` +
     `?idNotation=${idNotation}&resolution=1D&startDate=${start}&endDate=${end}`;
 
   const data = await fetchJSON<ChartHistoryResponse>(url);
