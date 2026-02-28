@@ -42,6 +42,7 @@
 	let importFileName = $state('');
 	let assetName = $state('');
 	let assetCurrency = $state('EUR');
+	let assetClassification: AssetClassification = $state('unknown');
 	let assetIsin: string | null = $state(null);
 	let assetWkn: string | null = $state(null);
 
@@ -297,7 +298,7 @@
 			isin: assetIsin,
 			wkn: assetWkn,
 			currency: assetCurrency,
-			classification: 'unknown' as AssetClassification,
+			classification: assetClassification,
 			prices: result.prices,
 			formatConfig: result.detectedFormat,
 			rawCSV: rawText,
@@ -313,6 +314,7 @@
 		rawText = '';
 		csvPreview = [];
 		assetName = '';
+		assetClassification = 'unknown';
 		assetIsin = null;
 		assetWkn = null;
 
@@ -537,6 +539,7 @@
 		onconfirm={handleImportConfirm}
 		bind:assetName
 		bind:assetCurrency
+		bind:assetClassification
 		title={totalFiles > 1 ? `CSV Import (${currentFileIndex + 1} of ${totalFiles})` : 'CSV Import Configuration'}
 	/>
 </div>

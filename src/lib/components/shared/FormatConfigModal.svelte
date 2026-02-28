@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
+	import { ASSET_CLASSIFICATIONS, type AssetClassification } from '$lib/types';
 
 	const currencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
 
@@ -18,6 +19,7 @@
 		onconfirm,
 		assetName = $bindable(''),
 		assetCurrency = $bindable('EUR'),
+		assetClassification = $bindable('unknown' as AssetClassification),
 		title = 'CSV Import Configuration',
 		confirmLabel = 'Import'
 	}: {
@@ -34,6 +36,7 @@
 		onconfirm?: () => void;
 		assetName?: string;
 		assetCurrency?: string;
+		assetClassification?: AssetClassification;
 		title?: string;
 		confirmLabel?: string;
 	} = $props();
@@ -71,6 +74,15 @@
 			<select id="asset-currency" bind:value={assetCurrency}>
 				{#each currencies as c}
 					<option value={c}>{c}</option>
+				{/each}
+			</select>
+		</div>
+
+		<div class="format-field">
+			<label for="asset-classification">Classification</label>
+			<select id="asset-classification" bind:value={assetClassification}>
+				{#each ASSET_CLASSIFICATIONS as cls}
+					<option value={cls}>{cls.toUpperCase()}</option>
 				{/each}
 			</select>
 		</div>
