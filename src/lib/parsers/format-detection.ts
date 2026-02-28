@@ -173,7 +173,6 @@ function looksNumeric(value: string): boolean {
 }
 
 function detectDecimalSeparator(sample: string[][], delimiter: string): string {
-  // Look at numeric-looking cells (not date cells)
   let commaAsDecimal = 0;
   let dotAsDecimal = 0;
 
@@ -185,19 +184,25 @@ function detectDecimalSeparator(sample: string[][], delimiter: string): string {
         commaAsDecimal++;
       }
       // Pattern like "1,234.56" or "1234.56" -> dot is decimal
-      if (/^\d{1,3}(,\d{3})*\.\d+$/.test(v) || /^\d+\.\d{1,2}$/.test(v)) {
+      // BUT exclude pure thousand-separated integers like "95.000" or "1.403.558"
+      // which match /^\d{1,3}(\.\d{3})+$/ — these are NOT dot-decimal
+      if (/^\d{1,3}(\.\d{3})+$/.test(v)) {
+        // This is a thousand-separated integer (e.g. 95.000, 1.403.558) — skip
+      } else if (/^\d{1,3}(,\d{3})*\.\d+$/.test(v) || /^\d+\.\d{1,2}$/.test(v)) {
         dotAsDecimal++;
       }
     }
   }
 
-  // EU priority: if comma-as-decimal is plausible, prefer it
+  // When delimiter is semicolon (EU CSV), strongly prefer comma-as-decimal
+  if (delimiter === ';' && commaAsDecimal > 0) return ',';
+
+  // General case: prefer comma if plausible
   if (commaAsDecimal > 0 && commaAsDecimal >= dotAsDecimal) return ',';
   if (dotAsDecimal > 0) return '.';
 
-  // When delimiter is semicolon, EU format is likely -> comma as decimal
+  // Fallback for no evidence either way
   if (delimiter === ';') return ',';
-
   return '.';
 }
 

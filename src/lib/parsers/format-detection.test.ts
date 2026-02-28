@@ -74,6 +74,34 @@ describe('detectFormat', () => {
     expect(fmt.closeColumn).toBe(4); // "Schluss" header
   });
 
+  it('detects comma-decimal for German CSV with round thousand-separated values', () => {
+    // Values like 92.001 and 95.000 should be treated as thousand-separated integers,
+    // not as dot-decimal numbers, when delimiter is semicolon
+    const csv = [
+      'Datum;Erster;Hoch;Tief;Schlusskurs;Stuecke;Volumen',
+      '2025-09-07;95.698,8;95.999,64;92.001;95.267;0;26.824',
+      '2025-09-06;94.900;97.363,53;92.900,01;95.000;2;181.038',
+      '2025-09-05;95.000;98.097,85;93.000,01;94.600;6;603.358',
+      '2025-09-04;95.850;100.100;92.000;96.399,61;15;1.403.558',
+    ].join('\n');
+    const fmt = detectFormat(csv);
+    expect(fmt.delimiter).toBe(';');
+    expect(fmt.decimalSeparator).toBe(',');
+  });
+
+  it('does not count pure thousand-separated integers as dot-decimal', () => {
+    // 95.000, 92.001, 94.600 are thousand-separated integers, not decimals
+    const csv = [
+      'Datum;Kurs',
+      '2025-01-01;95.000',
+      '2025-01-02;92.001',
+      '2025-01-03;94.600',
+      '2025-01-04;96.399,61',
+    ].join('\n');
+    const fmt = detectFormat(csv);
+    expect(fmt.decimalSeparator).toBe(',');
+  });
+
   it('handles full EU-style CSV correctly', () => {
     const csv = [
       'Datum;Eroeffnung;Schluss',
