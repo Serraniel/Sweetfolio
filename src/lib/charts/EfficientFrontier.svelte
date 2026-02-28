@@ -85,8 +85,23 @@
 							}
 						}
 
-						// Draw efficient frontier dots (larger, clickable)
+						// Draw efficient frontier line (behind dots)
 						const dark = isDarkTheme();
+						if (efficientFrontier.length > 1) {
+							const sorted = [...efficientFrontier].sort((a, b) => a.volatility - b.volatility);
+							ctx.beginPath();
+							ctx.strokeStyle = COLORS.deepTeal;
+							ctx.lineWidth = 2.5;
+							for (let i = 0; i < sorted.length; i++) {
+								const cx = u.valToPos(sorted[i].volatility, 'x', true);
+								const cy = u.valToPos(sorted[i].annualizedReturn, 'y', true);
+								if (i === 0) ctx.moveTo(cx, cy);
+								else ctx.lineTo(cx, cy);
+							}
+							ctx.stroke();
+						}
+
+						// Draw efficient frontier dots (on top of line, larger, clickable)
 						for (const p of efficientFrontier) {
 							const cx = u.valToPos(p.volatility, 'x', true);
 							const cy = u.valToPos(p.annualizedReturn, 'y', true);
@@ -99,21 +114,6 @@
 							ctx.fill();
 							ctx.strokeStyle = dark ? '#222' : '#fff';
 							ctx.lineWidth = 1.5;
-							ctx.stroke();
-						}
-
-						// Draw efficient frontier line
-						if (efficientFrontier.length > 1) {
-							const sorted = [...efficientFrontier].sort((a, b) => a.volatility - b.volatility);
-							ctx.beginPath();
-							ctx.strokeStyle = COLORS.deepTeal;
-							ctx.lineWidth = 2.5;
-							for (let i = 0; i < sorted.length; i++) {
-								const cx = u.valToPos(sorted[i].volatility, 'x', true);
-								const cy = u.valToPos(sorted[i].annualizedReturn, 'y', true);
-								if (i === 0) ctx.moveTo(cx, cy);
-								else ctx.lineTo(cx, cy);
-							}
 							ctx.stroke();
 						}
 
