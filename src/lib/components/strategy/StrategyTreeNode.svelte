@@ -8,12 +8,14 @@
 		assets = [],
 		onupdate,
 		onremove,
+		onaddchild,
 	}: {
 		node: StrategyNode;
 		depth?: number;
 		assets?: Asset[];
 		onupdate: (nodeId: string, changes: Partial<StrategyNode>) => void;
 		onremove: (nodeId: string) => void;
+		onaddchild: (parentId: string, child: StrategyNode) => void;
 	} = $props();
 
 	let collapsed = $state(false);
@@ -44,35 +46,25 @@
 	function addGroup() {
 		if (node.type !== 'group') return;
 		showAddMenu = false;
-		onupdate(node.id, {
-			children: [
-				...node.children,
-				{
-					type: 'group',
-					id: crypto.randomUUID(),
-					label: 'New Group',
-					weight: 0,
-					children: [],
-				} as StrategyNode,
-			],
-		} as Partial<StrategyGroupNode>);
+		onaddchild(node.id, {
+			type: 'group',
+			id: crypto.randomUUID(),
+			label: 'New Group',
+			weight: 1,
+			children: [],
+		});
 	}
 
 	function addAsset(assetId: string) {
 		if (node.type !== 'group') return;
 		showAssetPicker = false;
 		showAddMenu = false;
-		onupdate(node.id, {
-			children: [
-				...node.children,
-				{
-					type: 'leaf',
-					id: crypto.randomUUID(),
-					assetId,
-					weight: 0,
-				} as StrategyNode,
-			],
-		} as Partial<StrategyGroupNode>);
+		onaddchild(node.id, {
+			type: 'leaf',
+			id: crypto.randomUUID(),
+			assetId,
+			weight: 1,
+		});
 	}
 </script>
 
@@ -171,6 +163,7 @@
 					{assets}
 					{onupdate}
 					{onremove}
+					{onaddchild}
 				/>
 			{/each}
 		</div>
@@ -337,7 +330,7 @@
 		top: 100%;
 		right: 0;
 		z-index: 10;
-		background: var(--color-bg-card);
+		background: var(--color-bg-secondary);
 		border: 1px solid var(--glass-border);
 		border-radius: var(--radius-sm);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -366,7 +359,7 @@
 		flex-direction: column;
 		margin-left: 32px;
 		margin-top: var(--spacing-xs);
-		background: var(--color-bg-card);
+		background: var(--color-bg-secondary);
 		border: 1px solid var(--glass-border);
 		border-radius: var(--radius-sm);
 		max-height: 200px;

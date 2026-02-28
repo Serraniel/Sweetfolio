@@ -20,18 +20,50 @@
 		saveTimeout = setTimeout(() => onsave(updated), 300);
 	}
 
-	function updateNode(nodeId: string, changes: Partial<StrategyNode>): void {
-		const newRoot = applyUpdate(strategy.root, nodeId, changes);
-		if (!newRoot) return;
-		const updated = { ...strategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
+	// Keep a local working copy so rapid edits don't lose changes during debounce
+	let workingStrategy = $state(strategy);
+	$effect(() => {
+		workingStrategy = strategy;
+	});
+
+	function save(updated: Strategy) {
+		workingStrategy = updated;
 		debouncedSave(updated);
 	}
 
-	function removeNode(nodeId: string): void {
-		const newRoot = applyRemove(strategy.root, nodeId);
+	function updateNode(nodeId: string, changes: Partial<StrategyNode>): void {
+		const newRoot = applyUpdate(workingStrategy.root, nodeId, changes);
 		if (!newRoot) return;
-		const updated = { ...strategy, root: newRoot, updatedAt: new Date().toISOString() };
-		debouncedSave(updated);
+		const updated = { ...workingStrategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
+		save(updated);
+	}
+
+	function removeNode(nodeId: string): void {
+		const newRoot = applyRemove(workingStrategy.root, nodeId);
+		if (!newRoot) return;
+		const updated = { ...workingStrategy, root: newRoot, updatedAt: new Date().toISOString() };
+		save(updated);
+	}
+
+	function addChildToNode(parentId: string, child: StrategyNode): void {
+		const parent = findNode(workingStrategy.root, parentId);
+		if (!parent || parent.type !== 'group') return;
+		const newChildren = normalizeChildren([...parent.children, child]) as StrategyNode[];
+		const newRoot = applyUpdate(workingStrategy.root, parentId, { children: newChildren } as Partial<StrategyGroupNode>);
+		if (!newRoot) return;
+		const updated = { ...workingStrategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
+		save(updated);
+	}
+
+	function findNode(node: StrategyNode, id: string): StrategyNode | null {
+		if (node.id === id) return node;
+		if (node.type === 'group') {
+			for (const child of node.children) {
+				const found = findNode(child, id);
+				if (found) return found;
+			}
+		}
+		return null;
 	}
 
 	function applyUpdate(node: StrategyNode, targetId: string, changes: Partial<StrategyNode>): StrategyNode | null {
@@ -96,16 +128,18 @@
 		return { ...root, children: newChildren };
 	}
 
-	function addFirstNode(type: 'group' | 'asset', assetId?: string) {
+	function addToRoot(type: 'group' | 'asset', assetId?: string) {
 		const child: StrategyNode = type === 'group'
 			? { type: 'group', id: crypto.randomUUID(), label: 'New Group', weight: 1, children: [] }
 			: { type: 'leaf', id: crypto.randomUUID(), assetId: assetId!, weight: 1 };
-		const newRoot = { ...strategy.root, children: [...strategy.root.children, child] };
-		const updated = { ...strategy, root: newRoot, updatedAt: new Date().toISOString() };
-		debouncedSave(updated);
+		const newChildren = normalizeChildren([...workingStrategy.root.children, child]) as StrategyNode[];
+		const newRoot = { ...workingStrategy.root, children: newChildren };
+		const updated = { ...workingStrategy, root: newRoot, updatedAt: new Date().toISOString() };
+		save(updated);
 	}
 
-	let showFirstAssetPicker = $state(false);
+	let showRootAssetPicker = $state(false);
+	let showRootAddMenu = $state(false);
 </script>
 
 <div class="tree-editor" role="tree">
@@ -113,46 +147,52 @@
 		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 			<path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm2 6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2zm3 6a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
 		</svg>
-		<span class="root-name">{strategy.root.label}</span>
+		<span class="root-name">{workingStrategy.root.label}</span>
 	</div>
 
-	{#if strategy.root.children.length === 0}
+	{#if workingStrategy.root.children.length === 0}
 		<div class="empty-tree">
 			<p>No allocations yet. Add your first group or asset to start building your strategy.</p>
-			<div class="empty-actions">
-				<button class="add-first-btn" onclick={() => addFirstNode('group')}>
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-					</svg>
-					Add Group
-				</button>
-				<button class="add-first-btn" onclick={() => (showFirstAssetPicker = !showFirstAssetPicker)}>
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-					</svg>
-					Add Asset
-				</button>
-			</div>
-			{#if showFirstAssetPicker}
-				<div class="first-asset-picker">
-					{#each assets as asset}
-						<button class="asset-option" onclick={() => { addFirstNode('asset', asset.id); showFirstAssetPicker = false; }}>
-							{asset.name}
-						</button>
-					{/each}
-				</div>
-			{/if}
 		</div>
 	{:else}
-		{#each strategy.root.children as child (child.id)}
+		{#each workingStrategy.root.children as child (child.id)}
 			<StrategyTreeNode
 				node={child}
 				depth={1}
 				{assets}
 				onupdate={updateNode}
 				onremove={removeNode}
+				onaddchild={addChildToNode}
 			/>
 		{/each}
+	{/if}
+
+	<div class="root-add-row">
+		<div class="add-menu-wrapper">
+			<button class="add-root-btn" onclick={() => (showRootAddMenu = !showRootAddMenu)}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+				</svg>
+				Add
+			</button>
+			{#if showRootAddMenu}
+				<div class="add-dropdown">
+					<button class="dropdown-item" onclick={() => { addToRoot('group'); showRootAddMenu = false; }}>Add Group</button>
+					<button class="dropdown-item" onclick={() => { showRootAssetPicker = true; showRootAddMenu = false; }}>Add Asset</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	{#if showRootAssetPicker}
+		<div class="root-asset-picker">
+			{#each assets as asset}
+				<button class="asset-option" onclick={() => { addToRoot('asset', asset.id); showRootAssetPicker = false; }}>
+					{asset.name}
+				</button>
+			{/each}
+			<button class="asset-option cancel" onclick={() => (showRootAssetPicker = false)}>Cancel</button>
+		</div>
 	{/if}
 </div>
 
@@ -185,44 +225,75 @@
 
 	.empty-tree p {
 		font-size: var(--font-size-sm);
-		margin-bottom: var(--spacing-md);
 	}
 
-	.empty-actions {
+	.root-add-row {
 		display: flex;
-		gap: var(--spacing-sm);
-		justify-content: center;
+		padding: var(--spacing-xs) var(--spacing-sm);
 	}
 
-	.add-first-btn {
+	.add-menu-wrapper {
+		position: relative;
+	}
+
+	.add-root-btn {
 		display: inline-flex;
 		align-items: center;
 		gap: var(--spacing-xs);
-		padding: var(--spacing-xs) var(--spacing-md);
-		font-size: var(--font-size-sm);
-		color: var(--color-accent);
-		border: 1px solid var(--color-accent);
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+		border: 1px dashed var(--color-border);
 		border-radius: var(--radius-sm);
 		cursor: pointer;
 		background: none;
-		transition: background-color var(--transition-fast);
+		transition: color var(--transition-fast), border-color var(--transition-fast);
 	}
 
-	.add-first-btn:hover {
-		background: rgba(141, 208, 196, 0.1);
+	.add-root-btn:hover {
+		color: var(--color-accent);
+		border-color: var(--color-accent);
 	}
 
-	.first-asset-picker {
+	.add-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		z-index: 10;
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--glass-border);
+		border-radius: var(--radius-sm);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		min-width: 120px;
+		overflow: hidden;
+		margin-top: 2px;
+	}
+
+	.dropdown-item {
+		display: block;
+		width: 100%;
+		padding: var(--spacing-xs) var(--spacing-md);
+		font-size: var(--font-size-sm);
+		text-align: left;
+		cursor: pointer;
+		background: none;
+		border: none;
+		color: var(--color-text-primary);
+	}
+
+	.dropdown-item:hover {
+		background: var(--color-bg-tertiary);
+	}
+
+	.root-asset-picker {
 		display: flex;
 		flex-direction: column;
-		margin-top: var(--spacing-sm);
-		background: var(--color-bg-card);
+		margin: 0 var(--spacing-sm);
+		background: var(--color-bg-secondary);
 		border: 1px solid var(--glass-border);
 		border-radius: var(--radius-sm);
 		max-height: 200px;
 		overflow-y: auto;
-		max-width: 280px;
-		margin-inline: auto;
 	}
 
 	.asset-option {
@@ -237,5 +308,10 @@
 
 	.asset-option:hover {
 		background: var(--color-bg-tertiary);
+	}
+
+	.asset-option.cancel {
+		color: var(--color-text-muted);
+		border-top: 1px solid var(--color-border);
 	}
 </style>

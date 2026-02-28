@@ -351,7 +351,7 @@
 	}
 
 	.toggle-btn.active {
-		background: var(--color-bg-card);
+		background: var(--color-bg-secondary);
 		color: var(--color-accent);
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}

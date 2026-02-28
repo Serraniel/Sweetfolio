@@ -156,8 +156,11 @@
 	}
 
 	function handleMouseMove(e: MouseEvent) {
-		tooltipX = e.clientX;
-		tooltipY = e.clientY;
+		const wrapper = (e.currentTarget as Element).closest('.sunburst-wrapper');
+		if (!wrapper) return;
+		const rect = wrapper.getBoundingClientRect();
+		tooltipX = e.clientX - rect.left + 12;
+		tooltipY = e.clientY - rect.top - 8;
 	}
 
 	function handleClick(arc: SunburstArc) {
@@ -223,7 +226,7 @@
 	{#if hoveredArc}
 		<div
 			class="sunburst-tooltip"
-			style="left: {tooltipX + 12}px; top: {tooltipY - 40}px;"
+			style="left: {tooltipX}px; top: {tooltipY}px;"
 		>
 			<strong>{displayLabel(hoveredArc)}</strong>
 			<div>Weight: {(relativeWeight(hoveredArc) * 100).toFixed(1)}%</div>
@@ -247,10 +250,10 @@
 	}
 
 	.sunburst-tooltip {
-		position: fixed;
+		position: absolute;
 		pointer-events: none;
 		z-index: 100;
-		background: var(--color-bg-card, #fff);
+		background: var(--color-bg-secondary);
 		border: 1px solid var(--glass-border, #ddd);
 		border-radius: var(--radius-sm, 4px);
 		padding: var(--spacing-sm, 8px);
