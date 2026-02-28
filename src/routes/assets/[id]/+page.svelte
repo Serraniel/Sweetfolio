@@ -9,13 +9,9 @@
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
-	import { currencies, loadCurrencies } from '$lib/stores/currencies';
+	import { currencies } from '$lib/stores/currencies';
 	import { calculateMetrics } from '$lib/workers/manager';
 	import type { MetricsResult, CurrencyRate } from '$lib/types';
-	import { onMount } from 'svelte';
-
-	// Load currencies on mount for conversion
-	onMount(() => { loadCurrencies(); });
 
 	const assetId = $derived(page.params.id);
 	const asset = $derived($assets.find((a) => a.id === assetId));

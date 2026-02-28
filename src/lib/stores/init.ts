@@ -1,6 +1,7 @@
 import { loadAssets } from './assets';
 import { loadPortfolios } from './portfolios';
 import { loadSettings } from './settings';
+import { loadCurrencies } from './currencies';
 
 let initialized = false;
 
@@ -12,5 +13,5 @@ export async function initStores(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  await Promise.all([loadAssets(), loadPortfolios(), loadSettings()]);
+  await Promise.all([loadAssets(), loadPortfolios(), loadSettings(), loadCurrencies()]);
 }
