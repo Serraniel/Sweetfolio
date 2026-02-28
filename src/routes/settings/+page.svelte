@@ -1,21 +1,49 @@
 <script lang="ts">
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
-	import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
+	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
+	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { theme } from '$lib/stores/theme';
 	import { settings, setSetting } from '$lib/stores/settings';
+	import { currencies, addCurrencyRate, removeCurrencyRate, loadCurrencies } from '$lib/stores/currencies';
+	import { detectFormat } from '$lib/parsers/format-detection';
+	import { parseCSV } from '$lib/parsers/normalization';
+	import { parseCSVRows } from '$lib/parsers/csv';
+	import type { DetectedFormat } from '$lib/types';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
 	let saving = $state(false);
 
-	const currencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
+	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
+
+	// Currency upload state
+	let showCurrencyModal = $state(false);
+	let currencyRawText = $state('');
+	let currencyPreview: string[][] = $state([]);
+	let currencyFormat: DetectedFormat = $state({
+		delimiter: ',',
+		decimalSeparator: '.',
+		dateFormat: 'YYYY-MM-DD',
+		hasHeader: true,
+		dateColumn: 0,
+		closeColumn: 1
+	});
+	let currencyPairSource = $state('USD');
+	let currencyPairTarget = $state('EUR');
+	let currencyAssetName = $state('');
+	let currencyAssetCurrency = $state('EUR');
 
 	// Initialize from store
 	$effect(() => {
 		const s = $settings;
 		if (s.mainCurrency) mainCurrency = s.mainCurrency as string;
 		if (s.riskFreeRate !== undefined) riskFreeRate = s.riskFreeRate as number;
+	});
+
+	// Load currencies on mount
+	$effect(() => {
+		loadCurrencies();
 	});
 
 	async function handleSave() {
@@ -25,6 +53,38 @@
 			setSetting('riskFreeRate', riskFreeRate),
 		]);
 		saving = false;
+	}
+
+	function handleCurrencyFiles(files: FileList) {
+		if (files.length === 0) return;
+		const file = files[0];
+		const reader = new FileReader();
+		reader.onload = () => {
+			currencyRawText = reader.result as string;
+			const fmt = detectFormat(currencyRawText);
+			currencyFormat = fmt;
+			currencyPreview = parseCSVRows(currencyRawText, fmt.delimiter).slice(0, 10);
+			currencyAssetName = file.name.replace(/\.csv$/i, '');
+			showCurrencyModal = true;
+		};
+		reader.readAsText(file);
+	}
+
+	async function handleCurrencyImportConfirm() {
+		const result = parseCSV(currencyRawText, currencyFormat);
+		const pair = currencyPairSource + currencyPairTarget;
+		const rates = result.prices.map((p) => ({ date: p.date, rate: p.close }));
+
+		await addCurrencyRate({ pair, rates });
+
+		showCurrencyModal = false;
+		currencyRawText = '';
+		currencyPreview = [];
+	}
+
+	async function handleDeleteCurrency(pair: string) {
+		if (!confirm(`Delete currency pair ${pair}?`)) return;
+		await removeCurrencyRate(pair);
 	}
 
 	async function handleClearData() {
@@ -72,12 +132,70 @@
 					</div>
 					<div class="setting-control">
 						<select bind:value={mainCurrency}>
-							{#each currencies as c}
+							{#each supportedCurrencies as c}
 								<option value={c}>{c}</option>
 							{/each}
 						</select>
 					</div>
 				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Exchange Rates</h2>
+				<p class="section-description">Upload historical exchange rate CSV files for cross-currency conversion.</p>
+
+				<div class="currency-pair-selector">
+					<div class="pair-select-row">
+						<div class="pair-select-field">
+							<label for="pair-source">Source</label>
+							<select id="pair-source" bind:value={currencyPairSource}>
+								{#each supportedCurrencies as c}
+									<option value={c}>{c}</option>
+								{/each}
+							</select>
+						</div>
+						<span class="pair-arrow">&rarr;</span>
+						<div class="pair-select-field">
+							<label for="pair-target">Target</label>
+							<select id="pair-target" bind:value={currencyPairTarget}>
+								{#each supportedCurrencies as c}
+									<option value={c}>{c}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+				</div>
+
+				<div class="currency-upload-area">
+					<FileDropzone onfiles={handleCurrencyFiles} />
+				</div>
+
+				{#if $currencies.length > 0}
+					<div class="currency-pairs">
+						<h3>Loaded Pairs</h3>
+						<div class="currency-pair-list">
+							{#each $currencies as cr}
+								<div class="currency-pair-row">
+									<span class="pair-name">{cr.pair.slice(0, 3)}/{cr.pair.slice(3)}</span>
+									<span class="pair-count">{cr.rates.length.toLocaleString()} rates</span>
+									<span class="pair-range">
+										{#if cr.rates.length > 0}
+											{cr.rates[0].date} &ndash; {cr.rates[cr.rates.length - 1].date}
+										{/if}
+									</span>
+									<Button variant="ghost" size="sm" onclick={() => handleDeleteCurrency(cr.pair)}>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="3 6 5 6 21 6"/>
+											<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+										</svg>
+									</Button>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 		</Card>
 
@@ -126,6 +244,20 @@
 			</Button>
 		</div>
 	</div>
+
+	{#if showCurrencyModal}
+		<FormatConfigModal
+			bind:open={showCurrencyModal}
+			bind:detectedFormat={currencyFormat}
+			preview={currencyPreview}
+			onconfirm={handleCurrencyImportConfirm}
+			bind:assetName={currencyAssetName}
+			bind:assetCurrency={currencyAssetCurrency}
+			title="Currency Rate Import"
+		/>
+		<!-- Pair selection is handled inside the modal via the assetName field;
+		     the pair is derived from source/target selectors below the modal -->
+	{/if}
 </div>
 
 <style>
@@ -236,5 +368,86 @@
 	.save-row {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	.section-description {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.currency-pair-selector {
+		margin-bottom: var(--spacing-md);
+	}
+
+	.pair-select-row {
+		display: flex;
+		align-items: flex-end;
+		gap: var(--spacing-md);
+	}
+
+	.pair-select-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.pair-select-field label {
+		font-size: var(--font-size-xs);
+		font-weight: 500;
+		color: var(--color-text-muted);
+	}
+
+	.pair-arrow {
+		font-size: var(--font-size-lg);
+		color: var(--color-text-muted);
+		padding-bottom: var(--spacing-sm);
+	}
+
+	.currency-upload-area {
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.currency-pairs {
+		margin-top: var(--spacing-lg);
+	}
+
+	.currency-pairs h3 {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.currency-pair-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.currency-pair-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+		padding: var(--spacing-sm) 0;
+		border-bottom: 1px solid var(--color-border);
+		font-size: var(--font-size-sm);
+	}
+
+	.pair-name {
+		font-weight: 600;
+		font-family: var(--font-mono);
+		min-width: 80px;
+	}
+
+	.pair-count {
+		color: var(--color-text-muted);
+		font-size: var(--font-size-xs);
+		min-width: 80px;
+	}
+
+	.pair-range {
+		color: var(--color-text-muted);
+		font-size: var(--font-size-xs);
+		flex: 1;
 	}
 </style>
