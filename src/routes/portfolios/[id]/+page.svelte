@@ -3,9 +3,13 @@
 	import { goto } from '$app/navigation';
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
+	import Modal from '$lib/components/shared/Modal.svelte';
 	import MetricsTable from '$lib/components/shared/MetricsTable.svelte';
+	import AllocationChart from '$lib/charts/AllocationChart.svelte';
 	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
 	import CorrelationMatrix from '$lib/charts/CorrelationMatrix.svelte';
+	import PriceChart from '$lib/charts/PriceChart.svelte';
+	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { assets } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
@@ -15,6 +19,49 @@
 
 	const portfolioId = $derived(page.params.id);
 	const portfolio = $derived($portfolios.find((p) => p.id === portfolioId));
+
+	// Edit modal state
+	let showEditModal = $state(false);
+	let editName = $state('');
+	let editBenchmark = $state(false);
+	let editAllocations: Array<{ id: string; name: string; weight: number; selected: boolean }> = $state([]);
+
+	function openEditModal() {
+		if (!portfolio) return;
+		editName = portfolio.name;
+		editBenchmark = portfolio.isBenchmark;
+		editAllocations = $assets.map((a) => {
+			const alloc = portfolio.allocations.find((al) => al.assetId === a.id);
+			return {
+				id: a.id,
+				name: a.name,
+				weight: alloc ? Math.round(alloc.weight * 100) : 0,
+				selected: !!alloc
+			};
+		});
+		showEditModal = true;
+	}
+
+	async function handleEditSave() {
+		if (!portfolio) return;
+		const selected = editAllocations.filter((a) => a.selected);
+		if (selected.length === 0 || !editName.trim()) return;
+
+		const totalWeight = selected.reduce((sum, a) => sum + a.weight, 0);
+		const allocations = selected.map((a) => ({
+			assetId: a.id,
+			weight: totalWeight > 0 ? a.weight / totalWeight : 1 / selected.length
+		}));
+
+		await updatePortfolio({
+			...portfolio,
+			name: editName.trim(),
+			isBenchmark: editBenchmark,
+			allocations,
+			updatedAt: new Date().toISOString()
+		});
+		showEditModal = false;
+	}
 
 	// Resolve allocation asset names
 	const resolvedAllocations = $derived(
@@ -158,6 +205,7 @@
 					</div>
 				</div>
 				<div class="header-actions">
+					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
 					<Button variant="default" size="sm" onclick={toggleBenchmark}>
 						{portfolio.isBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
 					</Button>
@@ -172,16 +220,21 @@
 				{#if resolvedAllocations.length === 0}
 					<p class="muted">No allocations configured.</p>
 				{:else}
-					<div class="allocation-bars">
-						{#each resolvedAllocations as alloc}
-							<div class="alloc-row">
-								<span class="alloc-name">{alloc.assetName}</span>
-								<div class="alloc-bar-track">
-									<div class="alloc-bar" style="width: {alloc.weight * 100}%"></div>
+					<div class="allocation-layout">
+						<div class="allocation-bars">
+							{#each resolvedAllocations as alloc}
+								<div class="alloc-row">
+									<span class="alloc-name">{alloc.assetName}</span>
+									<div class="alloc-bar-track">
+										<div class="alloc-bar" style="width: {alloc.weight * 100}%"></div>
+									</div>
+									<span class="alloc-weight">{(alloc.weight * 100).toFixed(1)}%</span>
 								</div>
-								<span class="alloc-weight">{(alloc.weight * 100).toFixed(1)}%</span>
-							</div>
-						{/each}
+							{/each}
+						</div>
+						<div class="allocation-chart-container">
+							<AllocationChart allocations={resolvedAllocations.map(a => ({ label: a.assetName, weight: a.weight }))} size={180} />
+						</div>
 					</div>
 				{/if}
 			</Card>
@@ -199,8 +252,20 @@
 		</section>
 
 		<section class="charts-section">
+			{#if portfolioPrices().length > 0}
+				<h2>Portfolio Value</h2>
+				<Card padding="lg">
+					<PriceChart series={[{ label: portfolio.name, prices: portfolioPrices() }]} />
+				</Card>
+
+				<h2>Drawdown</h2>
+				<Card padding="lg">
+					<DrawdownChart prices={portfolioPrices()} />
+				</Card>
+			{/if}
+
 			{#if chartSeries().length > 0}
-				<h2>Performance</h2>
+				<h2>Performance Comparison</h2>
 				<Card padding="lg">
 					<PerformanceChart series={chartSeries()} />
 				</Card>
@@ -213,6 +278,65 @@
 				</Card>
 			{/if}
 		</section>
+
+		<Modal bind:open={showEditModal} title="Edit Portfolio">
+			<div class="edit-form">
+				<div class="form-field">
+					<label for="edit-portfolio-name">Portfolio Name</label>
+					<input id="edit-portfolio-name" type="text" bind:value={editName} />
+				</div>
+
+				<div class="form-field inline">
+					<label>
+						<input type="checkbox" bind:checked={editBenchmark} />
+						Use as benchmark
+					</label>
+				</div>
+
+				{#if editAllocations.length === 0}
+					<div class="form-notice">
+						<p>No assets available.</p>
+					</div>
+				{:else}
+					<div class="form-field">
+						<!-- svelte-ignore a11y_label_has_associated_control -->
+						<label>Asset Allocation</label>
+						<div class="edit-allocation-list">
+							{#each editAllocations as asset}
+								<div class="edit-allocation-item">
+									<label class="allocation-checkbox">
+										<input type="checkbox" bind:checked={asset.selected} />
+										<span>{asset.name}</span>
+									</label>
+									{#if asset.selected}
+										<div class="edit-allocation-slider">
+											<input
+												type="range"
+												min="0"
+												max="100"
+												step="1"
+												bind:value={asset.weight}
+											/>
+											<span class="edit-allocation-weight">{asset.weight}%</span>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+			{#snippet footer()}
+				<Button variant="ghost" onclick={() => showEditModal = false}>Cancel</Button>
+				<Button
+					variant="primary"
+					onclick={handleEditSave}
+					disabled={!editName.trim() || editAllocations.filter((a) => a.selected).length === 0}
+				>
+					Save
+				</Button>
+			{/snippet}
+		</Modal>
 	</div>
 {/if}
 
@@ -350,5 +474,96 @@
 		padding: var(--spacing-md);
 		color: var(--color-text-muted);
 		font-size: var(--font-size-sm);
+	}
+
+	.allocation-layout {
+		display: flex;
+		gap: var(--spacing-xl);
+		align-items: center;
+	}
+
+	.allocation-chart-container {
+		flex-shrink: 0;
+	}
+
+	@media (max-width: 700px) {
+		.allocation-layout {
+			flex-direction: column;
+		}
+	}
+
+	.edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.form-field > label {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-text-secondary);
+	}
+
+	.form-field.inline label {
+		flex-direction: row;
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		cursor: pointer;
+	}
+
+	.form-notice {
+		padding: var(--spacing-md);
+		background: var(--color-bg-tertiary);
+		border-radius: var(--radius-sm);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+	}
+
+	.edit-allocation-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+	}
+
+	.edit-allocation-item {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.allocation-checkbox {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		cursor: pointer;
+		font-size: var(--font-size-sm);
+	}
+
+	.edit-allocation-slider {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding-left: var(--spacing-lg);
+	}
+
+	.edit-allocation-slider input[type='range'] {
+		flex: 1;
+		padding: 0;
+		border: none;
+		background: transparent;
+	}
+
+	.edit-allocation-weight {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
+		min-width: 40px;
+		text-align: right;
 	}
 </style>
