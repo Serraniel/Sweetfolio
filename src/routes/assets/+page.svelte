@@ -71,6 +71,7 @@
 	let lookupResult: ScraperResult | null = $state(null);
 	let lookupEditName = $state('');
 	let lookupEditCurrency = $state('');
+	let lookupEditClassification: AssetClassification = $state('unknown');
 	let fetchedIdentifier: string | null = $state(null);
 	let fetchedIdentifierType: IdentifierType = $state(null);
 
@@ -112,6 +113,7 @@
 				lookupResult = outcome.data;
 				lookupEditName = outcome.data.name ?? identifier;
 				lookupEditCurrency = outcome.data.currency ?? 'EUR';
+				lookupEditClassification = outcome.data.classification ?? 'unknown';
 			} else {
 				lookupError = outcome.error.message;
 			}
@@ -131,7 +133,7 @@
 			isin: fetchedIdentifierType === 'isin' ? fetchedIdentifier : null,
 			wkn: fetchedIdentifierType === 'wkn' ? fetchedIdentifier : null,
 			currency: lookupEditCurrency,
-			classification: lookupResult.classification ?? 'unknown',
+			classification: lookupEditClassification,
 			prices: $state.snapshot(lookupResult.prices),
 			formatConfig: null,
 			rawCSV: null,
@@ -152,6 +154,7 @@
 		lookupError = null;
 		lookupEditName = '';
 		lookupEditCurrency = '';
+		lookupEditClassification = 'unknown';
 		fetchedIdentifier = null;
 		fetchedIdentifierType = null;
 	}
@@ -427,6 +430,14 @@
 								class="preview-input preview-input--short"
 								bind:value={lookupEditCurrency}
 							/>
+						</label>
+						<label class="preview-label">
+							Classification
+							<select class="preview-input preview-input--short" bind:value={lookupEditClassification}>
+								{#each ASSET_CLASSIFICATIONS as cls}
+									<option value={cls}>{cls.toUpperCase()}</option>
+								{/each}
+							</select>
 						</label>
 						<div class="preview-meta">
 							<span class="mono">{fetchedIdentifier}</span>

@@ -62,7 +62,7 @@ export function getDB(): Promise<IDBDatabase> {
       }
 
       // Migration v1 → v2: add classification to existing assets
-      if (event.oldVersion >= 1 && event.oldVersion < 2) {
+      if (event.oldVersion === 1) {
         const tx = (event.target as IDBOpenDBRequest).transaction!;
         const store = tx.objectStore('assets');
         store.createIndex('by-classification', 'classification', { unique: false });
@@ -79,6 +79,9 @@ export function getDB(): Promise<IDBDatabase> {
             }
             cursor.continue();
           }
+        };
+        cursorReq.onerror = () => {
+          console.error('Failed to backfill asset classification during migration', cursorReq.error);
         };
       }
     };
