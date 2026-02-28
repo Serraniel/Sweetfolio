@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import type { Strategy, StrategyNode } from '$lib/types';
 import * as db from '$lib/storage/strategies';
 import { removeNodeById } from '$lib/engine/strategy';
+import { unlinkPortfoliosFromStrategy } from './portfolios';
 
 export const strategies = writable<Strategy[]>([]);
 
@@ -20,6 +21,12 @@ export async function updateStrategy(strategy: Strategy): Promise<void> {
 }
 
 export async function removeStrategy(id: string): Promise<void> {
+  const current = get(strategies);
+  const strategy = current.find((s) => s.id === id);
+  if (strategy) {
+    // Unlink generated portfolios (clear their sourceStrategyId)
+    await unlinkPortfoliosFromStrategy(strategy.generatedPortfolioIds);
+  }
   await db.remove(id);
   strategies.update((list) => list.filter((s) => s.id !== id));
 }
