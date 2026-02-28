@@ -9,10 +9,21 @@ const DB_VERSION = 1;
 let dbInstance: IDBDatabase | null = null;
 
 export function getDB(): Promise<IDBDatabase> {
-  if (dbInstance) return Promise.resolve(dbInstance);
+  if (dbInstance && dbInstance.version >= DB_VERSION) return Promise.resolve(dbInstance);
+
+  // Close stale connection before re-opening at new version
+  if (dbInstance) {
+    dbInstance.close();
+    dbInstance = null;
+  }
 
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onblocked = () => {
+      // Another tab holds an older connection — warn but keep waiting
+      console.warn('IndexedDB upgrade blocked. Close other Sweetfolio tabs and reload.');
+    };
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
