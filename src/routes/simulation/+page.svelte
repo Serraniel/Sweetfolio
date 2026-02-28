@@ -109,15 +109,14 @@
 				case 'simulation-progress':
 					setProgress(msg.payload.completed, msg.payload.total);
 					break;
-				case 'simulation-result':
-					// Show rendering indicator, then set result on next frame
-					// so the UI has a chance to update before the heavy chart render
+				case 'simulation-result': {
+					// The chart render (uPlot) is synchronous and blocks the main thread.
+					// We use setTimeout to yield to the browser so it can paint the
+					// "Rendering chart..." indicator before the heavy render starts.
+					const payload = msg.payload;
 					rendering = true;
-					requestAnimationFrame(() => {
-						setResult(msg.payload);
-						rendering = false;
-					});
-					// Persist simulation results to IndexedDB
+					setRunning(false);
+					// Persist and clean up worker immediately (non-blocking)
 					saveSimulation({
 						id: crypto.randomUUID(),
 						config: {
@@ -126,12 +125,18 @@
 							riskFreeRate,
 							benchmarkPortfolioId: null
 						},
-						results: msg.payload,
+						results: payload,
 						createdAt: new Date().toISOString()
 					});
 					worker?.terminate();
 					worker = null;
+					// Yield to browser for paint, then trigger the heavy render
+					setTimeout(() => {
+						setResult(payload);
+						rendering = false;
+					}, 80);
 					break;
+				}
 				case 'error':
 					setRunning(false);
 					worker?.terminate();
@@ -293,7 +298,15 @@
 		</aside>
 
 		<div class="results-area">
-			{#if result}
+			{#if rendering}
+				<Card padding="lg">
+					<div class="chart-placeholder">
+						<div class="rendering-spinner"></div>
+						<h3>Rendering chart...</h3>
+						<p>Drawing {simulationCount.toLocaleString()} portfolios</p>
+					</div>
+				</Card>
+			{:else if result}
 				<Card padding="lg">
 					<EfficientFrontier
 						portfolios={result.portfolios}
@@ -499,6 +512,19 @@
 		font-size: var(--font-size-sm);
 		color: var(--color-text-muted);
 		animation: pulse 1.2s ease-in-out infinite;
+	}
+
+	.rendering-spinner {
+		width: 36px;
+		height: 36px;
+		border: 3px solid var(--color-border);
+		border-top-color: var(--color-accent);
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
 	}
 
 	@keyframes pulse {
