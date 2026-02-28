@@ -3,11 +3,24 @@
 
 	const STORAGE_KEY = 'sweetfolio-hint-local-storage-dismissed';
 
-	let dismissed = $state(browser && localStorage.getItem(STORAGE_KEY) === 'true');
+	let dismissed = $state(
+		browser &&
+			(() => {
+				try {
+					return localStorage.getItem(STORAGE_KEY) === 'true';
+				} catch {
+					return false;
+				}
+			})()
+	);
 
 	function dismiss() {
 		dismissed = true;
-		localStorage.setItem(STORAGE_KEY, 'true');
+		try {
+			localStorage.setItem(STORAGE_KEY, 'true');
+		} catch {
+			// Silently fail — hint stays dismissed for this session
+		}
 	}
 </script>
 
@@ -75,5 +88,10 @@
 	.hint-dismiss:hover {
 		color: var(--color-text-primary);
 		background: var(--color-bg-tertiary);
+	}
+
+	.hint-dismiss:focus-visible {
+		outline: 2px solid var(--color-accent);
+		outline-offset: 2px;
 	}
 </style>
