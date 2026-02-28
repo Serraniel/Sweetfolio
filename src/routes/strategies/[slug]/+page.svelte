@@ -1,0 +1,384 @@
+<script lang="ts">
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import Card from '$lib/components/shared/Card.svelte';
+	import Button from '$lib/components/shared/Button.svelte';
+	import StrategyTreeEditor from '$lib/components/strategy/StrategyTreeEditor.svelte';
+	import { strategies, updateStrategy, removeStrategy } from '$lib/stores/strategies';
+	import { assets } from '$lib/stores/assets';
+	import { portfolios } from '$lib/stores/portfolios';
+	import { slugify } from '$lib/utils/slug';
+	import { flattenStrategy, getLeafCount } from '$lib/engine/strategy';
+	import type { Strategy } from '$lib/types';
+
+	const slug = $derived(page.params.slug ?? '');
+	const strategy = $derived($strategies.find((s) => slugify(s.name) === slug));
+
+	// Resolve generated portfolios
+	const generatedPortfolios = $derived(
+		strategy
+			? strategy.generatedPortfolioIds
+					.map((pid) => $portfolios.find((p) => p.id === pid))
+					.filter((p): p is NonNullable<typeof p> => p != null)
+			: []
+	);
+
+	// Build asset name map for charts
+	const assetNames = $derived(
+		Object.fromEntries($assets.map((a) => [a.id, a.name]))
+	);
+
+	// Flattened allocations for info display
+	const flatAllocations = $derived(
+		strategy ? flattenStrategy(strategy.root) : []
+	);
+
+	let editingName = $state(false);
+	let nameInput = $state('');
+
+	function startEditName() {
+		if (!strategy) return;
+		nameInput = strategy.name;
+		editingName = true;
+	}
+
+	async function saveName() {
+		if (!strategy || !nameInput.trim()) return;
+		const newName = nameInput.trim();
+		await updateStrategy({ ...strategy, name: newName, updatedAt: new Date().toISOString() });
+		editingName = false;
+		const newSlug = slugify(newName);
+		if (newSlug !== slug) {
+			goto(`/strategies/${newSlug}`, { replaceState: true });
+		}
+	}
+
+	async function handleSave(updated: Strategy) {
+		await updateStrategy(updated);
+	}
+
+	async function handleDelete() {
+		if (!strategy) return;
+		if (!confirm(`Delete strategy "${strategy.name}"? Generated portfolios will be kept but unlinked.`)) return;
+		await removeStrategy(strategy.id);
+		goto('/strategies');
+	}
+
+	function isOutOfSync(portfolioUpdatedAt: string): boolean {
+		if (!strategy) return false;
+		return strategy.updatedAt > portfolioUpdatedAt;
+	}
+</script>
+
+<svelte:head>
+	<title>{strategy ? `${strategy.name} – Sweetfolio` : 'Strategy not found – Sweetfolio'}</title>
+</svelte:head>
+
+{#if !strategy}
+	<div class="strategy-detail">
+		<Card padding="lg">
+			<div class="empty-state">
+				<h3>Strategy not found</h3>
+				<p>This strategy may have been deleted.</p>
+				<a href="/strategies">Back to Strategies</a>
+			</div>
+		</Card>
+	</div>
+{:else}
+	<div class="strategy-detail">
+		<header class="page-header">
+			<div class="page-header-row">
+				<div>
+					<a href="/strategies" class="back-link">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="15 18 9 12 15 6" />
+						</svg>
+						Strategies
+					</a>
+					<div class="title-row">
+						{#if editingName}
+							<input
+								class="name-edit-input"
+								type="text"
+								bind:value={nameInput}
+								onkeydown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') editingName = false; }}
+							/>
+							<Button variant="primary" size="sm" onclick={saveName}>Save</Button>
+							<Button variant="ghost" size="sm" onclick={() => (editingName = false)}>Cancel</Button>
+						{:else}
+							<h1>{strategy.name}</h1>
+							<button class="edit-name-btn" onclick={startEditName} title="Edit name">
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+									<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+								</svg>
+							</button>
+						{/if}
+					</div>
+				</div>
+				<div class="header-actions">
+					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
+				</div>
+			</div>
+		</header>
+
+		<div class="two-column-layout">
+			<section class="tree-panel">
+				<h2>Allocation Tree</h2>
+				<Card padding="md">
+					<StrategyTreeEditor
+						{strategy}
+						assets={$assets}
+						onsave={handleSave}
+					/>
+				</Card>
+
+				{#if flatAllocations.length > 0}
+					<div class="flat-summary">
+						<h3>Flattened Weights</h3>
+						<div class="flat-list">
+							{#each flatAllocations as alloc}
+								<div class="flat-item">
+									<span class="flat-name">{assetNames[alloc.assetId] ?? 'Unknown'}</span>
+									<span class="flat-weight">{(alloc.weight * 100).toFixed(1)}%</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</section>
+
+			<section class="chart-panel">
+				<h2>
+					Visualization
+					<span class="chart-placeholder-note">(Charts will be wired in next)</span>
+				</h2>
+				<Card padding="lg">
+					<div class="chart-placeholder">
+						<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+							<path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm2 6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2zm3 6a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
+						</svg>
+						<p>Sunburst / Icicle chart</p>
+					</div>
+				</Card>
+
+				{#if generatedPortfolios.length > 0}
+					<h2>Generated Portfolios</h2>
+					<Card padding="md">
+						<div class="generated-list">
+							{#each generatedPortfolios as portfolio}
+								<a href="/portfolios/{slugify(portfolio.name)}" class="generated-item">
+									<span class="generated-name">{portfolio.name}</span>
+									{#if isOutOfSync(portfolio.updatedAt)}
+										<span class="badge out-of-sync">Out of sync</span>
+									{:else}
+										<span class="badge synced">Synced</span>
+									{/if}
+								</a>
+							{/each}
+						</div>
+					</Card>
+				{/if}
+			</section>
+		</div>
+	</div>
+{/if}
+
+<style>
+	.strategy-detail {
+		max-width: 1200px;
+	}
+
+	.page-header {
+		margin-bottom: var(--spacing-xl);
+	}
+
+	.page-header-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--spacing-md);
+	}
+
+	.back-link {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.back-link:hover {
+		color: var(--color-accent);
+	}
+
+	.title-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.edit-name-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+		cursor: pointer;
+		background: none;
+		border: none;
+	}
+
+	.edit-name-btn:hover {
+		background: var(--color-border);
+		color: var(--color-text-primary);
+	}
+
+	.name-edit-input {
+		font-size: var(--font-size-xl);
+		font-weight: 700;
+		color: var(--color-text-primary);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-sm);
+		padding: var(--spacing-xs) var(--spacing-sm);
+	}
+
+	.header-actions {
+		display: flex;
+		gap: var(--spacing-sm);
+		flex-shrink: 0;
+	}
+
+	.two-column-layout {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: var(--spacing-xl);
+		align-items: start;
+	}
+
+	@media (max-width: 900px) {
+		.two-column-layout {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	h2 {
+		font-size: var(--font-size-lg);
+		margin-bottom: var(--spacing-md);
+	}
+
+	.chart-placeholder-note {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+		font-weight: 400;
+	}
+
+	.chart-placeholder {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: var(--spacing-xl);
+		color: var(--color-text-muted);
+		min-height: 300px;
+	}
+
+	.chart-placeholder p {
+		margin-top: var(--spacing-sm);
+		font-size: var(--font-size-sm);
+	}
+
+	.flat-summary {
+		margin-top: var(--spacing-lg);
+	}
+
+	.flat-summary h3 {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-text-secondary);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.flat-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.flat-item {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-sm);
+	}
+
+	.flat-name {
+		color: var(--color-text-secondary);
+	}
+
+	.flat-weight {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+	}
+
+	.generated-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.generated-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--spacing-sm);
+		border-radius: var(--radius-sm);
+		transition: background-color var(--transition-fast);
+	}
+
+	.generated-item:hover {
+		background: var(--color-bg-tertiary);
+	}
+
+	.generated-name {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.badge {
+		font-size: var(--font-size-xs);
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-weight: 500;
+	}
+
+	.badge.synced {
+		background: rgba(141, 208, 196, 0.15);
+		color: var(--color-accent);
+	}
+
+	.badge.out-of-sync {
+		background: rgba(255, 183, 77, 0.15);
+		color: #f0a030;
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm);
+		text-align: center;
+		padding: var(--spacing-xl) 0;
+		color: var(--color-text-muted);
+	}
+
+	.empty-state h3 {
+		color: var(--color-text-secondary);
+	}
+</style>
