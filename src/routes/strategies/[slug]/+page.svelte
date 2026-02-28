@@ -4,12 +4,16 @@
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
 	import StrategyTreeEditor from '$lib/components/strategy/StrategyTreeEditor.svelte';
+	import SunburstChart from '$lib/charts/SunburstChart.svelte';
+	import IcicleChart from '$lib/charts/IcicleChart.svelte';
 	import { strategies, updateStrategy, removeStrategy } from '$lib/stores/strategies';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios } from '$lib/stores/portfolios';
 	import { slugify } from '$lib/utils/slug';
 	import { flattenStrategy, getLeafCount } from '$lib/engine/strategy';
 	import type { Strategy } from '$lib/types';
+
+	let chartMode: 'sunburst' | 'icicle' = $state('sunburst');
 
 	const slug = $derived(page.params.slug ?? '');
 	const strategy = $derived($strategies.find((s) => slugify(s.name) === slug));
@@ -149,17 +153,29 @@
 			</section>
 
 			<section class="chart-panel">
-				<h2>
-					Visualization
-					<span class="chart-placeholder-note">(Charts will be wired in next)</span>
-				</h2>
+				<h2>Visualization</h2>
+				<div class="chart-toggle">
+					<button
+						class="toggle-btn"
+						class:active={chartMode === 'sunburst'}
+						onclick={() => (chartMode = 'sunburst')}
+					>Sunburst</button>
+					<button
+						class="toggle-btn"
+						class:active={chartMode === 'icicle'}
+						onclick={() => (chartMode = 'icicle')}
+					>Icicle</button>
+				</div>
 				<Card padding="lg">
-					<div class="chart-placeholder">
-						<svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
-							<path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm2 6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2zm3 6a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
-						</svg>
-						<p>Sunburst / Icicle chart</p>
-					</div>
+					{#if strategy.root.children.length === 0}
+						<div class="chart-placeholder">
+							<p>Add nodes to the tree to see the visualization.</p>
+						</div>
+					{:else if chartMode === 'sunburst'}
+						<SunburstChart root={strategy.root} size={380} {assetNames} />
+					{:else}
+						<IcicleChart root={strategy.root} width={500} rowHeight={40} {assetNames} />
+					{/if}
 				</Card>
 
 				{#if generatedPortfolios.length > 0}
@@ -271,10 +287,32 @@
 		margin-bottom: var(--spacing-md);
 	}
 
-	.chart-placeholder-note {
+	.chart-toggle {
+		display: flex;
+		gap: 2px;
+		margin-bottom: var(--spacing-sm);
+		background: var(--color-bg-tertiary);
+		border-radius: var(--radius-sm);
+		padding: 2px;
+		width: fit-content;
+	}
+
+	.toggle-btn {
+		padding: var(--spacing-xs) var(--spacing-md);
 		font-size: var(--font-size-xs);
+		font-weight: 500;
+		border: none;
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		background: transparent;
 		color: var(--color-text-muted);
-		font-weight: 400;
+		transition: all var(--transition-fast);
+	}
+
+	.toggle-btn.active {
+		background: var(--color-bg-card);
+		color: var(--color-accent);
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 	}
 
 	.chart-placeholder {
