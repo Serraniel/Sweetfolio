@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Nav from './Nav.svelte';
+	import LocalStorageHint from '../shared/LocalStorageHint.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -11,6 +12,7 @@
 <div class="shell" class:collapsed>
 	<Nav bind:collapsed />
 	<main class="main-content">
+		<LocalStorageHint />
 		{@render children()}
 		<footer class="app-footer">
 			<a href="https://github.com/Serraniel/Sweetfolio" target="_blank" rel="noopener noreferrer" class="footer-link">
