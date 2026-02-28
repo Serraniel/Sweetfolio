@@ -8,7 +8,22 @@
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
 	import { settings } from '$lib/stores/settings';
+	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
+	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import type { DetectedFormat } from '$lib/types';
+
+	function isBenchmark(assetId: string): boolean {
+		const ref = $benchmarkRef;
+		return ref !== null && ref.type === 'asset' && ref.id === assetId;
+	}
+
+	async function toggleBenchmark(assetId: string) {
+		if (isBenchmark(assetId)) {
+			await setBenchmark(null);
+		} else {
+			await setBenchmark({ type: 'asset', id: assetId });
+		}
+	}
 
 	let showFormatModal = $state(false);
 	let csvPreview: string[][] = $state([]);
@@ -24,6 +39,8 @@
 	let importFileName = $state('');
 	let assetName = $state('');
 	let assetCurrency = $state('EUR');
+	let assetIsin: string | null = $state(null);
+	let assetWkn: string | null = $state(null);
 
 	// Toast notifications for auto-import feedback
 	let toasts: Array<{ id: number; message: string }> = $state([]);
@@ -38,6 +55,8 @@
 	}
 
 	const autoImportEnabled = $derived($settings.autoImportMode !== false);
+	const autoResolveEnabled = $derived($settings.autoResolveNames !== false);
+	let resolving = $state(false);
 
 	// Queue for multi-file import
 	let pendingFiles: File[] = $state([]);
@@ -91,15 +110,29 @@
 			const fmt = detectFormat(text);
 
 			if (isFormatConfident(text, fmt)) {
-				const name = file.name.replace(/\.csv$/i, '');
+				let name = file.name.replace(/\.csv$/i, '');
+				let isin: string | null = null;
+				let wkn: string | null = null;
+				let currency = assetCurrency;
+
+				if (autoResolveEnabled) {
+					const resolved = await resolveAssetFromFilename(file.name);
+					if (resolved) {
+						name = resolved.name;
+						isin = resolved.isin;
+						wkn = resolved.wkn;
+						if (resolved.currency) currency = resolved.currency;
+					}
+				}
+
 				const result = parseCSV(text, fmt);
 
 				const asset = {
 					id: crypto.randomUUID(),
 					name,
-					isin: null,
-					wkn: null,
-					currency: assetCurrency,
+					isin,
+					wkn,
+					currency,
 					prices: result.prices,
 					formatConfig: result.detectedFormat,
 					createdAt: new Date().toISOString(),
@@ -122,19 +155,34 @@
 		}
 	}
 
-	function loadFileIntoModal(file: File) {
+	async function loadFileIntoModal(file: File) {
 		importFileName = file.name.replace(/\.csv$/i, '');
 		assetName = importFileName;
 
-		const reader = new FileReader();
-		reader.onload = () => {
-			rawText = reader.result as string;
-			const fmt = detectFormat(rawText);
-			detectedFormat = fmt;
-			csvPreview = parseCSVRows(rawText, fmt.delimiter).slice(0, 10);
-			showFormatModal = true;
-		};
-		reader.readAsText(file);
+		rawText = await readFileAsText(file);
+		const fmt = detectFormat(rawText);
+		detectedFormat = fmt;
+		csvPreview = parseCSVRows(rawText, fmt.delimiter).slice(0, 10);
+		showFormatModal = true;
+
+		// Resolve asset name from ISIN/WKN in filename (non-blocking)
+		assetIsin = null;
+		assetWkn = null;
+		if (autoResolveEnabled) {
+			resolving = true;
+			resolveAssetFromFilename(file.name)
+				.then((resolved) => {
+					if (resolved && showFormatModal) {
+						assetName = resolved.name;
+						assetIsin = resolved.isin;
+						assetWkn = resolved.wkn;
+						if (resolved.currency) assetCurrency = resolved.currency;
+					}
+				})
+				.finally(() => {
+					resolving = false;
+				});
+		}
 	}
 
 	async function handleImportConfirm() {
@@ -143,8 +191,8 @@
 		const asset = {
 			id: crypto.randomUUID(),
 			name: assetName || importFileName,
-			isin: null,
-			wkn: null,
+			isin: assetIsin,
+			wkn: assetWkn,
 			currency: assetCurrency,
 			prices: result.prices,
 			formatConfig: result.detectedFormat,
@@ -158,6 +206,8 @@
 		rawText = '';
 		csvPreview = [];
 		assetName = '';
+		assetIsin = null;
+		assetWkn = null;
 
 		// Process next file in the queue
 		currentFileIndex++;
@@ -207,6 +257,7 @@
 					<table class="asset-table">
 						<thead>
 							<tr>
+								<th class="bm-col" title="Set as benchmark for comparison">BM</th>
 								<th>Name</th>
 								<th>ISIN</th>
 								<th>Currency</th>
@@ -217,7 +268,27 @@
 						</thead>
 						<tbody>
 							{#each assetList as asset}
-								<tr>
+								<tr class:benchmark-row={isBenchmark(asset.id)}>
+									<td class="bm-col">
+										<button
+											class="bm-toggle"
+											class:active={isBenchmark(asset.id)}
+											onclick={() => toggleBenchmark(asset.id)}
+											aria-label={isBenchmark(asset.id)
+												? `${asset.name} is the current benchmark. Click to remove.`
+												: `Set ${asset.name} as benchmark`}
+										>
+											{#if isBenchmark(asset.id)}
+												<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+													<circle cx="12" cy="12" r="10"/>
+												</svg>
+											{:else}
+												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+													<circle cx="12" cy="12" r="10"/>
+												</svg>
+											{/if}
+										</button>
+									</td>
 									<td>
 										<a href="/assets/{asset.id}" class="asset-name">{asset.name}</a>
 									</td>
@@ -349,6 +420,37 @@
 	.muted {
 		color: var(--color-text-muted);
 		font-size: var(--font-size-xs);
+	}
+
+	.bm-col {
+		width: 40px;
+		text-align: center;
+		padding-left: var(--spacing-sm);
+		padding-right: 0;
+	}
+
+	.bm-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		color: var(--color-text-muted);
+		transition: color var(--transition-fast), background var(--transition-fast);
+	}
+
+	.bm-toggle:hover {
+		color: var(--color-accent);
+		background: rgba(141, 208, 196, 0.1);
+	}
+
+	.bm-toggle.active {
+		color: var(--color-accent);
+	}
+
+	.benchmark-row {
+		background: rgba(141, 208, 196, 0.05);
 	}
 
 	:global(.toast-container) {
