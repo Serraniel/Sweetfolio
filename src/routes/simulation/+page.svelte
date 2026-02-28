@@ -19,6 +19,7 @@
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
 	let saveSuccess = $state(false);
 	let rendering = $state(false);
+	let hoveredAssetName: string | null = $state(null);
 
 	// Derive available assets with selection state
 	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
@@ -271,7 +272,12 @@
 									<span>Select all</span>
 								</label>
 								{#each assetSelections as asset, idx}
-									<label class="checkbox-item">
+									<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+									<label
+										class="checkbox-item"
+										onmouseenter={() => (hoveredAssetName = asset.name)}
+										onmouseleave={() => (hoveredAssetName = null)}
+									>
 										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
 										<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
 										<span>{asset.name}</span>
@@ -326,6 +332,7 @@
 						efficientFrontier={result.efficientFrontier}
 						benchmark={benchmarkPortfolio}
 						assetMarkers={assetMarkerList}
+						highlightedAsset={hoveredAssetName}
 						onselect={handleSelect}
 					/>
 				</Card>

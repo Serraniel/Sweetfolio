@@ -28,6 +28,7 @@
 		efficientFrontier: SimulatedPortfolio[];
 		benchmark?: SimulatedPortfolio | null;
 		assetMarkers?: AssetMarker[];
+		highlightedAsset?: string | null;
 		height?: number;
 		onselect?: (portfolio: SimulatedPortfolio) => void;
 	}
@@ -39,6 +40,7 @@
 		efficientFrontier,
 		benchmark = null,
 		assetMarkers = [],
+		highlightedAsset = null,
 		height = 400,
 		onselect
 	}: Props = $props();
@@ -49,6 +51,7 @@
 	let themeObs: MutationObserver | undefined;
 	let viewMode: ViewMode = $state('volatility');
 	let showSubOptimal: boolean = $state(true);
+	let tooltip: { x: number; y: number; name: string } | null = $state(null);
 
 	function sharpeColor(sharpe: number, maxSharpe: number): string {
 		if (maxSharpe <= 0) return COLORS.silver;
@@ -137,13 +140,16 @@
 							for (const am of assetMarkers) {
 								const ax = u.valToPos(am.volatility, 'x', true);
 								const ay = u.valToPos(am.annualizedReturn, 'y', true);
+								const isHighlighted = highlightedAsset === am.name;
+								const radius = isHighlighted ? 7 : 4;
+								const strokeWidth = isHighlighted ? 2 : 1;
 
 								ctx.beginPath();
-								ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+								ctx.arc(ax, ay, radius, 0, Math.PI * 2);
 								ctx.fillStyle = am.color;
 								ctx.fill();
-								ctx.strokeStyle = dark ? '#222' : '#fff';
-								ctx.lineWidth = 1;
+								ctx.strokeStyle = dark ? (isHighlighted ? '#fff' : '#222') : (isHighlighted ? '#333' : '#fff');
+								ctx.lineWidth = strokeWidth;
 								ctx.stroke();
 							}
 						}
@@ -253,9 +259,39 @@
 		return false;
 	}
 
+	function findNearAssetMarker(e: MouseEvent): AssetMarker | null {
+		if (!chart || assetMarkers.length === 0) return null;
+		const rect = chart.over.getBoundingClientRect();
+		const cx = e.clientX - rect.left;
+		const cy = e.clientY - rect.top;
+		const rootRect = chart.root.getBoundingClientRect();
+		const offsetX = rect.left - rootRect.left;
+		const offsetY = rect.top - rootRect.top;
+
+		for (const am of assetMarkers) {
+			const px = chart.valToPos(am.volatility, 'x', true);
+			const py = chart.valToPos(am.annualizedReturn, 'y', true);
+			const dist = Math.sqrt((px - cx - offsetX) ** 2 + (py - cy - offsetY) ** 2);
+			if (dist < 15) return am;
+		}
+		return null;
+	}
+
 	function handleMouseMove(e: MouseEvent) {
 		if (!chart) return;
-		chart.over.style.cursor = isNearFrontierPoint(e) ? 'pointer' : '';
+		const nearAsset = findNearAssetMarker(e);
+		if (nearAsset) {
+			const rect = chart.root.getBoundingClientRect();
+			tooltip = {
+				x: e.clientX - rect.left,
+				y: e.clientY - rect.top,
+				name: nearAsset.name
+			};
+			chart.over.style.cursor = 'default';
+		} else {
+			tooltip = null;
+			chart.over.style.cursor = isNearFrontierPoint(e) ? 'pointer' : '';
+		}
 	}
 
 	function handleClick(e: MouseEvent) {
@@ -306,6 +342,7 @@
 		void efficientFrontier;
 		void benchmark;
 		void assetMarkers;
+		void highlightedAsset;
 		void viewMode;
 		void showSubOptimal;
 
@@ -359,7 +396,18 @@
 				{showSubOptimal ? 'Hide' : 'Show'} Sub-optimal
 			</button>
 		</div>
-		<div bind:this={container} class="chart-container"></div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="chart-area" onmouseleave={() => (tooltip = null)}>
+			<div bind:this={container} class="chart-container"></div>
+			{#if tooltip}
+				<div
+					class="asset-tooltip"
+					style="left: {tooltip.x}px; top: {tooltip.y}px;"
+				>
+					{tooltip.name}
+				</div>
+			{/if}
+		</div>
 		{#if benchmark}
 			<div class="chart-legend">
 				<span class="legend-item">
@@ -443,6 +491,26 @@
 	.benchmark-dot {
 		background: #e8175d;
 		box-shadow: 0 0 0 1.5px var(--color-text-primary, #333);
+	}
+
+	.chart-area {
+		position: relative;
+	}
+
+	.asset-tooltip {
+		position: absolute;
+		transform: translate(-50%, -100%);
+		margin-top: -12px;
+		padding: 4px 8px;
+		background: var(--color-bg-secondary, #2a2d33);
+		color: var(--color-text-primary, #fff);
+		font-size: 11px;
+		font-weight: 500;
+		border-radius: 4px;
+		white-space: nowrap;
+		pointer-events: none;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+		z-index: 10;
 	}
 
 	.chart-empty {
