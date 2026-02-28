@@ -504,14 +504,6 @@
 		color: var(--color-text-secondary);
 	}
 
-	.form-field.inline label {
-		flex-direction: row;
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		cursor: pointer;
-	}
-
 	.form-notice {
 		padding: var(--spacing-md);
 		background: var(--color-bg-tertiary);

@@ -10,14 +10,16 @@ const SAMPLE_CSV = [
 ].join('\n');
 
 describe('fetchECBRates', () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  const originalFetch = globalThis.fetch;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as typeof fetch;
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    globalThis.fetch = originalFetch;
   });
 
   it('parses ECB CSV response into CurrencyRate', async () => {

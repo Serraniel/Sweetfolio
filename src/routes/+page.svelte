@@ -11,6 +11,7 @@
 	let correlationLoading = $state(false);
 
 	// Compute correlation when we have 2+ assets
+	let correlationSeq = 0;
 	$effect(() => {
 		const assetData = $assets
 			.filter((a) => a.prices.length >= 2)
@@ -22,10 +23,19 @@
 		}
 
 		correlationLoading = true;
-		calculateCorrelation(assetData).then((result) => {
-			correlation = result;
-			correlationLoading = false;
-		});
+		const seq = ++correlationSeq;
+		calculateCorrelation(assetData)
+			.then((result) => {
+				if (seq === correlationSeq) {
+					correlation = result;
+					correlationLoading = false;
+				}
+			})
+			.catch(() => {
+				if (seq === correlationSeq) {
+					correlationLoading = false;
+				}
+			});
 	});
 
 	function getCorrelationLabels(): string[] {
