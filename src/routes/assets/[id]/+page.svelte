@@ -3,10 +3,11 @@
 	import { goto } from '$app/navigation';
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
+	import Modal from '$lib/components/shared/Modal.svelte';
 	import MetricsTable from '$lib/components/shared/MetricsTable.svelte';
 	import PriceChart from '$lib/charts/PriceChart.svelte';
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
-	import { assets, removeAsset } from '$lib/stores/assets';
+	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
 	import { calculateMetrics } from '$lib/workers/manager';
 	import type { MetricsResult } from '$lib/types';
@@ -16,6 +17,64 @@
 
 	let metrics: MetricsResult | null = $state(null);
 	let metricsLoading = $state(false);
+
+	// Edit modal state
+	let showEditModal = $state(false);
+	let editName = $state('');
+	let editIsin = $state('');
+	let editWkn = $state('');
+	let editCurrency = $state('EUR');
+	let editErrors: Record<string, string> = $state({});
+
+	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
+
+	function openEditModal() {
+		if (!asset) return;
+		editName = asset.name;
+		editIsin = asset.isin ?? '';
+		editWkn = asset.wkn ?? '';
+		editCurrency = asset.currency;
+		editErrors = {};
+		showEditModal = true;
+	}
+
+	function validateIsin(value: string): string | null {
+		if (!value) return null;
+		if (!/^[A-Za-z0-9]{12}$/.test(value)) return 'ISIN must be exactly 12 alphanumeric characters';
+		return null;
+	}
+
+	function validateWkn(value: string): string | null {
+		if (!value) return null;
+		if (!/^[A-Za-z0-9]{6}$/.test(value)) return 'WKN must be exactly 6 alphanumeric characters';
+		return null;
+	}
+
+	async function handleEditSave() {
+		if (!asset) return;
+
+		const errors: Record<string, string> = {};
+		if (!editName.trim()) errors.name = 'Name is required';
+		const isinError = validateIsin(editIsin.trim());
+		if (isinError) errors.isin = isinError;
+		const wknError = validateWkn(editWkn.trim());
+		if (wknError) errors.wkn = wknError;
+
+		if (Object.keys(errors).length > 0) {
+			editErrors = errors;
+			return;
+		}
+
+		await updateAsset({
+			...asset,
+			name: editName.trim(),
+			isin: editIsin.trim().toUpperCase() || null,
+			wkn: editWkn.trim().toUpperCase() || null,
+			currency: editCurrency,
+			updatedAt: new Date().toISOString()
+		});
+		showEditModal = false;
+	}
 
 	// Compute metrics when asset changes
 	$effect(() => {
@@ -73,6 +132,7 @@
 					<h1>{asset.name}</h1>
 				</div>
 				<div class="header-actions">
+					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
 					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
 				</div>
 			</div>
@@ -135,6 +195,38 @@
 				</Card>
 			{/if}
 		</section>
+
+		<Modal bind:open={showEditModal} title="Edit Asset">
+			<div class="edit-form">
+				<div class="form-field">
+					<label for="edit-name">Name</label>
+					<input id="edit-name" type="text" bind:value={editName} />
+					{#if editErrors.name}<span class="field-error">{editErrors.name}</span>{/if}
+				</div>
+				<div class="form-field">
+					<label for="edit-isin">ISIN</label>
+					<input id="edit-isin" type="text" bind:value={editIsin} placeholder="e.g. DE0005140008" maxlength="12" />
+					{#if editErrors.isin}<span class="field-error">{editErrors.isin}</span>{/if}
+				</div>
+				<div class="form-field">
+					<label for="edit-wkn">WKN</label>
+					<input id="edit-wkn" type="text" bind:value={editWkn} placeholder="e.g. 514000" maxlength="6" />
+					{#if editErrors.wkn}<span class="field-error">{editErrors.wkn}</span>{/if}
+				</div>
+				<div class="form-field">
+					<label for="edit-currency">Currency</label>
+					<select id="edit-currency" bind:value={editCurrency}>
+						{#each supportedCurrencies as c}
+							<option value={c}>{c}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+			{#snippet footer()}
+				<Button variant="ghost" onclick={() => showEditModal = false}>Cancel</Button>
+				<Button variant="primary" onclick={handleEditSave}>Save</Button>
+			{/snippet}
+		</Modal>
 	</div>
 {/if}
 
@@ -256,5 +348,28 @@
 		padding: var(--spacing-md);
 		color: var(--color-text-muted);
 		font-size: var(--font-size-sm);
+	}
+
+	.edit-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-xs);
+	}
+
+	.form-field > label {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-text-secondary);
+	}
+
+	.field-error {
+		font-size: var(--font-size-xs);
+		color: var(--color-negative);
 	}
 </style>
