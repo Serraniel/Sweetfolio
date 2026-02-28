@@ -17,7 +17,10 @@ export function computePortfolioPrices(
   const { dates, alignedSeries } = alignPriceSeries(assets.map((a) => a.prices));
   if (dates.length === 0) return [];
 
-  const weights = assets.map((a) => a.weight);
+  // Normalize weights to sum to 1
+  const rawWeights = assets.map((a) => a.weight);
+  const totalWeight = rawWeights.reduce((sum, w) => sum + w, 0);
+  const weights = totalWeight > 0 ? rawWeights.map((w) => w / totalWeight) : rawWeights;
 
   // Rebase each series to 100
   const rebased = alignedSeries.map((series) => {

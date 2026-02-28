@@ -49,7 +49,7 @@ export function detectFormat(text: string): DetectedFormat {
   const dataRows = hasHeader ? rows.slice(1) : rows;
   const sample = dataRows.slice(0, SAMPLE_SIZE);
   const decimalSeparator = detectDecimalSeparator(sample, delimiter);
-  const { dateColumn, dateFormat } = detectDateColumn(sample);
+  const { dateColumn, dateFormat, ambiguous } = detectDateColumn(sample);
   const closeColumn = detectCloseColumn(rows, hasHeader, dateColumn, decimalSeparator);
 
   return {
@@ -59,6 +59,7 @@ export function detectFormat(text: string): DetectedFormat {
     hasHeader,
     dateColumn,
     closeColumn,
+    ambiguous,
   };
 }
 
@@ -149,9 +150,9 @@ function detectDecimalSeparator(sample: string[][], delimiter: string): string {
   return '.';
 }
 
-function detectDateColumn(sample: string[][]): { dateColumn: number; dateFormat: string } {
+function detectDateColumn(sample: string[][]): { dateColumn: number; dateFormat: string; ambiguous: boolean } {
   if (sample.length === 0 || sample[0].length === 0) {
-    return { dateColumn: 0, dateFormat: 'YYYY-MM-DD' };
+    return { dateColumn: 0, dateFormat: 'YYYY-MM-DD', ambiguous: false };
   }
 
   const colCount = sample[0].length;
@@ -159,15 +160,16 @@ function detectDateColumn(sample: string[][]): { dateColumn: number; dateFormat:
   let bestFormat = 'YYYY-MM-DD';
   let bestScore = 0;
 
+  // Track all formats that achieve the best score to detect ambiguity
+  const topFormats: string[] = [];
+
   for (let col = 0; col < colCount; col++) {
     const values = sample.map((row) => (row[col] || '').trim()).filter((v) => v !== '');
     for (const pattern of DATE_PATTERNS) {
-      let matches = 0;
       let valid = 0;
       for (const v of values) {
         const m = v.match(pattern.regex);
         if (m) {
-          matches++;
           const parsed = pattern.parse(m);
           if (parsed.m >= 1 && parsed.m <= 12 && parsed.d >= 1 && parsed.d <= 31 && parsed.y >= 1900 && parsed.y <= 2100) {
             valid++;
@@ -178,11 +180,19 @@ function detectDateColumn(sample: string[][]): { dateColumn: number; dateFormat:
         bestScore = valid;
         bestCol = col;
         bestFormat = pattern.format;
+        topFormats.length = 0;
+        topFormats.push(pattern.format);
+      } else if (valid === bestScore && valid > 0) {
+        topFormats.push(pattern.format);
       }
     }
   }
 
-  return { dateColumn: bestCol, dateFormat: bestFormat };
+  // Ambiguous when DD/MM and MM/DD formats both match equally well
+  const ambiguous = topFormats.length > 1 && topFormats.some((f) => f.includes('DD/MM') || f.includes('DD-MM') || f.includes('DD.MM'))
+    && topFormats.some((f) => f.includes('MM/DD') || f.includes('MM-DD'));
+
+  return { dateColumn: bestCol, dateFormat: bestFormat, ambiguous };
 }
 
 function detectCloseColumn(

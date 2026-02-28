@@ -1,97 +1,142 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
 	import MetricsTable from '$lib/components/shared/MetricsTable.svelte';
+	import PriceChart from '$lib/charts/PriceChart.svelte';
+	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
+	import { assets, removeAsset } from '$lib/stores/assets';
+	import { settings } from '$lib/stores/settings';
+	import { calculateMetrics } from '$lib/workers/manager';
+	import type { MetricsResult } from '$lib/types';
 
 	const assetId = $derived(page.params.id);
+	const asset = $derived($assets.find((a) => a.id === assetId));
 
-	// Placeholder -- will be populated from stores
-	const asset = $derived({
-		name: 'Asset',
-		isin: null as string | null,
-		wkn: null as string | null,
-		currency: 'EUR',
-		dataPoints: 0,
-		dateRange: ''
+	let metrics: MetricsResult | null = $state(null);
+	let metricsLoading = $state(false);
+
+	// Compute metrics when asset changes
+	$effect(() => {
+		if (!asset || asset.prices.length < 2) {
+			metrics = null;
+			return;
+		}
+
+		metricsLoading = true;
+		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
+		calculateMetrics(asset.id, asset.prices, riskFreeRate)
+			.then((result) => {
+				metrics = result;
+			})
+			.finally(() => {
+				metricsLoading = false;
+			});
 	});
+
+	const dateRange = $derived(
+		asset && asset.prices.length > 0
+			? `${asset.prices[0].date} \u2013 ${asset.prices[asset.prices.length - 1].date}`
+			: ''
+	);
+
+	async function handleDelete() {
+		if (!asset) return;
+		if (!confirm(`Delete "${asset.name}"? This cannot be undone.`)) return;
+		await removeAsset(asset.id);
+		goto('/assets');
+	}
 </script>
 
-<div class="asset-detail">
-	<header class="page-header">
-		<div class="page-header-row">
-			<div>
-				<a href="/assets" class="back-link">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="15 18 9 12 15 6"/>
-					</svg>
-					Assets
-				</a>
-				<h1>{asset.name}</h1>
-			</div>
-			<div class="header-actions">
-				<Button variant="default" size="sm">Edit</Button>
-				<Button variant="danger" size="sm">Delete</Button>
-			</div>
-		</div>
-	</header>
-
-	<section class="asset-meta">
-		<Card>
-			<div class="meta-grid">
-				<div class="meta-item">
-					<span class="meta-label">ISIN</span>
-					<span class="meta-value mono">{asset.isin ?? '\u2014'}</span>
-				</div>
-				<div class="meta-item">
-					<span class="meta-label">WKN</span>
-					<span class="meta-value mono">{asset.wkn ?? '\u2014'}</span>
-				</div>
-				<div class="meta-item">
-					<span class="meta-label">Currency</span>
-					<span class="meta-value">{asset.currency}</span>
-				</div>
-				<div class="meta-item">
-					<span class="meta-label">Data Points</span>
-					<span class="meta-value mono">{asset.dataPoints.toLocaleString()}</span>
-				</div>
-				<div class="meta-item">
-					<span class="meta-label">Date Range</span>
-					<span class="meta-value">{asset.dateRange || '\u2014'}</span>
-				</div>
-			</div>
-		</Card>
-	</section>
-
-	<section class="asset-metrics">
-		<h2>Financial Metrics</h2>
-		<Card>
-			<MetricsTable metrics={{}} />
-		</Card>
-	</section>
-
-	<section class="asset-charts">
-		<h2>Price History</h2>
+{#if !asset}
+	<div class="asset-detail">
 		<Card padding="lg">
-			<div class="chart-placeholder">
-				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-				</svg>
-				<p>Price chart will render here when data is available</p>
+			<div class="empty-state">
+				<h3>Asset not found</h3>
+				<p>This asset may have been deleted.</p>
+				<a href="/assets">Back to Assets</a>
 			</div>
 		</Card>
+	</div>
+{:else}
+	<div class="asset-detail">
+		<header class="page-header">
+			<div class="page-header-row">
+				<div>
+					<a href="/assets" class="back-link">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="15 18 9 12 15 6"/>
+						</svg>
+						Assets
+					</a>
+					<h1>{asset.name}</h1>
+				</div>
+				<div class="header-actions">
+					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
+				</div>
+			</div>
+		</header>
 
-		<h2>Drawdown</h2>
-		<Card padding="lg">
-			<div class="chart-placeholder">
-				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-				</svg>
-				<p>Drawdown chart will render here when data is available</p>
-			</div>
-		</Card>
-	</section>
-</div>
+		<section class="asset-meta">
+			<Card>
+				<div class="meta-grid">
+					<div class="meta-item">
+						<span class="meta-label">ISIN</span>
+						<span class="meta-value mono">{asset.isin ?? '\u2014'}</span>
+					</div>
+					<div class="meta-item">
+						<span class="meta-label">WKN</span>
+						<span class="meta-value mono">{asset.wkn ?? '\u2014'}</span>
+					</div>
+					<div class="meta-item">
+						<span class="meta-label">Currency</span>
+						<span class="meta-value">{asset.currency}</span>
+					</div>
+					<div class="meta-item">
+						<span class="meta-label">Data Points</span>
+						<span class="meta-value mono">{asset.prices.length.toLocaleString()}</span>
+					</div>
+					<div class="meta-item">
+						<span class="meta-label">Date Range</span>
+						<span class="meta-value">{dateRange || '\u2014'}</span>
+					</div>
+				</div>
+			</Card>
+		</section>
+
+		<section class="asset-metrics">
+			<h2>Financial Metrics</h2>
+			<Card>
+				{#if metricsLoading}
+					<p class="loading-text">Calculating metrics...</p>
+				{:else}
+					<MetricsTable metrics={metrics?.periods ?? {}} />
+				{/if}
+			</Card>
+		</section>
+
+		<section class="asset-charts">
+			{#if asset.prices.length > 0}
+				<h2>Price History</h2>
+				<Card padding="lg">
+					<PriceChart series={[{ label: asset.name, prices: asset.prices }]} />
+				</Card>
+
+				<h2>Drawdown</h2>
+				<Card padding="lg">
+					<DrawdownChart prices={asset.prices} />
+				</Card>
+			{:else}
+				<Card padding="lg">
+					<div class="chart-placeholder">
+						<p>No price data available for charts.</p>
+					</div>
+				</Card>
+			{/if}
+		</section>
+	</div>
+{/if}
 
 <style>
 	.asset-detail {
@@ -190,6 +235,26 @@
 		min-height: 300px;
 		color: var(--color-text-muted);
 		text-align: center;
+		font-size: var(--font-size-sm);
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--spacing-sm);
+		text-align: center;
+		padding: var(--spacing-xl) 0;
+		color: var(--color-text-muted);
+	}
+
+	.empty-state h3 {
+		color: var(--color-text-secondary);
+	}
+
+	.loading-text {
+		padding: var(--spacing-md);
+		color: var(--color-text-muted);
 		font-size: var(--font-size-sm);
 	}
 </style>

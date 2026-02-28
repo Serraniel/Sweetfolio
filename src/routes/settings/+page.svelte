@@ -3,14 +3,34 @@
 	import Button from '$lib/components/shared/Button.svelte';
 	import ThemeToggle from '$lib/components/layout/ThemeToggle.svelte';
 	import { theme } from '$lib/stores/theme';
+	import { settings, setSetting } from '$lib/stores/settings';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
+	let saving = $state(false);
 
 	const currencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
 
-	function handleSave() {
-		// TODO: integrate with settings store
+	// Initialize from store
+	$effect(() => {
+		const s = $settings;
+		if (s.mainCurrency) mainCurrency = s.mainCurrency as string;
+		if (s.riskFreeRate !== undefined) riskFreeRate = s.riskFreeRate as number;
+	});
+
+	async function handleSave() {
+		saving = true;
+		await Promise.all([
+			setSetting('mainCurrency', mainCurrency),
+			setSetting('riskFreeRate', riskFreeRate),
+		]);
+		saving = false;
+	}
+
+	async function handleClearData() {
+		if (!confirm('This will permanently delete all your data. Are you sure?')) return;
+		indexedDB.deleteDatabase('sweetfolio');
+		window.location.reload();
 	}
 </script>
 
@@ -94,11 +114,17 @@
 						<span class="setting-description">All data is stored locally in your browser using IndexedDB</span>
 					</div>
 					<div class="setting-control">
-						<Button variant="danger" size="sm">Clear All Data</Button>
+						<Button variant="danger" size="sm" onclick={handleClearData}>Clear All Data</Button>
 					</div>
 				</div>
 			</div>
 		</Card>
+
+		<div class="save-row">
+			<Button variant="primary" onclick={handleSave} disabled={saving}>
+				{saving ? 'Saving...' : 'Save Settings'}
+			</Button>
+		</div>
 	</div>
 </div>
 
@@ -205,5 +231,10 @@
 	.suffix {
 		font-size: var(--font-size-sm);
 		color: var(--color-text-muted);
+	}
+
+	.save-row {
+		display: flex;
+		justify-content: flex-end;
 	}
 </style>

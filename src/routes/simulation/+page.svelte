@@ -1,23 +1,118 @@
 <script lang="ts">
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
+	import EfficientFrontier from '$lib/charts/EfficientFrontier.svelte';
+	import { assets } from '$lib/stores/assets';
+	import { settings } from '$lib/stores/settings';
+	import { simulation, updateConfig, setProgress, setResult, setRunning } from '$lib/stores/simulation';
+	import { createMonteCarloWorker } from '$lib/workers/manager';
+	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
 
 	let simulationCount = $state(10000);
-	let isRunning = $state(false);
-	let progress = $state(0);
+	let worker: Worker | null = $state(null);
+	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
 
-	// Placeholder
-	const availableAssets: Array<{ id: string; name: string; selected: boolean }> = [];
+	// Derive available assets with selection state
+	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
+
+	$effect(() => {
+		assetSelections = $assets.map((a) => ({
+			id: a.id,
+			name: a.name,
+			selected: false
+		}));
+	});
+
+	const isRunning = $derived($simulation.running);
+	const progress = $derived(
+		$simulation.progress
+			? ($simulation.progress.completed / $simulation.progress.total) * 100
+			: 0
+	);
+	const result = $derived($simulation.result);
+	const selectedAssets = $derived(assetSelections.filter((a) => a.selected));
 
 	function handleRun() {
-		// TODO: integrate with Monte Carlo worker
-		isRunning = true;
-		progress = 0;
+		if (selectedAssets.length < 2) return;
+
+		const assetData = selectedAssets
+			.map((sel) => {
+				const asset = $assets.find((a) => a.id === sel.id);
+				if (!asset) return null;
+				return { id: asset.id, prices: asset.prices };
+			})
+			.filter((a): a is NonNullable<typeof a> => a !== null);
+
+		if (assetData.length < 2) return;
+
+		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
+
+		updateConfig({
+			simulationCount,
+			assetIds: assetData.map((a) => a.id),
+			riskFreeRate
+		});
+		setRunning(true);
+		selectedPortfolio = null;
+
+		worker = createMonteCarloWorker();
+
+		worker.onmessage = (event: MessageEvent<MonteCarloWorkerResponse>) => {
+			const msg = event.data;
+			switch (msg.type) {
+				case 'simulation-progress':
+					setProgress(msg.payload.completed, msg.payload.total);
+					break;
+				case 'simulation-result':
+					setResult(msg.payload);
+					worker?.terminate();
+					worker = null;
+					break;
+				case 'error':
+					setRunning(false);
+					worker?.terminate();
+					worker = null;
+					break;
+			}
+		};
+
+		worker.onerror = () => {
+			setRunning(false);
+			worker?.terminate();
+			worker = null;
+		};
+
+		const request: MonteCarloWorkerRequest = {
+			type: 'run-simulation',
+			payload: {
+				config: {
+					simulationCount,
+					assetIds: assetData.map((a) => a.id),
+					riskFreeRate,
+					benchmarkPortfolioId: null
+				},
+				assets: assetData
+			}
+		};
+		worker.postMessage(request);
 	}
 
 	function handleCancel() {
-		isRunning = false;
-		progress = 0;
+		worker?.terminate();
+		worker = null;
+		setRunning(false);
+	}
+
+	function handleSelect(portfolio: SimulatedPortfolio) {
+		selectedPortfolio = portfolio;
+	}
+
+	// Resolve asset names for inspector
+	function resolveWeights(weights: Record<string, number>): Array<{ name: string; weight: number }> {
+		return Object.entries(weights).map(([id, weight]) => {
+			const asset = $assets.find((a) => a.id === id);
+			return { name: asset?.name ?? id.slice(0, 8), weight };
+		});
 	}
 </script>
 
@@ -50,11 +145,11 @@
 					<div class="form-field">
 						<!-- svelte-ignore a11y_label_has_associated_control -->
 					<label>Assets to Include</label>
-						{#if availableAssets.length === 0}
+						{#if assetSelections.length === 0}
 							<p class="muted">No assets available. Upload asset data first.</p>
 						{:else}
 							<div class="asset-checkboxes">
-								{#each availableAssets as asset}
+								{#each assetSelections as asset}
 									<label class="checkbox-item">
 										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
 										<span>{asset.name}</span>
@@ -73,35 +168,83 @@
 						</div>
 						<Button variant="danger" onclick={handleCancel}>Cancel</Button>
 					{:else}
-						<Button variant="primary" onclick={handleRun} disabled={availableAssets.length === 0}>
+						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
 							</svg>
 							Run Simulation
 						</Button>
+						{#if selectedAssets.length < 2 && assetSelections.length > 0}
+							<p class="field-hint">Select at least 2 assets to run a simulation.</p>
+						{/if}
 					{/if}
 				</div>
 			</Card>
 		</aside>
 
 		<div class="results-area">
-			<Card padding="lg">
-				<div class="chart-placeholder">
-					<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-						<circle cx="12" cy="12" r="10"/>
-						<path d="M8 12l2 2 4-4"/>
-					</svg>
-					<h3>Efficient Frontier</h3>
-					<p>Run a simulation to see the risk vs. return scatter plot with the efficient frontier overlay.</p>
-				</div>
-			</Card>
+			{#if result}
+				<Card padding="lg">
+					<EfficientFrontier
+						portfolios={result.portfolios}
+						efficientFrontier={result.efficientFrontier}
+						onselect={handleSelect}
+					/>
+				</Card>
 
-			<Card>
-				<div class="inspector-placeholder">
-					<h3>Portfolio Inspector</h3>
-					<p class="muted">Click on a point in the scatter plot to inspect the portfolio allocation, return, volatility, and Sharpe ratio.</p>
-				</div>
-			</Card>
+				<Card>
+					<div class="inspector">
+						<h3>Portfolio Inspector</h3>
+						{#if selectedPortfolio}
+							<div class="inspector-data">
+								<div class="inspector-metrics">
+									<div class="inspector-metric">
+										<span class="inspector-label">Annualized Return</span>
+										<span class="inspector-value">{(selectedPortfolio.annualizedReturn * 100).toFixed(2)}%</span>
+									</div>
+									<div class="inspector-metric">
+										<span class="inspector-label">Volatility</span>
+										<span class="inspector-value">{(selectedPortfolio.volatility * 100).toFixed(2)}%</span>
+									</div>
+									<div class="inspector-metric">
+										<span class="inspector-label">Sharpe Ratio</span>
+										<span class="inspector-value">{selectedPortfolio.sharpeRatio.toFixed(3)}</span>
+									</div>
+								</div>
+								<div class="inspector-weights">
+									<h4>Allocation</h4>
+									{#each resolveWeights(selectedPortfolio.weights) as w}
+										<div class="weight-row">
+											<span class="weight-name">{w.name}</span>
+											<span class="weight-value">{(w.weight * 100).toFixed(1)}%</span>
+										</div>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<p class="muted">Click on a point in the scatter plot to inspect the portfolio allocation.</p>
+						{/if}
+					</div>
+				</Card>
+			{:else}
+				<Card padding="lg">
+					<div class="chart-placeholder">
+						<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="10"/>
+							<path d="M8 12l2 2 4-4"/>
+						</svg>
+						<h3>Efficient Frontier</h3>
+						<p>Run a simulation to see the risk vs. return scatter plot with the efficient frontier overlay.</p>
+					</div>
+				</Card>
+
+				<Card>
+					<div class="inspector-placeholder">
+						<h3>Portfolio Inspector</h3>
+						<p class="muted">Click on a point in the scatter plot to inspect the portfolio allocation, return, volatility, and Sharpe ratio.</p>
+					</div>
+				</Card>
+			{/if}
 		</div>
 	</div>
 </div>
@@ -247,5 +390,64 @@
 	.inspector-placeholder h3 {
 		font-size: var(--font-size-base);
 		margin-bottom: var(--spacing-xs);
+	}
+
+	.inspector h3 {
+		font-size: var(--font-size-base);
+		margin-bottom: var(--spacing-md);
+	}
+
+	.inspector-data {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
+	}
+
+	.inspector-metrics {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: var(--spacing-md);
+	}
+
+	.inspector-metric {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.inspector-label {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+		font-weight: 500;
+	}
+
+	.inspector-value {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+	}
+
+	.inspector-weights h4 {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.weight-row {
+		display: flex;
+		justify-content: space-between;
+		padding: var(--spacing-xs) 0;
+		font-size: var(--font-size-sm);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.weight-name {
+		font-weight: 500;
+	}
+
+	.weight-value {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
 	}
 </style>

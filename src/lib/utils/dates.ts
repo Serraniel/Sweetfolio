@@ -13,9 +13,12 @@ export function forwardFillPrices(prices: PricePoint[]): PricePoint[] {
   if (prices.length === 0) return [];
 
   const sorted = [...prices].sort((a, b) => a.date.localeCompare(b.date));
-  const result: PricePoint[] = [sorted[0]];
   const startDate = new Date(sorted[0].date);
   const endDate = new Date(sorted[sorted.length - 1].date);
+
+  // Only add the first element if it's not on a weekend
+  const startDay = startDate.getDay();
+  const result: PricePoint[] = (startDay !== 0 && startDay !== 6) ? [sorted[0]] : [];
 
   const priceMap = new Map<string, number>();
   for (const p of sorted) {

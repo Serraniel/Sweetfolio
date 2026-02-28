@@ -83,6 +83,7 @@ export interface DetectedFormat {
   hasHeader: boolean;
   dateColumn: number;
   closeColumn: number;
+  ambiguous?: boolean; // true when DD/MM vs MM/DD cannot be distinguished
 }
 
 export interface ParseResult {

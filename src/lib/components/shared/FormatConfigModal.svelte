@@ -2,6 +2,8 @@
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 
+	const currencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
+
 	let {
 		open = $bindable(false),
 		detectedFormat = $bindable({
@@ -13,7 +15,9 @@
 			closeColumn: 1
 		}),
 		preview = [],
-		onconfirm
+		onconfirm,
+		assetName = $bindable(''),
+		assetCurrency = $bindable('EUR')
 	}: {
 		open?: boolean;
 		detectedFormat?: {
@@ -26,6 +30,8 @@
 		};
 		preview?: string[][];
 		onconfirm?: () => void;
+		assetName?: string;
+		assetCurrency?: string;
 	} = $props();
 
 	const dateFormats = [
@@ -49,8 +55,24 @@
 	];
 </script>
 
-<Modal bind:open title="CSV Format Configuration">
+<Modal bind:open title="CSV Import Configuration">
 	<div class="format-config">
+		<div class="format-field">
+			<label for="asset-name">Asset Name</label>
+			<input id="asset-name" type="text" placeholder="e.g. MSCI World" bind:value={assetName} />
+		</div>
+
+		<div class="format-field">
+			<label for="asset-currency">Currency</label>
+			<select id="asset-currency" bind:value={assetCurrency}>
+				{#each currencies as c}
+					<option value={c}>{c}</option>
+				{/each}
+			</select>
+		</div>
+
+		<hr class="divider" />
+
 		<div class="format-field">
 			<label for="delimiter">Delimiter</label>
 			<select id="delimiter" bind:value={detectedFormat.delimiter}>
@@ -121,7 +143,7 @@
 
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => open = false}>Cancel</Button>
-		<Button variant="primary" onclick={onconfirm}>Import</Button>
+		<Button variant="primary" onclick={onconfirm} disabled={!assetName.trim()}>Import</Button>
 	{/snippet}
 </Modal>
 
@@ -156,6 +178,12 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: var(--spacing-md);
+	}
+
+	.divider {
+		border: none;
+		border-top: 1px solid var(--color-border);
+		margin: var(--spacing-xs) 0;
 	}
 
 	.preview {

@@ -48,6 +48,16 @@ export function getDB(): Promise<IDBDatabase> {
 
     request.onsuccess = (event) => {
       dbInstance = (event.target as IDBOpenDBRequest).result;
+
+      dbInstance.onclose = () => {
+        dbInstance = null;
+      };
+
+      dbInstance.onversionchange = () => {
+        dbInstance?.close();
+        dbInstance = null;
+      };
+
       resolve(dbInstance);
     };
 

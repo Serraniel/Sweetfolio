@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
+	import { assets } from '$lib/stores/assets';
+	import { portfolios } from '$lib/stores/portfolios';
 </script>
 
 <div class="dashboard">
@@ -18,7 +20,7 @@
 					</svg>
 				</div>
 				<div class="summary-info">
-					<span class="summary-value">0</span>
+					<span class="summary-value">{$assets.length}</span>
 					<span class="summary-label">Assets</span>
 				</div>
 			</div>
@@ -32,7 +34,7 @@
 					</svg>
 				</div>
 				<div class="summary-info">
-					<span class="summary-value">0</span>
+					<span class="summary-value">{$portfolios.length}</span>
 					<span class="summary-label">Portfolios</span>
 				</div>
 			</div>

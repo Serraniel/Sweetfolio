@@ -3,10 +3,15 @@
 	import Button from '$lib/components/shared/Button.svelte';
 	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
+	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
+	import { detectFormat } from '$lib/parsers/format-detection';
+	import { parseCSV } from '$lib/parsers/normalization';
+	import { parseCSVRows } from '$lib/parsers/csv';
+	import type { DetectedFormat } from '$lib/types';
 
 	let showFormatModal = $state(false);
 	let csvPreview: string[][] = $state([]);
-	let detectedFormat = $state({
+	let detectedFormat: DetectedFormat = $state({
 		delimiter: ',',
 		decimalSeparator: '.',
 		dateFormat: 'YYYY-MM-DD',
@@ -14,25 +19,71 @@
 		dateColumn: 0,
 		closeColumn: 1
 	});
+	let rawText = $state('');
+	let importFileName = $state('');
+	let assetName = $state('');
+	let assetCurrency = $state('EUR');
 
-	// Placeholder asset data
-	const assets: Array<{
-		id: string;
-		name: string;
-		isin: string | null;
-		currency: string;
-		dataPoints: number;
-		dateRange: string;
-	}> = [];
+	// Derive display list from store
+	const assetList = $derived(
+		$assets.map((a) => ({
+			id: a.id,
+			name: a.name,
+			isin: a.isin,
+			currency: a.currency,
+			dataPoints: a.prices.length,
+			dateRange:
+				a.prices.length > 0
+					? `${a.prices[0].date} \u2013 ${a.prices[a.prices.length - 1].date}`
+					: ''
+		}))
+	);
 
 	function handleFiles(files: FileList) {
-		// TODO: integrate with CSV parser from dev-core
-		showFormatModal = true;
+		const file = files[0];
+		if (!file) return;
+
+		importFileName = file.name.replace(/\.csv$/i, '');
+		assetName = importFileName;
+
+		const reader = new FileReader();
+		reader.onload = () => {
+			rawText = reader.result as string;
+			const fmt = detectFormat(rawText);
+			detectedFormat = fmt;
+			// Generate preview rows using detected delimiter
+			csvPreview = parseCSVRows(rawText, fmt.delimiter).slice(0, 10);
+			showFormatModal = true;
+		};
+		reader.readAsText(file);
 	}
 
-	function handleImportConfirm() {
-		// TODO: parse and store asset
+	async function handleImportConfirm() {
+		const result = parseCSV(rawText, detectedFormat);
+
+		const asset = {
+			id: crypto.randomUUID(),
+			name: assetName || importFileName,
+			isin: null,
+			wkn: null,
+			currency: assetCurrency,
+			prices: result.prices,
+			formatConfig: result.detectedFormat,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString()
+		};
+
+		await addAsset(asset);
+
 		showFormatModal = false;
+		rawText = '';
+		csvPreview = [];
+		assetName = '';
+	}
+
+	async function handleDelete(id: string) {
+		if (!confirm('Delete this asset? This cannot be undone.')) return;
+		await removeAsset(id);
 	}
 </script>
 
@@ -51,7 +102,7 @@
 	</section>
 
 	<section class="asset-list">
-		{#if assets.length === 0}
+		{#if assetList.length === 0}
 			<Card padding="lg">
 				<div class="empty-state">
 					<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
@@ -76,7 +127,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each assets as asset}
+							{#each assetList as asset}
 								<tr>
 									<td>
 										<a href="/assets/{asset.id}" class="asset-name">{asset.name}</a>
@@ -86,11 +137,10 @@
 									<td class="mono">{asset.dataPoints.toLocaleString()}</td>
 									<td class="muted">{asset.dateRange}</td>
 									<td>
-										<Button variant="ghost" size="sm">
+										<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
 											<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-												<circle cx="12" cy="12" r="1"/>
-												<circle cx="19" cy="12" r="1"/>
-												<circle cx="5" cy="12" r="1"/>
+												<polyline points="3 6 5 6 21 6"/>
+												<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
 											</svg>
 										</Button>
 									</td>
@@ -108,6 +158,8 @@
 		bind:detectedFormat
 		preview={csvPreview}
 		onconfirm={handleImportConfirm}
+		bind:assetName
+		bind:assetCurrency
 	/>
 </div>
 

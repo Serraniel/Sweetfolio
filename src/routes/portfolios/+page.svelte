@@ -2,30 +2,78 @@
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
 	import Modal from '$lib/components/shared/Modal.svelte';
+	import { assets } from '$lib/stores/assets';
+	import { portfolios, addPortfolio, removePortfolio } from '$lib/stores/portfolios';
 
 	let showCreateModal = $state(false);
 	let newPortfolioName = $state('');
+	let isBenchmark = $state(false);
 
-	// Placeholder
-	const portfolios: Array<{
-		id: string;
-		name: string;
-		assetCount: number;
-		isBenchmark: boolean;
-	}> = [];
+	// Derive available assets with selection state from store
+	let assetSelections: Array<{ id: string; name: string; weight: number; selected: boolean }> = $state([]);
 
-	// Placeholder assets for selection
-	const availableAssets: Array<{
-		id: string;
-		name: string;
-		weight: number;
-		selected: boolean;
-	}> = [];
+	$effect(() => {
+		assetSelections = $assets.map((a) => ({
+			id: a.id,
+			name: a.name,
+			weight: Math.round(100 / Math.max($assets.length, 1)),
+			selected: false
+		}));
+	});
 
-	function handleCreate() {
-		// TODO: integrate with portfolio store
+	// Derive display list from store
+	const portfolioList = $derived(
+		$portfolios.map((p) => ({
+			id: p.id,
+			name: p.name,
+			assetCount: p.allocations.length,
+			isBenchmark: p.isBenchmark
+		}))
+	);
+
+	async function handleCreate() {
+		const selected = assetSelections.filter((a) => a.selected);
+		if (selected.length === 0 || !newPortfolioName.trim()) return;
+
+		// Normalize weights to sum to 1.0
+		const totalWeight = selected.reduce((sum, a) => sum + a.weight, 0);
+		const allocations = selected.map((a) => ({
+			assetId: a.id,
+			weight: totalWeight > 0 ? a.weight / totalWeight : 1 / selected.length
+		}));
+
+		const portfolio = {
+			id: crypto.randomUUID(),
+			name: newPortfolioName.trim(),
+			allocations,
+			isBenchmark,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString()
+		};
+
+		await addPortfolio(portfolio);
+
 		showCreateModal = false;
 		newPortfolioName = '';
+		isBenchmark = false;
+	}
+
+	function openCreateModal() {
+		// Reset selections when opening
+		assetSelections = $assets.map((a) => ({
+			id: a.id,
+			name: a.name,
+			weight: Math.round(100 / Math.max($assets.length, 1)),
+			selected: false
+		}));
+		newPortfolioName = '';
+		isBenchmark = false;
+		showCreateModal = true;
+	}
+
+	async function handleDelete(id: string) {
+		if (!confirm('Delete this portfolio? This cannot be undone.')) return;
+		await removePortfolio(id);
 	}
 </script>
 
@@ -36,7 +84,7 @@
 				<h1>Portfolios</h1>
 				<p class="page-subtitle">Build and backtest portfolio allocations</p>
 			</div>
-			<Button variant="primary" onclick={() => showCreateModal = true}>
+			<Button variant="primary" onclick={openCreateModal}>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<line x1="12" y1="5" x2="12" y2="19"/>
 					<line x1="5" y1="12" x2="19" y2="12"/>
@@ -46,7 +94,7 @@
 		</div>
 	</header>
 
-	{#if portfolios.length === 0}
+	{#if portfolioList.length === 0}
 		<Card padding="lg">
 			<div class="empty-state">
 				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
@@ -54,25 +102,33 @@
 				</svg>
 				<h3>No portfolios yet</h3>
 				<p>Create a portfolio by selecting assets and assigning weight allocations.</p>
-				<Button variant="primary" onclick={() => showCreateModal = true}>Create Portfolio</Button>
+				<Button variant="primary" onclick={openCreateModal}>Create Portfolio</Button>
 			</div>
 		</Card>
 	{:else}
 		<div class="portfolio-grid">
-			{#each portfolios as portfolio}
-				<a href="/portfolios/{portfolio.id}" class="portfolio-link">
-					<Card>
-						<div class="portfolio-card">
-							<div class="portfolio-card-header">
-								<h3>{portfolio.name}</h3>
-								{#if portfolio.isBenchmark}
-									<span class="badge">Benchmark</span>
-								{/if}
+			{#each portfolioList as portfolio}
+				<div class="portfolio-card-wrapper">
+					<a href="/portfolios/{portfolio.id}" class="portfolio-link">
+						<Card>
+							<div class="portfolio-card">
+								<div class="portfolio-card-header">
+									<h3>{portfolio.name}</h3>
+									{#if portfolio.isBenchmark}
+										<span class="badge">Benchmark</span>
+									{/if}
+								</div>
+								<p class="portfolio-meta">{portfolio.assetCount} asset{portfolio.assetCount !== 1 ? 's' : ''}</p>
 							</div>
-							<p class="portfolio-meta">{portfolio.assetCount} asset{portfolio.assetCount !== 1 ? 's' : ''}</p>
-						</div>
-					</Card>
-				</a>
+						</Card>
+					</a>
+					<button class="delete-btn" onclick={() => handleDelete(portfolio.id)} title="Delete portfolio">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="3 6 5 6 21 6"/>
+							<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+						</svg>
+					</button>
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -89,7 +145,14 @@
 				/>
 			</div>
 
-			{#if availableAssets.length === 0}
+			<div class="form-field inline">
+				<label>
+					<input type="checkbox" bind:checked={isBenchmark} />
+					Use as benchmark
+				</label>
+			</div>
+
+			{#if assetSelections.length === 0}
 				<div class="form-notice">
 					<p>No assets available. Upload asset data first to create a portfolio.</p>
 				</div>
@@ -98,7 +161,7 @@
 					<!-- svelte-ignore a11y_label_has_associated_control -->
 					<label>Asset Allocation</label>
 					<div class="allocation-list">
-						{#each availableAssets as asset}
+						{#each assetSelections as asset}
 							<div class="allocation-item">
 								<label class="allocation-checkbox">
 									<input type="checkbox" bind:checked={asset.selected} />
@@ -125,7 +188,11 @@
 
 		{#snippet footer()}
 			<Button variant="ghost" onclick={() => showCreateModal = false}>Cancel</Button>
-			<Button variant="primary" onclick={handleCreate} disabled={!newPortfolioName.trim()}>
+			<Button
+				variant="primary"
+				onclick={handleCreate}
+				disabled={!newPortfolioName.trim() || assetSelections.filter((a) => a.selected).length === 0}
+			>
 				Create
 			</Button>
 		{/snippet}
@@ -183,8 +250,37 @@
 		gap: var(--spacing-md);
 	}
 
+	.portfolio-card-wrapper {
+		position: relative;
+	}
+
 	.portfolio-link {
 		color: var(--color-text-primary);
+	}
+
+	.delete-btn {
+		position: absolute;
+		top: var(--spacing-sm);
+		right: var(--spacing-sm);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: var(--radius-sm);
+		color: var(--color-text-muted);
+		background: transparent;
+		opacity: 0;
+		transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+	}
+
+	.portfolio-card-wrapper:hover .delete-btn {
+		opacity: 1;
+	}
+
+	.delete-btn:hover {
+		background: var(--color-negative);
+		color: #fff;
 	}
 
 	.portfolio-card-header {
@@ -229,6 +325,14 @@
 		font-size: var(--font-size-sm);
 		font-weight: 500;
 		color: var(--color-text-secondary);
+	}
+
+	.form-field.inline label {
+		flex-direction: row;
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		cursor: pointer;
 	}
 
 	.form-notice {
