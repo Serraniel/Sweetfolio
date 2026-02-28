@@ -41,7 +41,7 @@
 			exportPhase = 'Reading data...';
 			const data = await buildExport([...selectedScopes]);
 			exportPhase = 'Preparing file...';
-			await triggerDownload(data);
+			triggerDownload(data);
 			open = false;
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Export failed';
