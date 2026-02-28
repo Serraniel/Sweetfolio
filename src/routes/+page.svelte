@@ -28,14 +28,16 @@
 		});
 	});
 
-	const correlationLabels = $derived(
-		correlation
-			? correlation.assetIds.map((id) => {
-					const asset = $assets.find((a) => a.id === id);
-					return asset?.name ?? id.slice(0, 8);
-				})
-			: []
-	);
+	function getCorrelationLabels(): string[] {
+		if (!correlation) return [];
+		const corr = correlation as CorrelationMatrixData;
+		return corr.assetIds.map((id: string) => {
+			const asset = $assets.find((a) => a.id === id);
+			return asset?.name ?? id.slice(0, 8);
+		});
+	}
+
+	const correlationLabels = $derived(getCorrelationLabels());
 </script>
 
 <div class="dashboard">
