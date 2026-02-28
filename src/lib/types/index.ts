@@ -13,6 +13,8 @@ export interface Asset {
   currency: string;
   prices: PricePoint[];
   formatConfig: DetectedFormat | null;
+  rawCSV: string | null;
+  rawCSVStoredAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

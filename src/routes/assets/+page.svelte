@@ -129,6 +129,8 @@
 			currency: lookupEditCurrency,
 			prices: lookupResult.prices,
 			formatConfig: null,
+			rawCSV: null,
+			rawCSVStoredAt: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};
@@ -229,6 +231,8 @@
 					currency,
 					prices: result.prices,
 					formatConfig: result.detectedFormat,
+					rawCSV: text,
+					rawCSVStoredAt: new Date().toISOString(),
 					createdAt: new Date().toISOString(),
 					updatedAt: new Date().toISOString()
 				};
@@ -290,6 +294,8 @@
 			currency: assetCurrency,
 			prices: result.prices,
 			formatConfig: result.detectedFormat,
+			rawCSV: rawText,
+			rawCSVStoredAt: new Date().toISOString(),
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};
