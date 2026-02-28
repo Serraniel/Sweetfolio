@@ -85,17 +85,21 @@
 							}
 						}
 
-						// Draw efficient frontier dots (colored, on top)
+						// Draw efficient frontier dots (larger, clickable)
+						const dark = isDarkTheme();
 						for (const p of efficientFrontier) {
 							const cx = u.valToPos(p.volatility, 'x', true);
 							const cy = u.valToPos(p.annualizedReturn, 'y', true);
 							ctx.beginPath();
-							ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+							ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
 							ctx.fillStyle =
 								viewMode === 'sharpe'
 									? sharpeColor(p.sharpeRatio, maxSharpe)
 									: COLORS.mikuTeal;
 							ctx.fill();
+							ctx.strokeStyle = dark ? '#222' : '#fff';
+							ctx.lineWidth = 1.5;
+							ctx.stroke();
 						}
 
 						// Draw efficient frontier line
@@ -115,7 +119,6 @@
 
 						// Draw individual asset markers (small dots, less prominent than benchmark)
 						if (assetMarkers.length > 0) {
-							const dark = isDarkTheme();
 							for (const am of assetMarkers) {
 								const ax = u.valToPos(am.volatility, 'x', true);
 								const ay = u.valToPos(am.annualizedReturn, 'y', true);
@@ -130,16 +133,16 @@
 							}
 						}
 
-						// Draw benchmark dot
+						// Draw benchmark dot (most prominent)
 						if (benchmark) {
 							const bx = u.valToPos(benchmark.volatility, 'x', true);
 							const by = u.valToPos(benchmark.annualizedReturn, 'y', true);
 							ctx.beginPath();
-							ctx.arc(bx, by, 6, 0, Math.PI * 2);
+							ctx.arc(bx, by, 7, 0, Math.PI * 2);
 							ctx.fillStyle = BENCHMARK_COLOR;
 							ctx.fill();
-							ctx.strokeStyle = '#fff';
-							ctx.lineWidth = 1.5;
+							ctx.strokeStyle = dark ? '#fff' : '#333';
+							ctx.lineWidth = 2;
 							ctx.stroke();
 						}
 					}
@@ -192,6 +195,29 @@
 		};
 	}
 
+	function isNearFrontierPoint(e: MouseEvent): boolean {
+		if (!chart) return false;
+		const rect = chart.over.getBoundingClientRect();
+		const cx = e.clientX - rect.left;
+		const cy = e.clientY - rect.top;
+		const rootRect = chart.root.getBoundingClientRect();
+		const offsetX = rect.left - rootRect.left;
+		const offsetY = rect.top - rootRect.top;
+
+		for (const p of efficientFrontier) {
+			const px = chart.valToPos(p.volatility, 'x', true);
+			const py = chart.valToPos(p.annualizedReturn, 'y', true);
+			const dist = Math.sqrt((px - cx - offsetX) ** 2 + (py - cy - offsetY) ** 2);
+			if (dist < 20) return true;
+		}
+		return false;
+	}
+
+	function handleMouseMove(e: MouseEvent) {
+		if (!chart) return;
+		chart.over.style.cursor = isNearFrontierPoint(e) ? 'pointer' : '';
+	}
+
 	function handleClick(e: MouseEvent) {
 		if (!chart || !onselect) return;
 
@@ -239,6 +265,7 @@
 		const width = container.clientWidth || 600;
 		chart = new uPlot(buildOpts(width), buildData(), container);
 		chart.over.addEventListener('click', handleClick);
+		chart.over.addEventListener('mousemove', handleMouseMove);
 	}
 
 	$effect(() => {
@@ -261,6 +288,7 @@
 
 		return () => {
 			chart?.over.removeEventListener('click', handleClick);
+			chart?.over.removeEventListener('mousemove', handleMouseMove);
 			chart?.destroy();
 			resizeObs?.disconnect();
 			themeObs?.disconnect();
@@ -299,6 +327,14 @@
 			</button>
 		</div>
 		<div bind:this={container} class="chart-container"></div>
+		{#if benchmark}
+			<div class="chart-legend">
+				<span class="legend-item">
+					<span class="legend-dot benchmark-dot"></span>
+					Benchmark
+				</span>
+			</div>
+		{/if}
 	</div>
 {/if}
 
@@ -347,6 +383,33 @@
 		height: 20px;
 		background: var(--color-border, #b4b8bf);
 		margin: 0 4px;
+	}
+
+	.chart-legend {
+		display: flex;
+		gap: 12px;
+		padding: 6px 0 0;
+		justify-content: flex-start;
+	}
+
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
+		color: var(--color-text-muted, #8a8d94);
+	}
+
+	.legend-dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.benchmark-dot {
+		background: #e8175d;
+		box-shadow: 0 0 0 1.5px var(--color-text-primary, #333);
 	}
 
 	.chart-empty {

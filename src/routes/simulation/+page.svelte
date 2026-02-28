@@ -164,12 +164,15 @@
 		selectedPortfolio = portfolio;
 	}
 
-	// Resolve asset names for inspector
+	// Resolve asset names for inspector, filtering out 0% allocations
 	function resolveWeights(weights: Record<string, number>): Array<{ name: string; weight: number }> {
-		return Object.entries(weights).map(([id, weight]) => {
-			const asset = $assets.find((a) => a.id === id);
-			return { name: asset?.name ?? id.slice(0, 8), weight };
-		});
+		return Object.entries(weights)
+			.filter(([, weight]) => weight > 0)
+			.map(([id, weight]) => {
+				const asset = $assets.find((a) => a.id === id);
+				return { name: asset?.name ?? id.slice(0, 8), weight };
+			})
+			.sort((a, b) => b.weight - a.weight);
 	}
 
 	async function handleSaveAsPortfolio() {
