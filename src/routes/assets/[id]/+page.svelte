@@ -13,6 +13,7 @@
 	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { calculateMetrics } from '$lib/workers/manager';
 	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
+	import PriceDataSection from '$lib/components/PriceDataSection.svelte';
 	import type { MetricsResult, CurrencyRate } from '$lib/types';
 
 	const assetId = $derived(page.params.id ?? '');
@@ -265,6 +266,8 @@
 				</Card>
 			{/if}
 		</section>
+
+		<PriceDataSection {asset} />
 
 		<Modal bind:open={showEditModal} title="Edit Asset">
 			<div class="edit-form">

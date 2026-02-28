@@ -18,7 +18,8 @@
 		onconfirm,
 		assetName = $bindable(''),
 		assetCurrency = $bindable('EUR'),
-		title = 'CSV Import Configuration'
+		title = 'CSV Import Configuration',
+		confirmLabel = 'Import'
 	}: {
 		open?: boolean;
 		detectedFormat?: {
@@ -34,6 +35,7 @@
 		assetName?: string;
 		assetCurrency?: string;
 		title?: string;
+		confirmLabel?: string;
 	} = $props();
 
 	const dateFormats = [
@@ -145,7 +147,7 @@
 
 	{#snippet footer()}
 		<Button variant="ghost" onclick={() => open = false}>Cancel</Button>
-		<Button variant="primary" onclick={onconfirm} disabled={!assetName.trim()}>Import</Button>
+		<Button variant="primary" onclick={onconfirm} disabled={!assetName.trim()}>{confirmLabel}</Button>
 	{/snippet}
 </Modal>
 
