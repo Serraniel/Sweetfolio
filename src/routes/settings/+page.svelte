@@ -13,6 +13,8 @@
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
 	import type { DetectedFormat } from '$lib/types';
+	import { fetchPriceData as onvistaFetch } from '$lib/fetchers/onvista';
+	import { fetchPriceData as alphaVantageFetchPrice } from '$lib/fetchers/alphavantage';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
@@ -22,6 +24,10 @@
 	let corsProxyUrl = $state('');
 	let dataSourcePrimary = $state('onvista');
 	let saving = $state(false);
+	let testingConnection = $state(false);
+	let connectionTestResult: { ok: boolean; message: string } | null = $state(null);
+	let testingAlphaVantage = $state(false);
+	let alphaVantageTestResult: { ok: boolean; message: string } | null = $state(null);
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
 
@@ -133,6 +139,59 @@
 		indexedDB.deleteDatabase('sweetfolio');
 		window.location.reload();
 	}
+
+	const TEST_ISIN = 'IE00B3RBWM25'; // Vanguard FTSE All-World
+
+	async function handleTestConnection() {
+		testingConnection = true;
+		connectionTestResult = null;
+
+		try {
+			if (dataSourcePrimary === 'onvista') {
+				const result = await onvistaFetch(TEST_ISIN);
+				if (result.success) {
+					connectionTestResult = { ok: true, message: `Connected! Found "${result.data.name}"` };
+				} else {
+					connectionTestResult = { ok: false, message: `Failed: ${result.error.message}` };
+				}
+			} else if (dataSourcePrimary === 'alphavantage') {
+				if (!alphaVantageApiKey) {
+					connectionTestResult = { ok: false, message: 'No API key configured.' };
+				} else {
+					const result = await alphaVantageFetchPrice(TEST_ISIN, alphaVantageApiKey);
+					if (result.success) {
+						connectionTestResult = { ok: true, message: `Connected! Found "${result.data.name}"` };
+					} else {
+						connectionTestResult = { ok: false, message: `Failed: ${result.error.message}` };
+					}
+				}
+			} else {
+				connectionTestResult = { ok: false, message: 'This data source is not yet implemented.' };
+			}
+		} catch {
+			connectionTestResult = { ok: false, message: 'Connection failed. Check your network.' };
+		} finally {
+			testingConnection = false;
+		}
+	}
+
+	async function handleTestAlphaVantage() {
+		testingAlphaVantage = true;
+		alphaVantageTestResult = null;
+
+		try {
+			const result = await alphaVantageFetchPrice(TEST_ISIN, alphaVantageApiKey);
+			if (result.success) {
+				alphaVantageTestResult = { ok: true, message: `Valid! Found "${result.data.name}"` };
+			} else {
+				alphaVantageTestResult = { ok: false, message: `Failed: ${result.error.message}` };
+			}
+		} catch {
+			alphaVantageTestResult = { ok: false, message: 'Connection failed. Check your API key and network.' };
+		} finally {
+			testingAlphaVantage = false;
+		}
+	}
 </script>
 
 <div class="settings-page">
@@ -173,17 +232,61 @@
 					</div>
 					<div class="setting-control">
 						<select bind:value={dataSourcePrimary}>
-							<option value="onvista">Onvista (default)</option>
+							<option value="onvista">Onvista (no key required)</option>
+							<option value="alphavantage">Alpha Vantage (API key required)</option>
+							<option value="yahoo">Yahoo Finance (CORS proxy required)</option>
 						</select>
 					</div>
 				</div>
 
+				{#if dataSourcePrimary === 'alphavantage' && !alphaVantageApiKey}
+					<div class="setting-hint warning">
+						Alpha Vantage requires an API key. Get one free at
+						<a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">alphavantage.co</a>
+					</div>
+				{/if}
+
+				{#if dataSourcePrimary === 'yahoo' && !corsProxyUrl}
+					<div class="setting-hint warning">
+						Yahoo Finance requires a CORS proxy URL. This is for advanced users only.
+					</div>
+				{/if}
+
+				{#if dataSourcePrimary === 'yahoo'}
+					<div class="setting-hint info">
+						Yahoo Finance fetcher is not yet implemented. Please use Onvista or Alpha Vantage.
+					</div>
+				{/if}
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
+					<div class="setting-info">
+						<span class="setting-label">Test Connection</span>
+						<span class="setting-description">Verify the selected data source is reachable</span>
+					</div>
+					<div class="setting-control">
+						<Button
+							variant="default"
+							size="sm"
+							disabled={testingConnection || dataSourcePrimary === 'yahoo'}
+							onclick={handleTestConnection}
+						>
+							{testingConnection ? 'Testing...' : 'Test Connection'}
+						</Button>
+					</div>
+				</div>
+
+				{#if connectionTestResult}
+					<div class="setting-hint" class:success={connectionTestResult.ok} class:error={!connectionTestResult.ok}>
+						{connectionTestResult.message}
+					</div>
+				{/if}
+
 				<div class="setting-row" style="margin-top: var(--spacing-lg);">
 					<div class="setting-info">
 						<span class="setting-label">Alpha Vantage API Key</span>
-						<span class="setting-description">Optional. Enables Alpha Vantage as a secondary data source</span>
+						<span class="setting-description">Required for Alpha Vantage. Free at alphavantage.co</span>
 					</div>
-					<div class="setting-control">
+					<div class="setting-control api-key-row">
 						<input
 							type="password"
 							placeholder="Enter API key"
@@ -191,8 +294,22 @@
 							autocomplete="off"
 							class="api-key-input"
 						/>
+						<Button
+							variant="default"
+							size="sm"
+							disabled={!alphaVantageApiKey || testingAlphaVantage}
+							onclick={handleTestAlphaVantage}
+						>
+							{testingAlphaVantage ? 'Testing...' : 'Test'}
+						</Button>
 					</div>
 				</div>
+
+				{#if alphaVantageTestResult}
+					<div class="setting-hint" class:success={alphaVantageTestResult.ok} class:error={!alphaVantageTestResult.ok}>
+						{alphaVantageTestResult.message}
+					</div>
+				{/if}
 
 				<div class="setting-row" style="margin-top: var(--spacing-lg);">
 					<div class="setting-info">
@@ -600,5 +717,47 @@
 		color: var(--color-text-muted);
 		font-size: var(--font-size-xs);
 		flex: 1;
+	}
+
+	.setting-hint {
+		font-size: var(--font-size-xs);
+		padding: var(--spacing-xs) var(--spacing-sm);
+		border-radius: var(--radius-sm);
+		margin-top: var(--spacing-sm);
+	}
+
+	.setting-hint.warning {
+		color: var(--color-warning, #e6a817);
+		background: rgba(230, 168, 23, 0.08);
+		border: 1px solid rgba(230, 168, 23, 0.2);
+	}
+
+	.setting-hint.info {
+		color: var(--color-text-muted);
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border);
+	}
+
+	.setting-hint.success {
+		color: var(--color-accent);
+		background: rgba(141, 208, 196, 0.08);
+		border: 1px solid rgba(141, 208, 196, 0.2);
+	}
+
+	.setting-hint.error {
+		color: var(--color-negative, #e55);
+		background: rgba(232, 23, 93, 0.08);
+		border: 1px solid rgba(232, 23, 93, 0.2);
+	}
+
+	.setting-hint a {
+		color: var(--color-accent);
+		text-decoration: underline;
+	}
+
+	.api-key-row {
+		display: flex;
+		gap: var(--spacing-sm);
+		align-items: center;
 	}
 </style>
