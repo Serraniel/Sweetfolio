@@ -24,6 +24,11 @@
 	let assetName = $state('');
 	let assetCurrency = $state('EUR');
 
+	// Queue for multi-file import
+	let pendingFiles: File[] = $state([]);
+	let currentFileIndex = $state(0);
+	let totalFiles = $state(0);
+
 	// Derive display list from store
 	const assetList = $derived(
 		$assets.map((a) => ({
@@ -40,9 +45,15 @@
 	);
 
 	function handleFiles(files: FileList) {
-		const file = files[0];
-		if (!file) return;
+		if (files.length === 0) return;
 
+		pendingFiles = Array.from(files);
+		currentFileIndex = 0;
+		totalFiles = pendingFiles.length;
+		loadFile(pendingFiles[0]);
+	}
+
+	function loadFile(file: File) {
 		importFileName = file.name.replace(/\.csv$/i, '');
 		assetName = importFileName;
 
@@ -51,7 +62,6 @@
 			rawText = reader.result as string;
 			const fmt = detectFormat(rawText);
 			detectedFormat = fmt;
-			// Generate preview rows using detected delimiter
 			csvPreview = parseCSVRows(rawText, fmt.delimiter).slice(0, 10);
 			showFormatModal = true;
 		};
@@ -79,6 +89,16 @@
 		rawText = '';
 		csvPreview = [];
 		assetName = '';
+
+		// Process next file in the queue
+		currentFileIndex++;
+		if (currentFileIndex < pendingFiles.length) {
+			loadFile(pendingFiles[currentFileIndex]);
+		} else {
+			pendingFiles = [];
+			currentFileIndex = 0;
+			totalFiles = 0;
+		}
 	}
 
 	async function handleDelete(id: string) {
@@ -160,6 +180,7 @@
 		onconfirm={handleImportConfirm}
 		bind:assetName
 		bind:assetCurrency
+		title={totalFiles > 1 ? `CSV Import (${currentFileIndex + 1} of ${totalFiles})` : 'CSV Import Configuration'}
 	/>
 </div>
 

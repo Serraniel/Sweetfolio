@@ -17,7 +17,8 @@
 		preview = [],
 		onconfirm,
 		assetName = $bindable(''),
-		assetCurrency = $bindable('EUR')
+		assetCurrency = $bindable('EUR'),
+		title = 'CSV Import Configuration'
 	}: {
 		open?: boolean;
 		detectedFormat?: {
@@ -32,6 +33,7 @@
 		onconfirm?: () => void;
 		assetName?: string;
 		assetCurrency?: string;
+		title?: string;
 	} = $props();
 
 	const dateFormats = [
@@ -55,7 +57,7 @@
 	];
 </script>
 
-<Modal bind:open title="CSV Import Configuration">
+<Modal bind:open {title}>
 	<div class="format-config">
 		<div class="format-field">
 			<label for="asset-name">Asset Name</label>
