@@ -9,8 +9,13 @@
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
+	import { currencies, loadCurrencies } from '$lib/stores/currencies';
 	import { calculateMetrics } from '$lib/workers/manager';
-	import type { MetricsResult } from '$lib/types';
+	import type { MetricsResult, CurrencyRate } from '$lib/types';
+	import { onMount } from 'svelte';
+
+	// Load currencies on mount for conversion
+	onMount(() => { loadCurrencies(); });
 
 	const assetId = $derived(page.params.id);
 	const asset = $derived($assets.find((a) => a.id === assetId));
@@ -76,6 +81,20 @@
 		showEditModal = false;
 	}
 
+	// Find currency conversion data if asset currency differs from main currency
+	function findCurrencyConversion(assetCurrency: string, mainCurrency: string, rates: CurrencyRate[]) {
+		if (assetCurrency === mainCurrency) return undefined;
+		const directPair = assetCurrency + mainCurrency;
+		const inversePair = mainCurrency + assetCurrency;
+		const rate = rates.find((r) => r.pair === directPair || r.pair === inversePair);
+		if (!rate) return undefined;
+		return {
+			currencyRate: rate,
+			sourceCurrency: assetCurrency,
+			targetCurrency: mainCurrency,
+		};
+	}
+
 	// Compute metrics when asset changes
 	$effect(() => {
 		if (!asset || asset.prices.length < 2) {
@@ -85,7 +104,9 @@
 
 		metricsLoading = true;
 		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-		calculateMetrics(asset.id, asset.prices, riskFreeRate)
+		const mainCurrency = ($settings.mainCurrency as string) ?? 'EUR';
+		const conversion = findCurrencyConversion(asset.currency, mainCurrency, $currencies);
+		calculateMetrics(asset.id, asset.prices, riskFreeRate, conversion)
 			.then((result) => {
 				metrics = result;
 			})

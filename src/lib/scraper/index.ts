@@ -140,7 +140,6 @@ interface DataSource {
 
 /**
  * Registered data sources, tried in order.
- * Currently empty — sources will be added as they are implemented and tested.
  *
  * To add a new source, create a module that implements the DataSource interface
  * and push it to this array.
@@ -154,3 +153,29 @@ const DATA_SOURCES: DataSource[] = [];
 export function registerDataSource(source: DataSource): void {
   DATA_SOURCES.push(source);
 }
+
+// --- Register built-in data sources ---
+
+import { fetchPriceData as onvistaFetch } from '$lib/fetchers/onvista';
+
+registerDataSource({
+  name: 'onvista',
+  async fetchByISIN(isin) {
+    const outcome = await onvistaFetch(isin);
+    if (!outcome.success) return null;
+    return {
+      prices: outcome.data.prices,
+      name: outcome.data.name,
+      currency: outcome.data.currency,
+    };
+  },
+  async fetchByWKN(wkn) {
+    const outcome = await onvistaFetch(wkn);
+    if (!outcome.success) return null;
+    return {
+      prices: outcome.data.prices,
+      name: outcome.data.name,
+      currency: outcome.data.currency,
+    };
+  },
+});

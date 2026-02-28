@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { validateISIN, validateWKN, fetchByISIN, fetchByWKN } from './index';
 
 describe('validateISIN', () => {
@@ -42,12 +42,17 @@ describe('fetchByISIN', () => {
     }
   });
 
-  it('returns failure when no data sources are registered', async () => {
-    const result = await fetchByISIN('US0378331005');
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.source).toBe('all');
-      expect(result.error.recoverable).toBe(true);
+  it('returns failure when all data sources fail', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    try {
+      const result = await fetchByISIN('US0378331005');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.source).toBe('all');
+        expect(result.error.recoverable).toBe(true);
+      }
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
 });
@@ -61,11 +66,16 @@ describe('fetchByWKN', () => {
     }
   });
 
-  it('returns failure when no data sources are registered', async () => {
-    const result = await fetchByWKN('A0RPWH');
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.recoverable).toBe(true);
+  it('returns failure when all data sources fail', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    try {
+      const result = await fetchByWKN('A0RPWH');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.recoverable).toBe(true);
+      }
+    } finally {
+      fetchSpy.mockRestore();
     }
   });
 });

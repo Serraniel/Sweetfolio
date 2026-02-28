@@ -4,13 +4,15 @@
 	import EfficientFrontier from '$lib/charts/EfficientFrontier.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
-	import { simulation, updateConfig, setProgress, setResult, setRunning } from '$lib/stores/simulation';
+	import { addPortfolio } from '$lib/stores/portfolios';
+	import { simulation, updateConfig, setProgress, setResult, setRunning, saveSimulation } from '$lib/stores/simulation';
 	import { createMonteCarloWorker } from '$lib/workers/manager';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
 
 	let simulationCount = $state(10000);
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
+	let saveSuccess = $state(false);
 
 	// Derive available assets with selection state
 	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
@@ -65,6 +67,18 @@
 					break;
 				case 'simulation-result':
 					setResult(msg.payload);
+					// Persist simulation results to IndexedDB
+					saveSimulation({
+						id: crypto.randomUUID(),
+						config: {
+							simulationCount,
+							assetIds: assetData.map((a) => a.id),
+							riskFreeRate,
+							benchmarkPortfolioId: null
+						},
+						results: msg.payload,
+						createdAt: new Date().toISOString()
+					});
 					worker?.terminate();
 					worker = null;
 					break;
@@ -113,6 +127,31 @@
 			const asset = $assets.find((a) => a.id === id);
 			return { name: asset?.name ?? id.slice(0, 8), weight };
 		});
+	}
+
+	async function handleSaveAsPortfolio() {
+		if (!selectedPortfolio) return;
+
+		const allocations = Object.entries(selectedPortfolio.weights).map(([assetId, weight]) => ({
+			assetId,
+			weight
+		}));
+
+		const names = resolveWeights(selectedPortfolio.weights).map((w) => w.name);
+		const portfolioName = `Simulated (${names.join(', ')})`.slice(0, 60);
+
+		const portfolio = {
+			id: crypto.randomUUID(),
+			name: portfolioName,
+			allocations,
+			isBenchmark: false,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString()
+		};
+
+		await addPortfolio(portfolio);
+		saveSuccess = true;
+		setTimeout(() => { saveSuccess = false; }, 3000);
 	}
 </script>
 
@@ -219,6 +258,19 @@
 											<span class="weight-value">{(w.weight * 100).toFixed(1)}%</span>
 										</div>
 									{/each}
+								</div>
+								<div class="inspector-actions">
+									<Button variant="primary" size="sm" onclick={handleSaveAsPortfolio}>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+											<polyline points="17 21 17 13 7 13 7 21"/>
+											<polyline points="7 3 7 8 15 8"/>
+										</svg>
+										Save as Portfolio
+									</Button>
+									{#if saveSuccess}
+										<span class="save-feedback">Saved</span>
+									{/if}
 								</div>
 							</div>
 						{:else}
