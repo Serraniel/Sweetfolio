@@ -10,6 +10,7 @@
 	import { createMonteCarloWorker } from '$lib/workers/manager';
 	import { annualizedLogReturn } from '$lib/engine/returns';
 	import { annualizedVolatility } from '$lib/engine/volatility';
+	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
 
@@ -29,6 +30,7 @@
 		}));
 	});
 
+	const assetColors = $derived(generateAssetColors(assetSelections.length));
 	const isRunning = $derived($simulation.running);
 	const progress = $derived(
 		$simulation.progress
@@ -55,20 +57,24 @@
 		};
 	});
 
-	// Compute per-asset markers using the same log-return-based metrics as the MC worker
+	// Compute per-asset markers using the same log-return-based metrics as the MC worker.
+	// Colors match the sidebar dots by using each asset's index in the full assetSelections list.
 	const assetMarkerList = $derived.by((): AssetMarker[] => {
 		if (!result) return [];
-		return selectedAssets
-			.map((sel) => {
-				const asset = $assets.find((a) => a.id === sel.id);
-				if (!asset || asset.prices.length < 2) return null;
-				return {
-					name: asset.name,
-					annualizedReturn: annualizedLogReturn(asset.prices),
-					volatility: annualizedVolatility(asset.prices),
-				};
-			})
-			.filter((m): m is AssetMarker => m !== null);
+		const markers: AssetMarker[] = [];
+		for (let i = 0; i < assetSelections.length; i++) {
+			const sel = assetSelections[i];
+			if (!sel.selected) continue;
+			const asset = $assets.find((a) => a.id === sel.id);
+			if (!asset || asset.prices.length < 2) continue;
+			markers.push({
+				name: asset.name,
+				annualizedReturn: annualizedLogReturn(asset.prices),
+				volatility: annualizedVolatility(asset.prices),
+				color: assetColors[i],
+			});
+		}
+		return markers;
 	});
 
 	function handleRun() {
@@ -238,9 +244,10 @@
 									/>
 									<span>Select all</span>
 								</label>
-								{#each assetSelections as asset}
+								{#each assetSelections as asset, idx}
 									<label class="checkbox-item">
 										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
+										<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
 										<span>{asset.name}</span>
 									</label>
 								{/each}
@@ -429,6 +436,13 @@
 		gap: var(--spacing-sm);
 		cursor: pointer;
 		font-size: var(--font-size-sm);
+	}
+
+	.asset-color-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
 	}
 
 	.checkbox-item.select-all {

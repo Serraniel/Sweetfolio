@@ -8,7 +8,6 @@
 		observeThemeChanges,
 		BENCHMARK_COLOR,
 		COLORS,
-		SERIES_COLORS,
 		isDarkTheme,
 		fmtPct
 	} from './utils';
@@ -19,6 +18,7 @@
 		name: string;
 		annualizedReturn: number;
 		volatility: number;
+		color: string;
 	}
 
 	interface Props {
@@ -113,34 +113,20 @@
 							ctx.stroke();
 						}
 
-						// Draw individual asset markers
+						// Draw individual asset markers (small dots, less prominent than benchmark)
 						if (assetMarkers.length > 0) {
 							const dark = isDarkTheme();
-							ctx.font = '10px system-ui, -apple-system, sans-serif';
-							ctx.textBaseline = 'bottom';
-
-							for (let idx = 0; idx < assetMarkers.length; idx++) {
-								const am = assetMarkers[idx];
+							for (const am of assetMarkers) {
 								const ax = u.valToPos(am.volatility, 'x', true);
 								const ay = u.valToPos(am.annualizedReturn, 'y', true);
-								const color = SERIES_COLORS[idx % SERIES_COLORS.length];
 
-								// Diamond shape
 								ctx.beginPath();
-								ctx.moveTo(ax, ay - 5);
-								ctx.lineTo(ax + 5, ay);
-								ctx.lineTo(ax, ay + 5);
-								ctx.lineTo(ax - 5, ay);
-								ctx.closePath();
-								ctx.fillStyle = color;
+								ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+								ctx.fillStyle = am.color;
 								ctx.fill();
 								ctx.strokeStyle = dark ? '#222' : '#fff';
-								ctx.lineWidth = 1.5;
+								ctx.lineWidth = 1;
 								ctx.stroke();
-
-								// Label
-								ctx.fillStyle = dark ? '#ccc' : '#444';
-								ctx.fillText(am.name, ax + 8, ay + 3);
 							}
 						}
 
@@ -216,6 +202,12 @@
 		const xVal = chart.posToVal(cx, 'x');
 		const yVal = chart.posToVal(cy, 'y');
 
+		// Coordinate offset: valToPos returns canvas-relative coords (includes axis area),
+		// but cx/cy are relative to the overlay (plot area only).
+		const rootRect = chart.root.getBoundingClientRect();
+		const offsetX = rect.left - rootRect.left;
+		const offsetY = rect.top - rootRect.top;
+
 		// Find nearest portfolio
 		let nearest: SimulatedPortfolio | null = null;
 		let minDist = Infinity;
@@ -230,10 +222,10 @@
 		}
 
 		if (nearest) {
-			// Check that the click is reasonably close (within 20px in canvas space)
+			// Check that the click is reasonably close (within 20px in screen space)
 			const px = chart.valToPos(nearest.volatility, 'x', true);
 			const py = chart.valToPos(nearest.annualizedReturn, 'y', true);
-			const screenDist = Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
+			const screenDist = Math.sqrt((px - cx - offsetX) ** 2 + (py - cy - offsetY) ** 2);
 			if (screenDist < 20) {
 				onselect(nearest);
 			}

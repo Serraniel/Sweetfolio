@@ -27,6 +27,28 @@ export const SERIES_COLORS = [
 
 export const BENCHMARK_COLOR = COLORS.hotPink;
 
+/**
+ * Generate N visually distinct, vibrant colors for asset markers.
+ * Uses evenly-spaced hues with consistent saturation and lightness
+ * so colors feel cohesive while being maximally distinguishable.
+ * Avoids the hot-pink hue range reserved for the benchmark.
+ */
+export function generateAssetColors(count: number): string[] {
+	if (count === 0) return [];
+	const colors: string[] = [];
+	// Use golden-angle spacing for maximum perceptual separation
+	const goldenAngle = 137.508;
+	// Start at teal-ish hue (170) to match the app's palette feel
+	const startHue = 170;
+	for (let i = 0; i < count; i++) {
+		const hue = (startHue + i * goldenAngle) % 360;
+		// Skip hues too close to benchmark pink (330-350)
+		const adjustedHue = (hue >= 320 && hue <= 355) ? (hue + 40) % 360 : hue;
+		colors.push(`hsl(${adjustedHue.toFixed(0)}, 65%, 55%)`);
+	}
+	return colors;
+}
+
 // --- Theme detection ---
 
 /** Check if the current document theme is dark mode. Returns true on the server. */
