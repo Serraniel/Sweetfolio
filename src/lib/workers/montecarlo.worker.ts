@@ -56,10 +56,26 @@ function runSimulation(
   const covMatrix = computeCovarianceMatrix(assetReturns);
 
   const portfolios: SimulatedPortfolio[] = [];
+  const seen = new Set<string>();
 
   for (let sim = 0; sim < simulationCount; sim++) {
-    // Generate random weights (non-negative, sum to 1)
+    // Generate random weights (non-negative, sum to 1, discrete steps)
     const weights = generateRandomWeights(n);
+
+    // Deduplicate: skip if we've seen this exact weight combo before
+    const key = weights.map((w) => w.toFixed(3)).join(',');
+    if (seen.has(key)) {
+      // Report progress but skip duplicate
+      if ((sim + 1) % PROGRESS_INTERVAL === 0 || sim === simulationCount - 1) {
+        const progress: MonteCarloWorkerResponse = {
+          type: 'simulation-progress',
+          payload: { completed: sim + 1, total: simulationCount },
+        };
+        self.postMessage(progress);
+      }
+      continue;
+    }
+    seen.add(key);
 
     // Portfolio annualized return = sum(w_i * mean_return_i)
     let portReturn = 0;
@@ -106,21 +122,74 @@ function runSimulation(
 }
 
 /**
- * Generate a random weight vector where all weights are non-negative and sum to 1.
- * Uses the Dirichlet distribution (exponential of uniform random variables).
+ * Generate a random weight vector with discrete allocation steps.
+ *
+ * Rules:
+ * - Weights are multiples of STEP (0.5% = 0.005)
+ * - Each weight is either 0% (excluded from portfolio) or >= MIN_WEIGHT (3%)
+ * - All weights sum to 1.0
+ *
+ * Uses Dirichlet-based generation, then snaps to the step grid while
+ * enforcing the minimum allocation constraint.
  */
+const STEP = 0.005; // 0.5%
+const MIN_WEIGHT = 0.03; // 3%
+
 function generateRandomWeights(n: number): number[] {
+  // Generate raw Dirichlet weights
   const raw = new Array(n);
   let sum = 0;
   for (let i = 0; i < n; i++) {
-    // -ln(U) gives exponential distribution; clamp away from 0 to avoid -Infinity
     raw[i] = -Math.log(Math.random() || 1e-10);
     sum += raw[i];
   }
   for (let i = 0; i < n; i++) {
     raw[i] /= sum;
   }
-  return raw;
+
+  // Snap to step grid: weights below MIN_WEIGHT become 0 (excluded)
+  const snapped = new Array(n);
+  let snappedSum = 0;
+  for (let i = 0; i < n; i++) {
+    if (raw[i] < MIN_WEIGHT) {
+      snapped[i] = 0;
+    } else {
+      snapped[i] = Math.round(raw[i] / STEP) * STEP;
+      snappedSum += snapped[i];
+    }
+  }
+
+  // If all got zeroed out, give equal weight to the two largest raw weights
+  if (snappedSum === 0) {
+    const sorted = raw.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
+    snapped[sorted[0].i] = 0.5;
+    snapped[sorted[1].i] = 0.5;
+    return snapped;
+  }
+
+  // Normalize to sum to 1.0, re-snap to grid
+  for (let i = 0; i < n; i++) {
+    if (snapped[i] > 0) {
+      snapped[i] = Math.round((snapped[i] / snappedSum) / STEP) * STEP;
+    }
+  }
+
+  // Fix rounding residual: adjust the largest weight
+  let finalSum = 0;
+  let maxIdx = 0;
+  for (let i = 0; i < n; i++) {
+    finalSum += snapped[i];
+    if (snapped[i] > snapped[maxIdx]) maxIdx = i;
+  }
+  const residual = Math.round((1.0 - finalSum) / STEP) * STEP;
+  snapped[maxIdx] += residual;
+
+  // Ensure minimum constraint still holds after adjustment
+  if (snapped[maxIdx] < MIN_WEIGHT && snapped[maxIdx] > 0) {
+    snapped[maxIdx] = MIN_WEIGHT;
+  }
+
+  return snapped;
 }
 
 function computeCovarianceMatrix(returns: number[][]): number[][] {
@@ -146,7 +215,7 @@ function computeCovarianceMatrix(returns: number[][]): number[][] {
 
 /**
  * Extract the efficient frontier: for each volatility bucket, keep the portfolio
- * with the highest return.
+ * with the highest return, then enforce monotonicity (higher vol → higher return).
  */
 function extractEfficientFrontier(portfolios: SimulatedPortfolio[]): SimulatedPortfolio[] {
   if (portfolios.length === 0) return [];
@@ -173,5 +242,18 @@ function extractEfficientFrontier(portfolios: SimulatedPortfolio[]): SimulatedPo
     }
   }
 
-  return [...buckets.values()].sort((a, b) => a.volatility - b.volatility);
+  const sorted = [...buckets.values()].sort((a, b) => a.volatility - b.volatility);
+
+  // Enforce monotonicity: walk left-to-right, only keep points where
+  // return >= max return seen so far. This eliminates zigzag.
+  const frontier: SimulatedPortfolio[] = [];
+  let maxReturn = -Infinity;
+  for (const p of sorted) {
+    if (p.annualizedReturn >= maxReturn) {
+      frontier.push(p);
+      maxReturn = p.annualizedReturn;
+    }
+  }
+
+  return frontier;
 }

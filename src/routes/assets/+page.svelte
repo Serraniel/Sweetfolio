@@ -10,6 +10,7 @@
 	import { settings } from '$lib/stores/settings';
 	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
+	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
 	import type { DetectedFormat } from '$lib/types';
 
 	function isBenchmark(assetId: string): boolean {
@@ -63,19 +64,23 @@
 	let currentFileIndex = $state(0);
 	let totalFiles = $state(0);
 
-	// Derive display list from store
+	// Derive display list from store with health metrics
 	const assetList = $derived(
-		$assets.map((a) => ({
-			id: a.id,
-			name: a.name,
-			isin: a.isin,
-			currency: a.currency,
-			dataPoints: a.prices.length,
-			dateRange:
-				a.prices.length > 0
-					? `${a.prices[0].date} \u2013 ${a.prices[a.prices.length - 1].date}`
-					: ''
-		}))
+		$assets.map((a) => {
+			const health = computeAssetHealth(a.prices);
+			return {
+				id: a.id,
+				name: a.name,
+				isin: a.isin,
+				currency: a.currency,
+				dataPoints: a.prices.length,
+				dateRange:
+					a.prices.length > 0
+						? `${a.prices[0].date} \u2013 ${a.prices[a.prices.length - 1].date}`
+						: '',
+				health
+			};
+		})
 	);
 
 	function handleFiles(files: FileList) {
@@ -257,18 +262,20 @@
 					<table class="asset-table">
 						<thead>
 							<tr>
-								<th class="bm-col" title="Set as benchmark for comparison">BM</th>
+								<th class="bm-col" title="Set as benchmark for comparison">Benchmark</th>
 								<th>Name</th>
 								<th>ISIN</th>
 								<th>Currency</th>
-								<th>Data Points</th>
+								<th class="num-col">Return</th>
+								<th class="num-col">Volatility</th>
+								<th class="num-col">Data Points</th>
 								<th>Date Range</th>
 								<th></th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each assetList as asset}
-								<tr class:benchmark-row={isBenchmark(asset.id)}>
+								<tr class:benchmark-row={isBenchmark(asset.id)} class:has-warnings={asset.health.warnings.length > 0}>
 									<td class="bm-col">
 										<button
 											class="bm-toggle"
@@ -290,11 +297,29 @@
 										</button>
 									</td>
 									<td>
-										<a href="/assets/{asset.id}" class="asset-name">{asset.name}</a>
+										<span class="asset-name-cell">
+											<a href="/assets/{asset.id}" class="asset-name">{asset.name}</a>
+											{#if asset.health.warnings.length > 0}
+												<span class="warning-badge" title={asset.health.warnings.map((w) => w.message).join('\n')}>
+													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+														<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+														<line x1="12" y1="9" x2="12" y2="13"/>
+														<line x1="12" y1="17" x2="12.01" y2="17"/>
+													</svg>
+													{asset.health.warnings.length}
+												</span>
+											{/if}
+										</span>
 									</td>
 									<td class="mono">{asset.isin ?? '\u2014'}</td>
 									<td>{asset.currency}</td>
-									<td class="mono">{asset.dataPoints.toLocaleString()}</td>
+									<td class="mono num-col" class:metric-negative={asset.health.annualizedReturn < -0.1}>
+										{asset.dataPoints >= 2 ? (asset.health.annualizedReturn * 100).toFixed(1) + '%' : '\u2014'}
+									</td>
+									<td class="mono num-col" class:metric-warning={asset.health.volatility > 0.8}>
+										{asset.dataPoints >= 2 ? (asset.health.volatility * 100).toFixed(1) + '%' : '\u2014'}
+									</td>
+									<td class="mono num-col">{asset.dataPoints.toLocaleString()}</td>
 									<td class="muted">{asset.dateRange}</td>
 									<td>
 										<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
@@ -451,6 +476,42 @@
 
 	.benchmark-row {
 		background: rgba(141, 208, 196, 0.05);
+	}
+
+	.num-col {
+		text-align: right;
+	}
+
+	.asset-name-cell {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-xs);
+	}
+
+	.warning-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		color: var(--color-warning, #e6a817);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		cursor: help;
+	}
+
+	.warning-badge svg {
+		flex-shrink: 0;
+	}
+
+	.metric-negative {
+		color: var(--color-negative, #e55);
+	}
+
+	.metric-warning {
+		color: var(--color-warning, #e6a817);
+	}
+
+	.has-warnings td:first-child {
+		border-left: 2px solid var(--color-warning, #e6a817);
 	}
 
 	:global(.toast-container) {

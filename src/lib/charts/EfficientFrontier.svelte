@@ -8,16 +8,24 @@
 		observeThemeChanges,
 		BENCHMARK_COLOR,
 		COLORS,
+		SERIES_COLORS,
 		isDarkTheme,
 		fmtPct
 	} from './utils';
 
 	type ViewMode = 'volatility' | 'sharpe';
 
+	export interface AssetMarker {
+		name: string;
+		annualizedReturn: number;
+		volatility: number;
+	}
+
 	interface Props {
 		portfolios: SimulatedPortfolio[];
 		efficientFrontier: SimulatedPortfolio[];
 		benchmark?: SimulatedPortfolio | null;
+		assetMarkers?: AssetMarker[];
 		height?: number;
 		onselect?: (portfolio: SimulatedPortfolio) => void;
 	}
@@ -26,6 +34,7 @@
 		portfolios,
 		efficientFrontier,
 		benchmark = null,
+		assetMarkers = [],
 		height = 400,
 		onselect
 	}: Props = $props();
@@ -35,6 +44,7 @@
 	let resizeObs: ResizeObserver | undefined;
 	let themeObs: MutationObserver | undefined;
 	let viewMode: ViewMode = $state('volatility');
+	let showSubOptimal: boolean = $state(true);
 
 	function sharpeColor(sharpe: number, maxSharpe: number): string {
 		if (maxSharpe <= 0) return COLORS.silver;
@@ -56,16 +66,35 @@
 						if (seriesIdx !== 1) return;
 						const ctx = u.ctx;
 
-						// Draw all portfolio dots
-						for (const p of portfolios) {
+						// Build a set of frontier portfolio keys for fast lookup
+						const frontierKeys = new Set(
+							efficientFrontier.map((p) => `${p.volatility},${p.annualizedReturn}`)
+						);
+
+						// Draw sub-optimal portfolio dots (grayed out)
+						if (showSubOptimal) {
+							for (const p of portfolios) {
+								const key = `${p.volatility},${p.annualizedReturn}`;
+								if (frontierKeys.has(key)) continue;
+								const cx = u.valToPos(p.volatility, 'x', true);
+								const cy = u.valToPos(p.annualizedReturn, 'y', true);
+								ctx.beginPath();
+								ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+								ctx.fillStyle = COLORS.silver + '44';
+								ctx.fill();
+							}
+						}
+
+						// Draw efficient frontier dots (colored, on top)
+						for (const p of efficientFrontier) {
 							const cx = u.valToPos(p.volatility, 'x', true);
 							const cy = u.valToPos(p.annualizedReturn, 'y', true);
 							ctx.beginPath();
-							ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+							ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
 							ctx.fillStyle =
 								viewMode === 'sharpe'
 									? sharpeColor(p.sharpeRatio, maxSharpe)
-									: COLORS.mikuTeal + '88';
+									: COLORS.mikuTeal;
 							ctx.fill();
 						}
 
@@ -82,6 +111,37 @@
 								else ctx.lineTo(cx, cy);
 							}
 							ctx.stroke();
+						}
+
+						// Draw individual asset markers
+						if (assetMarkers.length > 0) {
+							const dark = isDarkTheme();
+							ctx.font = '10px system-ui, -apple-system, sans-serif';
+							ctx.textBaseline = 'bottom';
+
+							for (let idx = 0; idx < assetMarkers.length; idx++) {
+								const am = assetMarkers[idx];
+								const ax = u.valToPos(am.volatility, 'x', true);
+								const ay = u.valToPos(am.annualizedReturn, 'y', true);
+								const color = SERIES_COLORS[idx % SERIES_COLORS.length];
+
+								// Diamond shape
+								ctx.beginPath();
+								ctx.moveTo(ax, ay - 5);
+								ctx.lineTo(ax + 5, ay);
+								ctx.lineTo(ax, ay + 5);
+								ctx.lineTo(ax - 5, ay);
+								ctx.closePath();
+								ctx.fillStyle = color;
+								ctx.fill();
+								ctx.strokeStyle = dark ? '#222' : '#fff';
+								ctx.lineWidth = 1.5;
+								ctx.stroke();
+
+								// Label
+								ctx.fillStyle = dark ? '#ccc' : '#444';
+								ctx.fillText(am.name, ax + 8, ay + 3);
+							}
 						}
 
 						// Draw benchmark dot
@@ -193,7 +253,9 @@
 		void portfolios;
 		void efficientFrontier;
 		void benchmark;
+		void assetMarkers;
 		void viewMode;
+		void showSubOptimal;
 
 		if (!container) return;
 
@@ -234,6 +296,14 @@
 				onclick={() => (viewMode = 'sharpe')}
 			>
 				Sharpe Ratio View
+			</button>
+			<span class="controls-separator"></span>
+			<button
+				class="view-btn"
+				class:active={showSubOptimal}
+				onclick={() => (showSubOptimal = !showSubOptimal)}
+			>
+				{showSubOptimal ? 'Hide' : 'Show'} Sub-optimal
 			</button>
 		</div>
 		<div bind:this={container} class="chart-container"></div>
@@ -278,6 +348,13 @@
 		background: var(--color-accent-deep, #1a8a8a);
 		color: #fff;
 		border-color: var(--color-accent-deep, #1a8a8a);
+	}
+
+	.controls-separator {
+		width: 1px;
+		height: 20px;
+		background: var(--color-border, #b4b8bf);
+		margin: 0 4px;
 	}
 
 	.chart-empty {

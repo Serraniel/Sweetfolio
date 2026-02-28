@@ -52,3 +52,19 @@ export function annualizedReturn(prices: PricePoint[]): number {
   if (base <= 0) return -1;
   return Math.pow(base, 252 / tradingDays) - 1;
 }
+
+const TRADING_DAYS_PER_YEAR = 252;
+
+/**
+ * Annualized return using mean of log returns * 252.
+ * This is the continuously compounded expected return — the same formula
+ * used by the Monte Carlo simulation worker for portfolio returns.
+ * Use this when plotting alongside MC simulation results.
+ */
+export function annualizedLogReturn(prices: PricePoint[]): number {
+  const logRet = computeLogReturns(prices);
+  if (logRet.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < logRet.length; i++) sum += logRet[i];
+  return (sum / logRet.length) * TRADING_DAYS_PER_YEAR;
+}

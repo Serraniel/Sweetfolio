@@ -5,8 +5,12 @@
 	import { assets } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
 	import { addPortfolio } from '$lib/stores/portfolios';
+	import { benchmark as benchmarkStore } from '$lib/stores/benchmark';
 	import { simulation, updateConfig, setProgress, setResult, setRunning, saveSimulation } from '$lib/stores/simulation';
 	import { createMonteCarloWorker } from '$lib/workers/manager';
+	import { annualizedLogReturn } from '$lib/engine/returns';
+	import { annualizedVolatility } from '$lib/engine/volatility';
+	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
 
 	let simulationCount = $state(10000);
@@ -33,6 +37,39 @@
 	);
 	const result = $derived($simulation.result);
 	const selectedAssets = $derived(assetSelections.filter((a) => a.selected));
+
+	// Compute benchmark as a SimulatedPortfolio for the scatter chart
+	// Use log-return-based metrics to match the MC worker's methodology
+	const benchmarkPortfolio = $derived.by((): SimulatedPortfolio | null => {
+		const bm = $benchmarkStore;
+		if (!bm || bm.prices.length < 2) return null;
+		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
+		const ret = annualizedLogReturn(bm.prices);
+		const vol = annualizedVolatility(bm.prices);
+		const sharpe = vol > 0 ? (ret - riskFreeRate) / vol : 0;
+		return {
+			weights: {},
+			annualizedReturn: ret,
+			volatility: vol,
+			sharpeRatio: sharpe
+		};
+	});
+
+	// Compute per-asset markers using the same log-return-based metrics as the MC worker
+	const assetMarkerList = $derived.by((): AssetMarker[] => {
+		if (!result) return [];
+		return selectedAssets
+			.map((sel) => {
+				const asset = $assets.find((a) => a.id === sel.id);
+				if (!asset || asset.prices.length < 2) return null;
+				return {
+					name: asset.name,
+					annualizedReturn: annualizedLogReturn(asset.prices),
+					volatility: annualizedVolatility(asset.prices),
+				};
+			})
+			.filter((m): m is AssetMarker => m !== null);
+	});
 
 	function handleRun() {
 		if (selectedAssets.length < 2) return;
@@ -188,6 +225,19 @@
 							<p class="muted">No assets available. Upload asset data first.</p>
 						{:else}
 							<div class="asset-checkboxes">
+								<label class="checkbox-item select-all">
+									<input
+										type="checkbox"
+										checked={assetSelections.length > 0 && assetSelections.every((a) => a.selected)}
+										indeterminate={assetSelections.some((a) => a.selected) && !assetSelections.every((a) => a.selected)}
+										onchange={() => {
+											const allSelected = assetSelections.every((a) => a.selected);
+											assetSelections.forEach((a) => (a.selected = !allSelected));
+										}}
+										disabled={isRunning}
+									/>
+									<span>Select all</span>
+								</label>
 								{#each assetSelections as asset}
 									<label class="checkbox-item">
 										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
@@ -227,6 +277,8 @@
 					<EfficientFrontier
 						portfolios={result.portfolios}
 						efficientFrontier={result.efficientFrontier}
+						benchmark={benchmarkPortfolio}
+						assetMarkers={assetMarkerList}
 						onselect={handleSelect}
 					/>
 				</Card>
@@ -377,6 +429,13 @@
 		gap: var(--spacing-sm);
 		cursor: pointer;
 		font-size: var(--font-size-sm);
+	}
+
+	.checkbox-item.select-all {
+		font-weight: 600;
+		padding-bottom: var(--spacing-xs);
+		margin-bottom: var(--spacing-xs);
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	.progress-section {
