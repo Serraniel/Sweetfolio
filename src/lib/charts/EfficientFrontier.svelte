@@ -22,7 +22,9 @@
 	}
 
 	interface Props {
-		portfolios: SimulatedPortfolio[];
+		scatterVolatilities: Float64Array;
+		scatterReturns: Float64Array;
+		portfolioCount: number;
 		efficientFrontier: SimulatedPortfolio[];
 		benchmark?: SimulatedPortfolio | null;
 		assetMarkers?: AssetMarker[];
@@ -31,7 +33,9 @@
 	}
 
 	let {
-		portfolios,
+		scatterVolatilities,
+		scatterReturns,
+		portfolioCount,
 		efficientFrontier,
 		benchmark = null,
 		assetMarkers = [],
@@ -58,7 +62,7 @@
 
 	function drawScatter(u: uPlot): uPlot.Plugin {
 		let maxSharpe = 0.01;
-		for (const p of portfolios) {
+		for (const p of efficientFrontier) {
 			if (p.sharpeRatio > maxSharpe) maxSharpe = p.sharpeRatio;
 		}
 
@@ -79,15 +83,17 @@
 						// of thousands of individual beginPath/arc/fill cycles.
 						if (showSubOptimal) {
 							const maxDots = 50000;
-							const step = portfolios.length > maxDots ? Math.ceil(portfolios.length / maxDots) : 1;
+							const len = portfolioCount;
+							const step = len > maxDots ? Math.ceil(len / maxDots) : 1;
 							ctx.beginPath();
 							ctx.fillStyle = COLORS.silver + '44';
-							for (let i = 0; i < portfolios.length; i += step) {
-								const p = portfolios[i];
-								const key = `${p.volatility},${p.annualizedReturn}`;
+							for (let i = 0; i < len; i += step) {
+								const vol = scatterVolatilities[i];
+								const ret = scatterReturns[i];
+								const key = `${vol},${ret}`;
 								if (frontierKeys.has(key)) continue;
-								const cx = u.valToPos(p.volatility, 'x', true);
-								const cy = u.valToPos(p.annualizedReturn, 'y', true);
+								const cx = u.valToPos(vol, 'x', true);
+								const cy = u.valToPos(ret, 'y', true);
 								ctx.moveTo(cx + 2, cy);
 								ctx.arc(cx, cy, 2, 0, Math.PI * 2);
 							}
@@ -173,14 +179,16 @@
 		for (const am of assetMarkers) {
 			points.push({ x: am.volatility, y: am.annualizedReturn });
 		}
-		// Include sub-optimal range bounds
-		if (portfolios.length > 0) {
+		// Include sub-optimal range bounds from compact typed arrays
+		if (portfolioCount > 0) {
 			let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-			for (const p of portfolios) {
-				if (p.volatility < minX) minX = p.volatility;
-				if (p.volatility > maxX) maxX = p.volatility;
-				if (p.annualizedReturn < minY) minY = p.annualizedReturn;
-				if (p.annualizedReturn > maxY) maxY = p.annualizedReturn;
+			for (let i = 0; i < portfolioCount; i++) {
+				const vol = scatterVolatilities[i];
+				const ret = scatterReturns[i];
+				if (vol < minX) minX = vol;
+				if (vol > maxX) maxX = vol;
+				if (ret < minY) minY = ret;
+				if (ret > maxY) maxY = ret;
 			}
 			points.push({ x: minX, y: minY }, { x: maxX, y: maxY });
 		}
@@ -257,36 +265,27 @@
 		const cx = e.clientX - rect.left;
 		const cy = e.clientY - rect.top;
 
-		const xVal = chart.posToVal(cx, 'x');
-		const yVal = chart.posToVal(cy, 'y');
-
 		// Coordinate offset: valToPos returns canvas-relative coords (includes axis area),
 		// but cx/cy are relative to the overlay (plot area only).
 		const rootRect = chart.root.getBoundingClientRect();
 		const offsetX = rect.left - rootRect.left;
 		const offsetY = rect.top - rootRect.top;
 
-		// Find nearest portfolio
+		// Find nearest frontier portfolio (only frontier has full weight data)
 		let nearest: SimulatedPortfolio | null = null;
 		let minDist = Infinity;
-		for (const p of portfolios) {
-			const dx = (p.volatility - xVal) * 1000;
-			const dy = (p.annualizedReturn - yVal) * 1000;
-			const dist = dx * dx + dy * dy;
+		for (const p of efficientFrontier) {
+			const px = chart.valToPos(p.volatility, 'x', true);
+			const py = chart.valToPos(p.annualizedReturn, 'y', true);
+			const dist = Math.sqrt((px - cx - offsetX) ** 2 + (py - cy - offsetY) ** 2);
 			if (dist < minDist) {
 				minDist = dist;
 				nearest = p;
 			}
 		}
 
-		if (nearest) {
-			// Check that the click is reasonably close (within 20px in screen space)
-			const px = chart.valToPos(nearest.volatility, 'x', true);
-			const py = chart.valToPos(nearest.annualizedReturn, 'y', true);
-			const screenDist = Math.sqrt((px - cx - offsetX) ** 2 + (py - cy - offsetY) ** 2);
-			if (screenDist < 20) {
-				onselect(nearest);
-			}
+		if (nearest && minDist < 20) {
+			onselect(nearest);
 		}
 	}
 
@@ -301,7 +300,9 @@
 	}
 
 	$effect(() => {
-		void portfolios;
+		void scatterVolatilities;
+		void scatterReturns;
+		void portfolioCount;
 		void efficientFrontier;
 		void benchmark;
 		void assetMarkers;
@@ -328,7 +329,7 @@
 	});
 </script>
 
-{#if portfolios.length === 0}
+{#if portfolioCount === 0}
 	<div class="chart-empty">
 		<p>No simulation results to display.</p>
 	</div>

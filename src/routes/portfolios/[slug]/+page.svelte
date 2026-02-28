@@ -16,10 +16,12 @@
 	import { benchmarkRef, benchmark as resolvedBenchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { computePortfolioPrices } from '$lib/engine/portfolio';
 	import { calculateMetrics, calculateCorrelation } from '$lib/workers/manager';
+	import { slugify } from '$lib/utils/slug';
 	import type { MetricsResult, CorrelationMatrix as CorrelationMatrixData } from '$lib/types';
 
-	const portfolioId = $derived(page.params.id ?? '');
-	const portfolio = $derived($portfolios.find((p) => p.id === portfolioId));
+	const slug = $derived(page.params.slug ?? '');
+	const portfolio = $derived($portfolios.find((p) => slugify(p.name) === slug));
+	const portfolioId = $derived(portfolio?.id ?? '');
 	const isCurrentBenchmark = $derived(
 		$benchmarkRef !== null && $benchmarkRef.type === 'portfolio' && $benchmarkRef.id === portfolioId
 	);
@@ -55,13 +57,19 @@
 			weight: totalWeight > 0 ? a.weight / totalWeight : 1 / selected.length
 		}));
 
+		const newName = editName.trim();
 		await updatePortfolio({
 			...portfolio,
-			name: editName.trim(),
+			name: newName,
 			allocations,
 			updatedAt: new Date().toISOString()
 		});
 		showEditModal = false;
+
+		const newSlug = slugify(newName);
+		if (newSlug !== slug) {
+			goto(`/portfolios/${newSlug}`, { replaceState: true });
+		}
 	}
 
 	// Resolve allocation asset names
@@ -176,6 +184,10 @@
 		goto('/portfolios');
 	}
 </script>
+
+<svelte:head>
+	<title>{portfolio ? `${portfolio.name} – Sweetfolio` : 'Portfolio not found – Sweetfolio'}</title>
+</svelte:head>
 
 {#if !portfolio}
 	<div class="portfolio-detail">

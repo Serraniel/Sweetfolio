@@ -108,6 +108,13 @@
 			switch (msg.type) {
 				case 'simulation-progress':
 					setProgress(msg.payload.completed, msg.payload.total);
+					// When progress reaches 100%, show the rendering indicator immediately.
+					// The result message hasn't arrived yet (worker still computing frontier
+					// + structured clone transfer), so this bridges the visual gap.
+					if (msg.payload.completed >= msg.payload.total) {
+						rendering = true;
+						setRunning(false);
+					}
 					break;
 				case 'simulation-result': {
 					// The chart render (uPlot) is synchronous and blocks the main thread.
@@ -213,6 +220,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Simulation – Sweetfolio</title>
+</svelte:head>
+
 <div class="simulation-page">
 	<header class="page-header">
 		<h1>Monte Carlo Simulation</h1>
@@ -309,7 +320,9 @@
 			{:else if result}
 				<Card padding="lg">
 					<EfficientFrontier
-						portfolios={result.portfolios}
+						scatterVolatilities={result.scatterVolatilities}
+						scatterReturns={result.scatterReturns}
+						portfolioCount={result.portfolioCount}
 						efficientFrontier={result.efficientFrontier}
 						benchmark={benchmarkPortfolio}
 						assetMarkers={assetMarkerList}

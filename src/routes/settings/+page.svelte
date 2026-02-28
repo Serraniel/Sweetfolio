@@ -194,6 +194,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Settings – Sweetfolio</title>
+</svelte:head>
+
 <div class="settings-page">
 	<header class="page-header">
 		<h1>Settings</h1>

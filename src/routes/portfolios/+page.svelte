@@ -5,6 +5,7 @@
 	import { assets } from '$lib/stores/assets';
 	import { portfolios, addPortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
+	import { slugify } from '$lib/utils/slug';
 
 	let showCreateModal = $state(false);
 	let newPortfolioName = $state('');
@@ -87,6 +88,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Portfolios – Sweetfolio</title>
+</svelte:head>
+
 <div class="portfolios-page">
 	<header class="page-header">
 		<div class="page-header-row">
@@ -119,7 +124,7 @@
 		<div class="portfolio-grid">
 			{#each portfolioList as portfolio}
 				<div class="portfolio-card-wrapper">
-					<a href="/portfolios/{portfolio.id}" class="portfolio-link">
+					<a href="/portfolios/{slugify(portfolio.name)}" class="portfolio-link">
 						<Card>
 							<div class="portfolio-card">
 								<div class="portfolio-card-header">

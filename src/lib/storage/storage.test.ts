@@ -177,7 +177,9 @@ describe('Storage: simulations', () => {
         benchmarkPortfolioId: null,
       },
       results: {
-        portfolios: [],
+        scatterVolatilities: new Float64Array(0),
+        scatterReturns: new Float64Array(0),
+        portfolioCount: 0,
         efficientFrontier: [],
       },
       createdAt: '2024-01-01T00:00:00Z',

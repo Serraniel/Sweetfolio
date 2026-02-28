@@ -12,6 +12,7 @@
 	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
+	import { slugify } from '$lib/utils/slug';
 	import type { DetectedFormat } from '$lib/types';
 
 	function isBenchmark(assetId: string): boolean {
@@ -326,6 +327,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Assets – Sweetfolio</title>
+</svelte:head>
+
 <div class="assets-page">
 	<header class="page-header">
 		<div class="page-header-row">
@@ -479,7 +484,7 @@
 									</td>
 									<td>
 										<span class="asset-name-cell">
-											<a href="/assets/{asset.id}" class="asset-name">{asset.name}</a>
+											<a href="/assets/{slugify(asset.name)}" class="asset-name">{asset.name}</a>
 											{#if asset.health.warnings.length > 0}
 												<span class="warning-badge" title={asset.health.warnings.map((w) => w.message).join('\n')}>
 													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

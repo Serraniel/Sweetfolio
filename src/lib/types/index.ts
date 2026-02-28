@@ -72,7 +72,10 @@ export interface SimulatedPortfolio {
 }
 
 export interface MonteCarloResult {
-  portfolios: SimulatedPortfolio[];
+  /** Compact scatter data — typed arrays for zero-copy worker transfer. */
+  scatterVolatilities: Float64Array;
+  scatterReturns: Float64Array;
+  portfolioCount: number;
   efficientFrontier: SimulatedPortfolio[];
 }
 

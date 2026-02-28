@@ -26,7 +26,13 @@ self.onmessage = (event: MessageEvent<MonteCarloWorkerRequest>) => {
       type: 'simulation-result',
       payload: result,
     };
-    self.postMessage(response);
+    // Transfer typed arrays for zero-copy (no structured clone overhead)
+    self.postMessage(response, {
+      transfer: [
+        result.scatterVolatilities.buffer as ArrayBuffer,
+        result.scatterReturns.buffer as ArrayBuffer,
+      ],
+    });
   } catch (error) {
     const response: MonteCarloWorkerResponse = {
       type: 'error',
@@ -42,7 +48,12 @@ function runSimulation(
   assets: Array<{ id: string; prices: PricePoint[] }>,
 ): MonteCarloResult {
   const n = assets.length;
-  if (n === 0) return { portfolios: [], efficientFrontier: [] };
+  if (n === 0) return {
+    scatterVolatilities: new Float64Array(0),
+    scatterReturns: new Float64Array(0),
+    portfolioCount: 0,
+    efficientFrontier: [],
+  };
 
   // Align and compute log returns for all assets
   const { alignedSeries } = alignPriceSeries(assets.map((a) => a.prices));
@@ -55,8 +66,14 @@ function runSimulation(
   // Pre-compute covariance matrix for portfolio volatility
   const covMatrix = computeCovarianceMatrix(assetReturns);
 
+  // Pre-allocate typed arrays at max capacity; trim after deduplication
+  const volArr = new Float64Array(simulationCount);
+  const retArr = new Float64Array(simulationCount);
+  const sharpeArr = new Float64Array(simulationCount);
+  // Keep full portfolio objects in a temp array for frontier extraction
   const portfolios: SimulatedPortfolio[] = [];
   const seen = new Set<string>();
+  let count = 0;
 
   for (let sim = 0; sim < simulationCount; sim++) {
     // Generate random weights (non-negative, sum to 1, discrete steps)
@@ -94,6 +111,10 @@ function runSimulation(
 
     const portSharpe = portVolatility > 0 ? (portReturn - riskFreeRate) / portVolatility : 0;
 
+    volArr[count] = portVolatility;
+    retArr[count] = portReturn;
+    sharpeArr[count] = portSharpe;
+
     const weightMap: Record<string, number> = {};
     for (let i = 0; i < n; i++) {
       weightMap[assetIds[i]] = weights[i];
@@ -105,6 +126,7 @@ function runSimulation(
       volatility: portVolatility,
       sharpeRatio: portSharpe,
     });
+    count++;
 
     // Report progress periodically
     if ((sim + 1) % PROGRESS_INTERVAL === 0 || sim === simulationCount - 1) {
@@ -118,7 +140,13 @@ function runSimulation(
 
   const efficientFrontier = extractEfficientFrontier(portfolios);
 
-  return { portfolios, efficientFrontier };
+  // Trim typed arrays to actual count and return compact result
+  return {
+    scatterVolatilities: volArr.subarray(0, count),
+    scatterReturns: retArr.subarray(0, count),
+    portfolioCount: count,
+    efficientFrontier,
+  };
 }
 
 /**

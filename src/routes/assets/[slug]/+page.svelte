@@ -14,10 +14,12 @@
 	import { calculateMetrics } from '$lib/workers/manager';
 	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
 	import PriceDataSection from '$lib/components/PriceDataSection.svelte';
+	import { slugify } from '$lib/utils/slug';
 	import type { MetricsResult, CurrencyRate } from '$lib/types';
 
-	const assetId = $derived(page.params.id ?? '');
-	const asset = $derived($assets.find((a) => a.id === assetId));
+	const slug = $derived(page.params.slug ?? '');
+	const asset = $derived($assets.find((a) => slugify(a.name) === slug));
+	const assetId = $derived(asset?.id ?? '');
 	const isCurrentBenchmark = $derived(
 		$benchmarkRef !== null && $benchmarkRef.type === 'asset' && $benchmarkRef.id === assetId
 	);
@@ -105,15 +107,22 @@
 			return;
 		}
 
+		const newName = editName.trim();
 		await updateAsset({
 			...asset,
-			name: editName.trim(),
+			name: newName,
 			isin: editIsin.trim().toUpperCase() || null,
 			wkn: editWkn.trim().toUpperCase() || null,
 			currency: editCurrency,
 			updatedAt: new Date().toISOString()
 		});
 		showEditModal = false;
+
+		// Navigate to updated slug if name changed
+		const newSlug = slugify(newName);
+		if (newSlug !== slug) {
+			goto(`/assets/${newSlug}`, { replaceState: true });
+		}
 	}
 
 	// Find currency conversion data if asset currency differs from main currency
@@ -163,6 +172,10 @@
 		goto('/assets');
 	}
 </script>
+
+<svelte:head>
+	<title>{asset ? `${asset.name} – Sweetfolio` : 'Asset not found – Sweetfolio'}</title>
+</svelte:head>
 
 {#if !asset}
 	<div class="asset-detail">

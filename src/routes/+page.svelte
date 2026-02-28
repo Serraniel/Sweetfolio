@@ -50,6 +50,10 @@
 	const correlationLabels = $derived(getCorrelationLabels());
 </script>
 
+<svelte:head>
+	<title>Dashboard – Sweetfolio</title>
+</svelte:head>
+
 <div class="dashboard">
 	<header class="page-header">
 		<h1>Dashboard</h1>
