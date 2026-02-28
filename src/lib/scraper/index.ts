@@ -179,3 +179,33 @@ registerDataSource({
     };
   },
 });
+
+import { fetchPriceData as alphaVantageFetch } from '$lib/fetchers/alphavantage';
+import { get } from 'svelte/store';
+import { settings } from '$lib/stores/settings';
+
+registerDataSource({
+  name: 'alphavantage',
+  async fetchByISIN(isin) {
+    const apiKey = get(settings).alphaVantageApiKey as string | undefined;
+    if (!apiKey) return null;
+    const outcome = await alphaVantageFetch(isin, apiKey);
+    if (!outcome.success) return null;
+    return {
+      prices: outcome.data.prices,
+      name: outcome.data.name,
+      currency: outcome.data.currency,
+    };
+  },
+  async fetchByWKN(wkn) {
+    const apiKey = get(settings).alphaVantageApiKey as string | undefined;
+    if (!apiKey) return null;
+    const outcome = await alphaVantageFetch(wkn, apiKey);
+    if (!outcome.success) return null;
+    return {
+      prices: outcome.data.prices,
+      name: outcome.data.name,
+      currency: outcome.data.currency,
+    };
+  },
+});
