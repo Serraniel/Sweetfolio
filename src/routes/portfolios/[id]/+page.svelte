@@ -13,23 +13,25 @@
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { assets } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
+	import { benchmarkRef, benchmark as resolvedBenchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { computePortfolioPrices } from '$lib/engine/portfolio';
 	import { calculateMetrics, calculateCorrelation } from '$lib/workers/manager';
 	import type { MetricsResult, CorrelationMatrix as CorrelationMatrixData } from '$lib/types';
 
-	const portfolioId = $derived(page.params.id);
+	const portfolioId = $derived(page.params.id ?? '');
 	const portfolio = $derived($portfolios.find((p) => p.id === portfolioId));
+	const isCurrentBenchmark = $derived(
+		$benchmarkRef !== null && $benchmarkRef.type === 'portfolio' && $benchmarkRef.id === portfolioId
+	);
 
 	// Edit modal state
 	let showEditModal = $state(false);
 	let editName = $state('');
-	let editBenchmark = $state(false);
 	let editAllocations: Array<{ id: string; name: string; weight: number; selected: boolean }> = $state([]);
 
 	function openEditModal() {
 		if (!portfolio) return;
 		editName = portfolio.name;
-		editBenchmark = portfolio.isBenchmark;
 		editAllocations = $assets.map((a) => {
 			const alloc = portfolio.allocations.find((al) => al.assetId === a.id);
 			return {
@@ -56,7 +58,6 @@
 		await updatePortfolio({
 			...portfolio,
 			name: editName.trim(),
-			isBenchmark: editBenchmark,
 			allocations,
 			updatedAt: new Date().toISOString()
 		});
@@ -161,11 +162,11 @@
 
 	async function toggleBenchmark() {
 		if (!portfolio) return;
-		await updatePortfolio({
-			...portfolio,
-			isBenchmark: !portfolio.isBenchmark,
-			updatedAt: new Date().toISOString()
-		});
+		if (isCurrentBenchmark) {
+			await setBenchmark(null);
+		} else {
+			await setBenchmark({ type: 'portfolio', id: portfolioId });
+		}
 	}
 
 	async function handleDelete() {
@@ -199,15 +200,15 @@
 					</a>
 					<div class="title-row">
 						<h1>{portfolio.name}</h1>
-						{#if portfolio.isBenchmark}
+						{#if isCurrentBenchmark}
 							<span class="badge">Benchmark</span>
 						{/if}
 					</div>
 				</div>
 				<div class="header-actions">
 					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
-					<Button variant="default" size="sm" onclick={toggleBenchmark}>
-						{portfolio.isBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
+					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
+						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
 					</Button>
 					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
 				</div>
@@ -284,13 +285,6 @@
 				<div class="form-field">
 					<label for="edit-portfolio-name">Portfolio Name</label>
 					<input id="edit-portfolio-name" type="text" bind:value={editName} />
-				</div>
-
-				<div class="form-field inline">
-					<label>
-						<input type="checkbox" bind:checked={editBenchmark} />
-						Use as benchmark
-					</label>
 				</div>
 
 				{#if editAllocations.length === 0}

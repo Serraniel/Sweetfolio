@@ -4,10 +4,11 @@
 	import Modal from '$lib/components/shared/Modal.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios, addPortfolio, removePortfolio } from '$lib/stores/portfolios';
+	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
 
 	let showCreateModal = $state(false);
 	let newPortfolioName = $state('');
-	let isBenchmark = $state(false);
+	let setAsBenchmark = $state(false);
 
 	// Derive available assets with selection state from store
 	let assetSelections: Array<{ id: string; name: string; weight: number; selected: boolean }> = $state([]);
@@ -22,12 +23,17 @@
 	});
 
 	// Derive display list from store
+	function isPortfolioBenchmark(id: string): boolean {
+		const ref = $benchmarkRef;
+		return ref !== null && ref.type === 'portfolio' && ref.id === id;
+	}
+
 	const portfolioList = $derived(
 		$portfolios.map((p) => ({
 			id: p.id,
 			name: p.name,
 			assetCount: p.allocations.length,
-			isBenchmark: p.isBenchmark
+			isBenchmark: isPortfolioBenchmark(p.id)
 		}))
 	);
 
@@ -42,20 +48,24 @@
 			weight: totalWeight > 0 ? a.weight / totalWeight : 1 / selected.length
 		}));
 
+		const portfolioId = crypto.randomUUID();
 		const portfolio = {
-			id: crypto.randomUUID(),
+			id: portfolioId,
 			name: newPortfolioName.trim(),
 			allocations,
-			isBenchmark,
+			isBenchmark: false,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};
 
 		await addPortfolio(portfolio);
+		if (setAsBenchmark) {
+			await setBenchmark({ type: 'portfolio', id: portfolioId });
+		}
 
 		showCreateModal = false;
 		newPortfolioName = '';
-		isBenchmark = false;
+		setAsBenchmark = false;
 	}
 
 	function openCreateModal() {
@@ -67,7 +77,7 @@
 			selected: false
 		}));
 		newPortfolioName = '';
-		isBenchmark = false;
+		setAsBenchmark = false;
 		showCreateModal = true;
 	}
 
@@ -147,8 +157,8 @@
 
 			<div class="form-field inline">
 				<label>
-					<input type="checkbox" bind:checked={isBenchmark} />
-					Use as benchmark
+					<input type="checkbox" bind:checked={setAsBenchmark} />
+					Set as benchmark
 				</label>
 			</div>
 

@@ -5,6 +5,9 @@
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { theme } from '$lib/stores/theme';
 	import { settings, setSetting } from '$lib/stores/settings';
+	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
+	import { assets } from '$lib/stores/assets';
+	import { portfolios } from '$lib/stores/portfolios';
 	import { currencies, addCurrencyRate, removeCurrencyRate, loadCurrencies } from '$lib/stores/currencies';
 	import { detectFormat } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
@@ -21,6 +24,29 @@
 	let saving = $state(false);
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
+
+	// Benchmark picker
+	const benchmarkOptions = $derived([
+		{ value: '', label: 'None' },
+		...$assets.map((a) => ({ value: `asset:${a.id}`, label: `${a.name} (Asset)` })),
+		...$portfolios.map((p) => ({ value: `portfolio:${p.id}`, label: `${p.name} (Portfolio)` }))
+	]);
+
+	const currentBenchmarkValue = $derived(() => {
+		const ref = $benchmarkRef;
+		if (!ref) return '';
+		return `${ref.type}:${ref.id}`;
+	});
+
+	async function handleBenchmarkChange(e: Event) {
+		const val = (e.target as HTMLSelectElement).value;
+		if (!val) {
+			await setBenchmark(null);
+		} else {
+			const [type, id] = val.split(':') as ['asset' | 'portfolio', string];
+			await setBenchmark({ type, id });
+		}
+	}
 
 	// Currency upload state
 	let showCurrencyModal = $state(false);
@@ -319,6 +345,25 @@
 							/>
 							<span class="suffix">%</span>
 						</div>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Benchmark</h2>
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Global Benchmark</span>
+						<span class="setting-description">Select an asset or portfolio to use as a benchmark for comparison charts</span>
+					</div>
+					<div class="setting-control">
+						<select value={currentBenchmarkValue()} onchange={handleBenchmarkChange}>
+							{#each benchmarkOptions as opt}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
 					</div>
 				</div>
 			</div>

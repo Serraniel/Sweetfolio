@@ -10,11 +10,49 @@
 	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
 	import { currencies } from '$lib/stores/currencies';
+	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { calculateMetrics } from '$lib/workers/manager';
+	import PerformanceChart from '$lib/charts/PerformanceChart.svelte';
 	import type { MetricsResult, CurrencyRate } from '$lib/types';
 
-	const assetId = $derived(page.params.id);
+	const assetId = $derived(page.params.id ?? '');
 	const asset = $derived($assets.find((a) => a.id === assetId));
+	const isCurrentBenchmark = $derived(
+		$benchmarkRef !== null && $benchmarkRef.type === 'asset' && $benchmarkRef.id === assetId
+	);
+
+	async function toggleBenchmark() {
+		if (isCurrentBenchmark) {
+			await setBenchmark(null);
+		} else {
+			await setBenchmark({ type: 'asset', id: assetId });
+		}
+	}
+
+	// Build chart series with benchmark overlay
+	const priceChartSeries = $derived.by(() => {
+		if (!asset) return [];
+		const series: Array<{ label: string; prices: typeof asset.prices; isBenchmark?: boolean }> = [
+			{ label: asset.name, prices: asset.prices }
+		];
+		const bm = $benchmark;
+		if (bm && bm.ref.id !== assetId && bm.prices.length > 0) {
+			series.push({ label: bm.name, prices: bm.prices, isBenchmark: true });
+		}
+		return series;
+	});
+
+	const performanceChartSeries = $derived.by(() => {
+		if (!asset) return [];
+		const series: Array<{ label: string; prices: typeof asset.prices; isBenchmark?: boolean }> = [
+			{ label: asset.name, prices: asset.prices }
+		];
+		const bm = $benchmark;
+		if (bm && bm.ref.id !== assetId && bm.prices.length > 0) {
+			series.push({ label: bm.name, prices: bm.prices, isBenchmark: true });
+		}
+		return series;
+	});
 
 	let metrics: MetricsResult | null = $state(null);
 	let metricsLoading = $state(false);
@@ -146,9 +184,17 @@
 						</svg>
 						Assets
 					</a>
-					<h1>{asset.name}</h1>
+					<h1>
+						{asset.name}
+						{#if isCurrentBenchmark}
+							<span class="benchmark-badge">Benchmark</span>
+						{/if}
+					</h1>
 				</div>
 				<div class="header-actions">
+					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
+						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
+					</Button>
 					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
 					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
 				</div>
@@ -197,8 +243,15 @@
 			{#if asset.prices.length > 0}
 				<h2>Price History</h2>
 				<Card padding="lg">
-					<PriceChart series={[{ label: asset.name, prices: asset.prices }]} />
+					<PriceChart series={priceChartSeries} />
 				</Card>
+
+				{#if performanceChartSeries.length > 1}
+					<h2>Performance Comparison</h2>
+					<Card padding="lg">
+						<PerformanceChart series={performanceChartSeries} />
+					</Card>
+				{/if}
 
 				<h2>Drawdown</h2>
 				<Card padding="lg">
@@ -278,6 +331,21 @@
 
 	.page-header h1 {
 		margin-bottom: 0;
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+	}
+
+	.benchmark-badge {
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
+		background: rgba(141, 208, 196, 0.15);
+		color: var(--color-accent);
+		white-space: nowrap;
 	}
 
 	.header-actions {

@@ -1,7 +1,9 @@
 import { loadAssets } from './assets';
-import { loadPortfolios } from './portfolios';
-import { loadSettings } from './settings';
+import { loadPortfolios, portfolios } from './portfolios';
+import { loadSettings, settings } from './settings';
 import { loadCurrencies } from './currencies';
+import { setBenchmark } from './benchmark';
+import { get } from 'svelte/store';
 
 let initialized = false;
 
@@ -14,4 +16,14 @@ export async function initStores(): Promise<void> {
   initialized = true;
 
   await Promise.all([loadAssets(), loadPortfolios(), loadSettings(), loadCurrencies()]);
+
+  // Migrate: if no benchmark setting exists but a portfolio has isBenchmark, adopt it
+  const s = get(settings);
+  if (!s.benchmark) {
+    const ps = get(portfolios);
+    const legacy = ps.find((p) => p.isBenchmark);
+    if (legacy) {
+      await setBenchmark({ type: 'portfolio', id: legacy.id });
+    }
+  }
 }
