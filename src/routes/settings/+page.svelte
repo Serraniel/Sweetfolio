@@ -14,6 +14,10 @@
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
 	let autoImportMode = $state(true);
+	let autoResolveNames = $state(true);
+	let alphaVantageApiKey = $state('');
+	let corsProxyUrl = $state('');
+	let dataSourcePrimary = $state('onvista');
 	let saving = $state(false);
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
@@ -41,6 +45,10 @@
 		if (s.mainCurrency) mainCurrency = s.mainCurrency as string;
 		if (s.riskFreeRate !== undefined) riskFreeRate = s.riskFreeRate as number;
 		if (s.autoImportMode !== undefined) autoImportMode = s.autoImportMode as boolean;
+		if (s.autoResolveNames !== undefined) autoResolveNames = s.autoResolveNames as boolean;
+		if (s.alphaVantageApiKey !== undefined) alphaVantageApiKey = s.alphaVantageApiKey as string;
+		if (s.corsProxyUrl !== undefined) corsProxyUrl = s.corsProxyUrl as string;
+		if (s.dataSourcePrimary) dataSourcePrimary = s.dataSourcePrimary as string;
 	});
 
 	// Load currencies on mount
@@ -54,6 +62,10 @@
 			setSetting('mainCurrency', mainCurrency),
 			setSetting('riskFreeRate', riskFreeRate),
 			setSetting('autoImportMode', autoImportMode),
+			setSetting('autoResolveNames', autoResolveNames),
+			setSetting('alphaVantageApiKey', alphaVantageApiKey),
+			setSetting('corsProxyUrl', corsProxyUrl),
+			setSetting('dataSourcePrimary', dataSourcePrimary),
 		]);
 		saving = false;
 	}
@@ -120,6 +132,55 @@
 							<span class="theme-option" class:active={$theme === 'light'}>Light</span>
 							<span class="theme-option" class:active={$theme === 'dark'}>Dark</span>
 						</button>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Data Sources</h2>
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Primary Source</span>
+						<span class="setting-description">Preferred data source for ISIN/WKN lookups</span>
+					</div>
+					<div class="setting-control">
+						<select bind:value={dataSourcePrimary}>
+							<option value="onvista">Onvista (default)</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
+					<div class="setting-info">
+						<span class="setting-label">Alpha Vantage API Key</span>
+						<span class="setting-description">Optional. Enables Alpha Vantage as a secondary data source</span>
+					</div>
+					<div class="setting-control">
+						<input
+							type="password"
+							placeholder="Enter API key"
+							bind:value={alphaVantageApiKey}
+							autocomplete="off"
+							class="api-key-input"
+						/>
+					</div>
+				</div>
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
+					<div class="setting-info">
+						<span class="setting-label">CORS Proxy URL</span>
+						<span class="setting-description">Optional. For power users who want Yahoo Finance via a CORS proxy</span>
+					</div>
+					<div class="setting-control">
+						<input
+							type="url"
+							placeholder="https://proxy.example.com"
+							bind:value={corsProxyUrl}
+							autocomplete="off"
+							class="api-key-input"
+						/>
 					</div>
 				</div>
 			</div>
@@ -206,6 +267,22 @@
 			<div class="setting-section">
 				<h2>Import</h2>
 				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Auto-Resolve Names</span>
+						<span class="setting-description">Automatically look up asset names from ISIN/WKN detected in filenames</span>
+					</div>
+					<div class="setting-control">
+						<button
+							class="theme-switch"
+							onclick={() => autoResolveNames = !autoResolveNames}
+						>
+							<span class="theme-option" class:active={autoResolveNames}>On</span>
+							<span class="theme-option" class:active={!autoResolveNames}>Off</span>
+						</button>
+					</div>
+				</div>
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
 					<div class="setting-info">
 						<span class="setting-label">Auto-Import Mode</span>
 						<span class="setting-description">Skip the format configuration modal when CSV format is detected with full confidence</span>
@@ -350,6 +427,11 @@
 
 	.setting-control select {
 		min-width: 100px;
+	}
+
+	.api-key-input {
+		min-width: 220px;
+		font-size: var(--font-size-sm);
 	}
 
 	.theme-switch {
