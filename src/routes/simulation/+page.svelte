@@ -18,6 +18,7 @@
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
 	let saveSuccess = $state(false);
+	let rendering = $state(false);
 
 	// Derive available assets with selection state
 	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
@@ -109,7 +110,13 @@
 					setProgress(msg.payload.completed, msg.payload.total);
 					break;
 				case 'simulation-result':
-					setResult(msg.payload);
+					// Show rendering indicator, then set result on next frame
+					// so the UI has a chance to update before the heavy chart render
+					rendering = true;
+					requestAnimationFrame(() => {
+						setResult(msg.payload);
+						rendering = false;
+					});
 					// Persist simulation results to IndexedDB
 					saveSimulation({
 						id: crypto.randomUUID(),
@@ -266,6 +273,10 @@
 							<span class="progress-text">{progress.toFixed(0)}%</span>
 						</div>
 						<Button variant="danger" onclick={handleCancel}>Cancel</Button>
+					{:else if rendering}
+						<div class="progress-section">
+							<span class="rendering-text">Rendering chart...</span>
+						</div>
 					{:else}
 						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -482,6 +493,17 @@
 		color: var(--color-text-muted);
 		min-width: 40px;
 		text-align: right;
+	}
+
+	.rendering-text {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-muted);
+		animation: pulse 1.2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 0.5; }
+		50% { opacity: 1; }
 	}
 
 	.results-area {

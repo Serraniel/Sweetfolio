@@ -57,7 +57,10 @@
 	}
 
 	function drawScatter(u: uPlot): uPlot.Plugin {
-		const maxSharpe = Math.max(...portfolios.map((p) => p.sharpeRatio), 0.01);
+		let maxSharpe = 0.01;
+		for (const p of portfolios) {
+			if (p.sharpeRatio > maxSharpe) maxSharpe = p.sharpeRatio;
+		}
 
 		return {
 			hooks: {
@@ -71,9 +74,12 @@
 							efficientFrontier.map((p) => `${p.volatility},${p.annualizedReturn}`)
 						);
 
-						// Draw sub-optimal portfolio dots (grayed out)
+						// Draw sub-optimal portfolio dots (grayed out, sampled for large datasets)
 						if (showSubOptimal) {
-							for (const p of portfolios) {
+							const maxDots = 50000;
+							const step = portfolios.length > maxDots ? Math.ceil(portfolios.length / maxDots) : 1;
+							for (let i = 0; i < portfolios.length; i += step) {
+								const p = portfolios[i];
 								const key = `${p.volatility},${p.annualizedReturn}`;
 								if (frontierKeys.has(key)) continue;
 								const cx = u.valToPos(p.volatility, 'x', true);
@@ -152,10 +158,33 @@
 	}
 
 	function buildData(): uPlot.AlignedData {
-		// uPlot needs sorted x-values; we use volatility as x, return as y
-		const sorted = [...portfolios].sort((a, b) => a.volatility - b.volatility);
-		const xs = new Float64Array(sorted.map((p) => p.volatility));
-		const ys = new Float64Array(sorted.map((p) => p.annualizedReturn));
+		// We only need min/max for axis scaling; all rendering is done in drawScatter.
+		// Use frontier + asset markers + benchmark for range instead of sorting all portfolios.
+		const points: Array<{ x: number; y: number }> = [];
+		for (const p of efficientFrontier) {
+			points.push({ x: p.volatility, y: p.annualizedReturn });
+		}
+		if (benchmark) {
+			points.push({ x: benchmark.volatility, y: benchmark.annualizedReturn });
+		}
+		for (const am of assetMarkers) {
+			points.push({ x: am.volatility, y: am.annualizedReturn });
+		}
+		// Include sub-optimal range bounds
+		if (portfolios.length > 0) {
+			let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+			for (const p of portfolios) {
+				if (p.volatility < minX) minX = p.volatility;
+				if (p.volatility > maxX) maxX = p.volatility;
+				if (p.annualizedReturn < minY) minY = p.annualizedReturn;
+				if (p.annualizedReturn > maxY) maxY = p.annualizedReturn;
+			}
+			points.push({ x: minX, y: minY }, { x: maxX, y: maxY });
+		}
+		// uPlot needs sorted x-values
+		points.sort((a, b) => a.x - b.x);
+		const xs = new Float64Array(points.map((p) => p.x));
+		const ys = new Float64Array(points.map((p) => p.y));
 		return [xs, ys];
 	}
 
