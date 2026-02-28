@@ -1,6 +1,6 @@
 import type { Asset, Portfolio, CurrencyRate, StoredSimulation } from '$lib/types';
 
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 export const ALL_SCOPES = [
   'assets',

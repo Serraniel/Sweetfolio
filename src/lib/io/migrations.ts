@@ -4,7 +4,18 @@ import { CURRENT_VERSION } from './schema';
 type Migration = (data: unknown) => unknown;
 
 const migrations: Record<number, Migration> = {
-  // Example: 1: (data) => { /* v1 → v2 */ return { ...data, version: 2 }; },
+  1: (data) => {
+    const d = data as Record<string, unknown>;
+    const inner = d.data as Record<string, unknown>;
+    if (Array.isArray(inner.assets)) {
+      for (const asset of inner.assets) {
+        if (!(asset as Record<string, unknown>).classification) {
+          (asset as Record<string, unknown>).classification = 'unknown';
+        }
+      }
+    }
+    return { ...d, version: 2 };
+  },
 };
 
 export function migrateToLatest(data: SweetfolioExport): SweetfolioExport {
