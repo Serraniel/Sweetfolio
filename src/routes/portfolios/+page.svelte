@@ -55,6 +55,7 @@
 			name: newPortfolioName.trim(),
 			allocations,
 			isBenchmark: false,
+			sourceStrategyId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};

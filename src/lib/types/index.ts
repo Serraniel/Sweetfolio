@@ -34,6 +34,35 @@ export interface Portfolio {
   name: string;
   allocations: Array<{ assetId: string; weight: number }>;
   isBenchmark: boolean;
+  sourceStrategyId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Strategy ---
+
+export interface StrategyGroupNode {
+  type: 'group';
+  id: string;
+  label: string;
+  weight: number;
+  children: StrategyNode[];
+}
+
+export interface StrategyLeafNode {
+  type: 'leaf';
+  id: string;
+  assetId: string;
+  weight: number;
+}
+
+export type StrategyNode = StrategyGroupNode | StrategyLeafNode;
+
+export interface Strategy {
+  id: string;
+  name: string;
+  root: StrategyGroupNode;
+  generatedPortfolioIds: string[];
   createdAt: string;
   updatedAt: string;
 }
