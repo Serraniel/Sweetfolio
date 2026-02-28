@@ -14,13 +14,14 @@
  * On failure, users should fall back to manual CSV upload.
  */
 
-import type { PricePoint } from '$lib/types';
+import type { PricePoint, AssetClassification } from '$lib/types';
 
 export interface ScraperResult {
   prices: PricePoint[];
   name: string | null;
   currency: string | null;
   source: string;
+  classification: AssetClassification | null;
 }
 
 export interface ScraperError {
@@ -167,6 +168,7 @@ registerDataSource({
       prices: outcome.data.prices,
       name: outcome.data.name,
       currency: outcome.data.currency,
+      classification: outcome.data.classification,
     };
   },
   async fetchByWKN(wkn) {
@@ -176,6 +178,7 @@ registerDataSource({
       prices: outcome.data.prices,
       name: outcome.data.name,
       currency: outcome.data.currency,
+      classification: outcome.data.classification,
     };
   },
 });
@@ -195,6 +198,7 @@ registerDataSource({
       prices: outcome.data.prices,
       name: outcome.data.name,
       currency: outcome.data.currency,
+      classification: outcome.data.classification,
     };
   },
   async fetchByWKN(wkn) {
@@ -206,6 +210,7 @@ registerDataSource({
       prices: outcome.data.prices,
       name: outcome.data.name,
       currency: outcome.data.currency,
+      classification: outcome.data.classification,
     };
   },
 });
