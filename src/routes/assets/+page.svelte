@@ -13,6 +13,7 @@
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
 	import { slugify } from '$lib/utils/slug';
+	import { ASSET_CLASSIFICATIONS } from '$lib/types';
 	import type { DetectedFormat, AssetClassification } from '$lib/types';
 
 	function isBenchmark(assetId: string): boolean {
@@ -43,6 +44,7 @@
 	let assetName = $state('');
 	let assetCurrency = $state('EUR');
 	let assetClassification: AssetClassification = $state('unknown');
+	let classificationFilter: AssetClassification | 'all' = $state('all');
 	let assetIsin: string | null = $state(null);
 	let assetWkn: string | null = $state(null);
 
@@ -168,6 +170,7 @@
 				name: a.name,
 				isin: a.isin,
 				currency: a.currency,
+				classification: a.classification,
 				dataPoints: a.prices.length,
 				dateRange:
 					a.prices.length > 0
@@ -176,6 +179,12 @@
 				health
 			};
 		})
+	);
+
+	const filteredAssetList = $derived(
+		classificationFilter === 'all'
+			? assetList
+			: assetList.filter((a) => a.classification === classificationFilter)
 	);
 
 	function handleFiles(files: FileList) {
@@ -451,6 +460,14 @@
 				</div>
 			</Card>
 		{:else}
+			<div class="asset-list-toolbar">
+				<select class="classification-filter" bind:value={classificationFilter}>
+					<option value="all">All types</option>
+					{#each ASSET_CLASSIFICATIONS as cls}
+						<option value={cls}>{cls.toUpperCase()}</option>
+					{/each}
+				</select>
+			</div>
 			<Card>
 				<div class="table-wrapper">
 					<table class="asset-table">
@@ -458,6 +475,7 @@
 							<tr>
 								<th class="bm-col" title="Set as benchmark for comparison">Benchmark</th>
 								<th>Name</th>
+								<th>Type</th>
 								<th>ISIN</th>
 								<th>Currency</th>
 								<th class="num-col">Return</th>
@@ -468,7 +486,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each assetList as asset}
+							{#each filteredAssetList as asset}
 								<tr class:benchmark-row={isBenchmark(asset.id)} class:has-warnings={asset.health.warnings.length > 0}>
 									<td class="bm-col">
 										<button
@@ -503,6 +521,11 @@
 													{asset.health.warnings.length}
 												</span>
 											{/if}
+										</span>
+									</td>
+									<td>
+										<span class="classification-badge classification-{asset.classification}">
+											{asset.classification.toUpperCase()}
 										</span>
 									</td>
 									<td class="mono">{asset.isin ?? '\u2014'}</td>
@@ -886,5 +909,43 @@
 	.preview-actions {
 		display: flex;
 		gap: var(--spacing-sm);
+	}
+
+	.classification-badge {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
+		font-size: var(--font-size-xs);
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		background: var(--color-bg-tertiary, rgba(255,255,255,0.05));
+		color: var(--color-text-secondary);
+	}
+
+	.classification-stock { color: var(--color-accent); background: rgba(141, 208, 196, 0.1); }
+	.classification-etf { color: #7db3ff; background: rgba(125, 179, 255, 0.1); }
+	.classification-etn { color: #7db3ff; background: rgba(125, 179, 255, 0.08); }
+	.classification-etc { color: #7db3ff; background: rgba(125, 179, 255, 0.06); }
+	.classification-fund { color: #c49bff; background: rgba(196, 155, 255, 0.1); }
+	.classification-bond { color: #ffd700; background: rgba(255, 215, 0, 0.1); }
+	.classification-certificate { color: #ff9b7d; background: rgba(255, 155, 125, 0.1); }
+	.classification-crypto { color: #f7931a; background: rgba(247, 147, 26, 0.1); }
+	.classification-commodity { color: #d4a574; background: rgba(212, 165, 116, 0.1); }
+	.classification-unknown { color: var(--color-text-muted); }
+
+	.asset-list-toolbar {
+		display: flex;
+		justify-content: flex-end;
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.classification-filter {
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-sm);
+		background: var(--color-bg-primary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		color: var(--color-text-primary);
 	}
 </style>
