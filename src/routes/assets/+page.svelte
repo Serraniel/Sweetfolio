@@ -173,7 +173,7 @@
 				name: a.name,
 				isin: a.isin,
 				currency: a.currency,
-				classification: a.classification,
+				classification: a.classification ?? 'unknown',
 				dataPoints: a.prices.length,
 				dateRange:
 					a.prices.length > 0
