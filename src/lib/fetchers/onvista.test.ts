@@ -22,16 +22,45 @@ afterEach(() => {
 });
 
 describe('searchInstrument', () => {
-  it('returns the first search result', async () => {
+  it('returns instrument from direct match', async () => {
     const spy = mockFetch([
       {
         ok: true,
         json: () => ({
-          search: {
-            results: [
-              { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'iShares MSCI World' },
-            ],
+          instrument: {
+            entityType: 'FUND',
+            entityValue: '40773086',
+            isin: 'IE00B3RBWM25',
+            name: 'Vanguard FTSE All-World UCITS ETF USD Dis.',
           },
+          facets: [],
+        }),
+      },
+    ]);
+
+    const result = await searchInstrument('A1JX52');
+    expect(result).toEqual({
+      entityType: 'FUND',
+      entityValue: '40773086',
+      isin: 'IE00B3RBWM25',
+      name: 'Vanguard FTSE All-World UCITS ETF USD Dis.',
+    });
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to facets results when no direct instrument', async () => {
+    const spy = mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          facets: [
+            {
+              type: 'ETF',
+              results: [
+                { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'iShares MSCI World' },
+              ],
+            },
+          ],
         }),
       },
     ]);
@@ -48,7 +77,7 @@ describe('searchInstrument', () => {
 
   it('returns null when no results found', async () => {
     mockFetch([
-      { ok: true, json: () => ({ search: { results: [] } }) },
+      { ok: true, json: () => ({ facets: [], instrument: null }) },
     ]);
 
     const result = await searchInstrument('INVALID');
@@ -57,13 +86,19 @@ describe('searchInstrument', () => {
 });
 
 describe('getSnapshot', () => {
-  it('returns snapshot data', async () => {
+  it('returns snapshot data from nested structure', async () => {
     const snapshotData = {
-      idNotation: 99999,
-      isoCurrency: 'EUR',
-      name: 'iShares Core MSCI World',
-      isin: 'IE00B4L5Y983',
-      wkn: 'A0RPWH',
+      instrument: {
+        isin: 'IE00B4L5Y983',
+        wkn: 'A0RPWH',
+        name: 'iShares Core MSCI World',
+      },
+      quote: {
+        isoCurrency: 'EUR',
+      },
+      chart: {
+        idNotation: 99999,
+      },
     };
 
     mockFetch([{ ok: true, json: () => snapshotData }]);
@@ -72,6 +107,23 @@ describe('getSnapshot', () => {
     expect(result.idNotation).toBe(99999);
     expect(result.isoCurrency).toBe('EUR');
     expect(result.name).toBe('iShares Core MSCI World');
+    expect(result.isin).toBe('IE00B4L5Y983');
+    expect(result.wkn).toBe('A0RPWH');
+  });
+
+  it('handles flat response format as fallback', async () => {
+    const snapshotData = {
+      idNotation: 88888,
+      isoCurrency: 'USD',
+      name: 'Test Fund',
+      isin: 'US0000000000',
+    };
+
+    mockFetch([{ ok: true, json: () => snapshotData }]);
+
+    const result = await getSnapshot('STOCK', 'US0000000000');
+    expect(result.idNotation).toBe(88888);
+    expect(result.isoCurrency).toBe('USD');
   });
 
   it('throws on API error', async () => {
@@ -155,22 +207,17 @@ describe('fetchPriceData', () => {
       {
         ok: true,
         json: () => ({
-          search: {
-            results: [
-              { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'iShares MSCI World' },
-            ],
-          },
+          instrument: { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'iShares MSCI World' },
+          facets: [],
         }),
       },
       // snapshot
       {
         ok: true,
         json: () => ({
-          idNotation: 99999,
-          isoCurrency: 'EUR',
-          name: 'iShares Core MSCI World',
-          isin: 'IE00B4L5Y983',
-          wkn: 'A0RPWH',
+          instrument: { name: 'iShares Core MSCI World', isin: 'IE00B4L5Y983', wkn: 'A0RPWH' },
+          quote: { isoCurrency: 'EUR' },
+          chart: { idNotation: 99999 },
         }),
       },
       // chart history
@@ -196,7 +243,7 @@ describe('fetchPriceData', () => {
 
   it('returns error when instrument not found', async () => {
     mockFetch([
-      { ok: true, json: () => ({ search: { results: [] } }) },
+      { ok: true, json: () => ({ facets: [], instrument: null }) },
     ]);
 
     const result = await fetchPriceData('NOTFOUND');
@@ -219,27 +266,21 @@ describe('fetchPriceData', () => {
 
   it('returns error when no price data available', async () => {
     mockFetch([
-      // search
       {
         ok: true,
         json: () => ({
-          search: {
-            results: [
-              { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'Test' },
-            ],
-          },
+          instrument: { entityType: 'FUND', entityValue: '12345', isin: 'IE00B4L5Y983', name: 'Test' },
+          facets: [],
         }),
       },
-      // snapshot
       {
         ok: true,
         json: () => ({
-          idNotation: 99999,
-          isoCurrency: 'EUR',
-          name: 'Test',
+          instrument: { name: 'Test' },
+          quote: { isoCurrency: 'EUR' },
+          chart: { idNotation: 99999 },
         }),
       },
-      // chart history — empty
       {
         ok: true,
         json: () => ({ datetimeLast: [], last: [] }),

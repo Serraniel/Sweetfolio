@@ -18,14 +18,34 @@ const BASE_URL = 'https://api.onvista.de/api/v1';
 // --- Onvista API response types ---
 
 interface SearchFacetResult {
-  search: {
+  instrument?: {
+    entityType: string;
+    entityValue: string;
+    isin: string;
+    name: string;
+  } | null;
+  facets: Array<{
+    type: string;
     results: Array<{
       entityType: string;
       entityValue: string;
       isin: string;
       name: string;
-    }>;
-  };
+    }> | null;
+  }>;
+}
+
+interface SnapshotRawResponse {
+  // Nested format (current API)
+  instrument?: { name?: string; isin?: string; wkn?: string };
+  quote?: { isoCurrency?: string };
+  chart?: { idNotation?: number };
+  // Flat format (legacy/fallback)
+  idNotation?: number;
+  isoCurrency?: string;
+  name?: string;
+  isin?: string;
+  wkn?: string;
 }
 
 interface SnapshotResponse {
@@ -98,10 +118,24 @@ export async function searchInstrument(
   const url = `${BASE_URL}/instruments/search/facet?perType=10&searchValue=${encodeURIComponent(query)}`;
   const data = await fetchJSON<SearchFacetResult>(url);
 
-  const results = data?.search?.results;
-  if (!results || results.length === 0) return null;
+  // Prefer direct instrument match (exact ISIN/WKN hit)
+  if (data.instrument) {
+    return {
+      entityType: data.instrument.entityType,
+      entityValue: data.instrument.entityValue,
+      isin: data.instrument.isin,
+      name: data.instrument.name,
+    };
+  }
 
-  return results[0];
+  // Fall back to first result from any facet
+  for (const facet of data.facets ?? []) {
+    if (facet.results && facet.results.length > 0) {
+      return facet.results[0];
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -113,7 +147,15 @@ export async function getSnapshot(
 ): Promise<SnapshotResponse> {
   const typePath = entityTypePath(entityType);
   const url = `${BASE_URL}/${typePath}/ISIN:${encodeURIComponent(isin)}/snapshot`;
-  return fetchJSON<SnapshotResponse>(url);
+  const raw = await fetchJSON<SnapshotRawResponse>(url);
+
+  const idNotation = raw.chart?.idNotation ?? raw.idNotation ?? 0;
+  const isoCurrency = raw.quote?.isoCurrency ?? raw.isoCurrency ?? 'EUR';
+  const name = raw.instrument?.name ?? raw.name ?? '';
+  const resolvedIsin = raw.instrument?.isin ?? raw.isin;
+  const wkn = raw.instrument?.wkn ?? raw.wkn;
+
+  return { idNotation, isoCurrency, name, isin: resolvedIsin, wkn };
 }
 
 /**
