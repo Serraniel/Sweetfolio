@@ -6,12 +6,14 @@
 	import StrategyTreeEditor from '$lib/components/strategy/StrategyTreeEditor.svelte';
 	import SunburstChart from '$lib/charts/SunburstChart.svelte';
 	import IcicleChart from '$lib/charts/IcicleChart.svelte';
+	import GenerateSleevesDialog from '$lib/components/strategy/GenerateSleevesDialog.svelte';
 	import { strategies, updateStrategy, removeStrategy } from '$lib/stores/strategies';
 	import { assets } from '$lib/stores/assets';
-	import { portfolios } from '$lib/stores/portfolios';
+	import { portfolios, addPortfolio } from '$lib/stores/portfolios';
 	import { slugify } from '$lib/utils/slug';
 	import { flattenStrategy, getLeafCount } from '$lib/engine/strategy';
-	import type { Strategy } from '$lib/types';
+	import type { Sleeve, SleeveMode } from '$lib/engine/sleeves';
+	import type { Strategy, Portfolio } from '$lib/types';
 
 	let chartMode: 'sunburst' | 'icicle' = $state('sunburst');
 
@@ -36,6 +38,8 @@
 	const flatAllocations = $derived(
 		strategy ? flattenStrategy(strategy.root) : []
 	);
+
+	let showGenerateDialog = $state(false);
 
 	let editingName = $state(false);
 	let nameInput = $state('');
@@ -66,6 +70,30 @@
 		if (!confirm(`Delete strategy "${strategy.name}"? Generated portfolios will be kept but unlinked.`)) return;
 		await removeStrategy(strategy.id);
 		goto('/strategies');
+	}
+
+	async function handleGenerateSleeves(sleeves: Sleeve[], mode: SleeveMode) {
+		if (!strategy) return;
+		const now = new Date().toISOString();
+		const newIds: string[] = [];
+		for (const sleeve of sleeves) {
+			const portfolio: Portfolio = {
+				id: crypto.randomUUID(),
+				name: `${strategy.name} - ${sleeve.label}`,
+				allocations: sleeve.allocations,
+				isBenchmark: false,
+				sourceStrategyId: strategy.id,
+				createdAt: now,
+				updatedAt: now,
+			};
+			await addPortfolio(portfolio);
+			newIds.push(portfolio.id);
+		}
+		await updateStrategy({
+			...strategy,
+			generatedPortfolioIds: [...strategy.generatedPortfolioIds, ...newIds],
+			updatedAt: now,
+		});
 	}
 
 	function isOutOfSync(portfolioUpdatedAt: string): boolean {
@@ -137,6 +165,12 @@
 					/>
 				</Card>
 
+				{#if strategy.root.children.length > 0}
+					<div class="generate-btn-row">
+						<Button variant="default" onclick={() => (showGenerateDialog = true)}>Generate Portfolios</Button>
+					</div>
+				{/if}
+
 				{#if flatAllocations.length > 0}
 					<div class="flat-summary">
 						<h3>Flattened Weights</h3>
@@ -197,6 +231,13 @@
 				{/if}
 			</section>
 		</div>
+
+		<GenerateSleevesDialog
+			{strategy}
+			{assetNames}
+			bind:open={showGenerateDialog}
+			ongenerate={handleGenerateSleeves}
+		/>
 	</div>
 {/if}
 
@@ -328,6 +369,12 @@
 	.chart-placeholder p {
 		margin-top: var(--spacing-sm);
 		font-size: var(--font-size-sm);
+	}
+
+	.generate-btn-row {
+		margin-top: var(--spacing-md);
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.flat-summary {
