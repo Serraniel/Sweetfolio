@@ -23,7 +23,7 @@
 	function updateNode(nodeId: string, changes: Partial<StrategyNode>): void {
 		const newRoot = applyUpdate(strategy.root, nodeId, changes);
 		if (!newRoot) return;
-		const updated = { ...strategy, root: newRoot, updatedAt: new Date().toISOString() };
+		const updated = { ...strategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
 		debouncedSave(updated);
 	}
 

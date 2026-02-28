@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { StrategyNode, StrategyGroupNode, Asset } from '$lib/types';
+	import StrategyTreeNode from './StrategyTreeNode.svelte';
 
 	let {
 		node,
@@ -80,6 +81,8 @@
 	class:group={node.type === 'group'}
 	class:leaf={node.type === 'leaf'}
 	role="treeitem"
+	aria-selected="false"
+	tabindex="-1"
 	onmouseenter={() => (hovered = true)}
 	onmouseleave={() => (hovered = false)}
 >
@@ -162,7 +165,7 @@
 	{#if node.type === 'group' && !collapsed}
 		<div class="children" role="group">
 			{#each node.children as child (child.id)}
-				<svelte:self
+				<StrategyTreeNode
 					node={child}
 					depth={depth + 1}
 					{assets}

@@ -17,14 +17,14 @@
 	let tooltipY = $state(0);
 
 	// Zoom: trail of group nodes from the original root down to the current view root
-	let zoomPath = $state<StrategyGroupNode[]>([root]);
+	let zoomPath = $state<StrategyGroupNode[]>([]);
 
 	// When root prop changes, reset zoom
 	$effect(() => {
 		zoomPath = [root];
 	});
 
-	let viewRoot = $derived(zoomPath[zoomPath.length - 1]);
+	let viewRoot = $derived(zoomPath.length > 0 ? zoomPath[zoomPath.length - 1] : root);
 
 	let arcs = $derived(computeSunburstArcs(viewRoot));
 
