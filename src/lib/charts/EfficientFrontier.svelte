@@ -74,21 +74,24 @@
 							efficientFrontier.map((p) => `${p.volatility},${p.annualizedReturn}`)
 						);
 
-						// Draw sub-optimal portfolio dots (grayed out, sampled for large datasets)
+						// Draw sub-optimal portfolio dots (grayed out, sampled for large datasets).
+						// Batched into a single path for performance — one fill() call instead
+						// of thousands of individual beginPath/arc/fill cycles.
 						if (showSubOptimal) {
 							const maxDots = 50000;
 							const step = portfolios.length > maxDots ? Math.ceil(portfolios.length / maxDots) : 1;
+							ctx.beginPath();
+							ctx.fillStyle = COLORS.silver + '44';
 							for (let i = 0; i < portfolios.length; i += step) {
 								const p = portfolios[i];
 								const key = `${p.volatility},${p.annualizedReturn}`;
 								if (frontierKeys.has(key)) continue;
 								const cx = u.valToPos(p.volatility, 'x', true);
 								const cy = u.valToPos(p.annualizedReturn, 'y', true);
-								ctx.beginPath();
+								ctx.moveTo(cx + 2, cy);
 								ctx.arc(cx, cy, 2, 0, Math.PI * 2);
-								ctx.fillStyle = COLORS.silver + '44';
-								ctx.fill();
 							}
+							ctx.fill();
 						}
 
 						// Draw efficient frontier line (behind dots)
