@@ -13,6 +13,7 @@
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
+	let autoImportMode = $state(true);
 	let saving = $state(false);
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
@@ -39,6 +40,7 @@
 		const s = $settings;
 		if (s.mainCurrency) mainCurrency = s.mainCurrency as string;
 		if (s.riskFreeRate !== undefined) riskFreeRate = s.riskFreeRate as number;
+		if (s.autoImportMode !== undefined) autoImportMode = s.autoImportMode as boolean;
 	});
 
 	// Load currencies on mount
@@ -51,6 +53,7 @@
 		await Promise.all([
 			setSetting('mainCurrency', mainCurrency),
 			setSetting('riskFreeRate', riskFreeRate),
+			setSetting('autoImportMode', autoImportMode),
 		]);
 		saving = false;
 	}
@@ -196,6 +199,27 @@
 						</div>
 					</div>
 				{/if}
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Import</h2>
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Auto-Import Mode</span>
+						<span class="setting-description">Skip the format configuration modal when CSV format is detected with full confidence</span>
+					</div>
+					<div class="setting-control">
+						<button
+							class="theme-switch"
+							onclick={() => autoImportMode = !autoImportMode}
+						>
+							<span class="theme-option" class:active={autoImportMode}>On</span>
+							<span class="theme-option" class:active={!autoImportMode}>Off</span>
+						</button>
+					</div>
+				</div>
 			</div>
 		</Card>
 

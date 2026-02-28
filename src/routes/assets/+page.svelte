@@ -4,9 +4,10 @@
 	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
-	import { detectFormat } from '$lib/parsers/format-detection';
+	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
+	import { settings } from '$lib/stores/settings';
 	import type { DetectedFormat } from '$lib/types';
 
 	let showFormatModal = $state(false);
@@ -23,6 +24,20 @@
 	let importFileName = $state('');
 	let assetName = $state('');
 	let assetCurrency = $state('EUR');
+
+	// Toast notifications for auto-import feedback
+	let toasts: Array<{ id: number; message: string }> = $state([]);
+	let toastCounter = 0;
+
+	function showToast(message: string) {
+		const id = ++toastCounter;
+		toasts = [...toasts, { id, message }];
+		setTimeout(() => {
+			toasts = toasts.filter((t) => t.id !== id);
+		}, 4000);
+	}
+
+	const autoImportEnabled = $derived($settings.autoImportMode !== false);
 
 	// Queue for multi-file import
 	let pendingFiles: File[] = $state([]);
@@ -47,13 +62,67 @@
 	function handleFiles(files: FileList) {
 		if (files.length === 0) return;
 
-		pendingFiles = Array.from(files);
-		currentFileIndex = 0;
-		totalFiles = pendingFiles.length;
-		loadFile(pendingFiles[0]);
+		const fileArray = Array.from(files);
+
+		if (autoImportEnabled) {
+			processFilesWithAutoImport(fileArray);
+		} else {
+			pendingFiles = fileArray;
+			currentFileIndex = 0;
+			totalFiles = fileArray.length;
+			loadFileIntoModal(fileArray[0]);
+		}
 	}
 
-	function loadFile(file: File) {
+	function readFileAsText(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as string);
+			reader.onerror = () => reject(reader.error);
+			reader.readAsText(file);
+		});
+	}
+
+	async function processFilesWithAutoImport(files: File[]) {
+		const ambiguousFiles: File[] = [];
+
+		for (const file of files) {
+			const text = await readFileAsText(file);
+			const fmt = detectFormat(text);
+
+			if (isFormatConfident(text, fmt)) {
+				const name = file.name.replace(/\.csv$/i, '');
+				const result = parseCSV(text, fmt);
+
+				const asset = {
+					id: crypto.randomUUID(),
+					name,
+					isin: null,
+					wkn: null,
+					currency: assetCurrency,
+					prices: result.prices,
+					formatConfig: result.detectedFormat,
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString()
+				};
+
+				await addAsset(asset);
+				showToast(`Imported "${name}" (${result.prices.length} data points)`);
+			} else {
+				ambiguousFiles.push(file);
+			}
+		}
+
+		// Queue ambiguous files for manual configuration
+		if (ambiguousFiles.length > 0) {
+			pendingFiles = ambiguousFiles;
+			currentFileIndex = 0;
+			totalFiles = ambiguousFiles.length;
+			loadFileIntoModal(ambiguousFiles[0]);
+		}
+	}
+
+	function loadFileIntoModal(file: File) {
 		importFileName = file.name.replace(/\.csv$/i, '');
 		assetName = importFileName;
 
@@ -93,7 +162,7 @@
 		// Process next file in the queue
 		currentFileIndex++;
 		if (currentFileIndex < pendingFiles.length) {
-			loadFile(pendingFiles[currentFileIndex]);
+			loadFileIntoModal(pendingFiles[currentFileIndex]);
 		} else {
 			pendingFiles = [];
 			currentFileIndex = 0;
@@ -184,6 +253,20 @@
 	/>
 </div>
 
+{#if toasts.length > 0}
+	<div class="toast-container">
+		{#each toasts as toast (toast.id)}
+			<div class="toast">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+					<polyline points="22 4 12 14.01 9 11.01"/>
+				</svg>
+				<span>{toast.message}</span>
+			</div>
+		{/each}
+	</div>
+{/if}
+
 <style>
 	.assets-page {
 		max-width: 1100px;
@@ -266,5 +349,46 @@
 	.muted {
 		color: var(--color-text-muted);
 		font-size: var(--font-size-xs);
+	}
+
+	:global(.toast-container) {
+		position: fixed;
+		bottom: var(--spacing-lg);
+		right: var(--spacing-lg);
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		z-index: 1000;
+	}
+
+	:global(.toast) {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-md);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-primary);
+		animation: toast-slide-in 0.3s ease-out;
+		backdrop-filter: blur(12px);
+	}
+
+	:global(.toast svg) {
+		color: var(--color-accent);
+		flex-shrink: 0;
+	}
+
+	@keyframes toast-slide-in {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 </style>

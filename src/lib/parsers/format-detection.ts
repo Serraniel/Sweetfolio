@@ -42,6 +42,57 @@ const DATE_PATTERNS: Array<{ format: string; regex: RegExp; parse: (m: RegExpMat
   },
 ];
 
+/**
+ * Returns true when format detection is fully unambiguous:
+ * - date format is not ambiguous (DD/MM vs MM/DD)
+ * - delimiter was detected with consistent usage across rows
+ * - a date column was positively identified (score > 0)
+ * - a close column was positively identified (header keyword or strong numeric match)
+ */
+export function isFormatConfident(text: string, format: DetectedFormat): boolean {
+  if (format.ambiguous) return false;
+
+  // Verify date column scored well: re-parse sample and check match rate
+  const rows = parseCSVRows(text, format.delimiter);
+  const hasHeader = format.hasHeader;
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const sample = dataRows.slice(0, SAMPLE_SIZE);
+
+  if (sample.length < 2) return false;
+
+  // Check that most sampled rows have a parsable date in the date column
+  const datePattern = DATE_PATTERNS.find((p) => p.format === format.dateFormat);
+  if (!datePattern) return false;
+
+  let dateHits = 0;
+  for (const row of sample) {
+    const cell = (row[format.dateColumn] || '').trim();
+    const m = cell.match(datePattern.regex);
+    if (m) {
+      const parsed = datePattern.parse(m);
+      if (parsed.m >= 1 && parsed.m <= 12 && parsed.d >= 1 && parsed.d <= 31 && parsed.y >= 1900 && parsed.y <= 2100) {
+        dateHits++;
+      }
+    }
+  }
+  if (dateHits < sample.length * 0.9) return false;
+
+  // Check that most sampled rows have a parsable number in the close column
+  let numericHits = 0;
+  for (const row of sample) {
+    const cell = (row[format.closeColumn] || '').trim();
+    if (isNumericValue(cell, format.decimalSeparator)) {
+      numericHits++;
+    }
+  }
+  if (numericHits < sample.length * 0.9) return false;
+
+  // Check that date and close columns are different
+  if (format.dateColumn === format.closeColumn) return false;
+
+  return true;
+}
+
 export function detectFormat(text: string): DetectedFormat {
   const delimiter = detectDelimiter(text);
   const rows = parseCSVRows(text, delimiter);
