@@ -1,14 +1,17 @@
 <script lang="ts">
 	import '../app.css';
 	import Shell from '$lib/components/layout/Shell.svelte';
+	import RefreshProgressToast from '$lib/components/shared/RefreshProgressToast.svelte';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { initStores } from '$lib/stores/init';
+	import { autoRefreshAssets } from '$lib/stores/auto-refresh';
 
 	let { children }: { children: Snippet } = $props();
 
-	onMount(() => {
-		initStores();
+	onMount(async () => {
+		await initStores();
+		autoRefreshAssets();
 	});
 </script>
 
@@ -20,3 +23,5 @@
 <Shell>
 	{@render children()}
 </Shell>
+
+<RefreshProgressToast />
