@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import ThemeToggle from './ThemeToggle.svelte';
+	import LogoS1 from '$lib/components/LogoS1.svelte';
 
 	interface NavItem {
 		href: string;
@@ -28,12 +29,12 @@
 	<div class="nav-header">
 		{#if !collapsed}
 			<a href="/" class="nav-logo">
-				<span class="logo-icon">S</span>
+				<LogoS1 size={32} />
 				<span class="logo-text">Sweetfolio</span>
 			</a>
 		{:else}
 			<a href="/" class="nav-logo">
-				<span class="logo-icon">S</span>
+				<LogoS1 size={32} />
 			</a>
 		{/if}
 	</div>
