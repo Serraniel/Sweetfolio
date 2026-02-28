@@ -13,7 +13,7 @@
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
 	import { slugify } from '$lib/utils/slug';
-	import type { DetectedFormat } from '$lib/types';
+	import type { DetectedFormat, AssetClassification } from '$lib/types';
 
 	function isBenchmark(assetId: string): boolean {
 		const ref = $benchmarkRef;
@@ -128,6 +128,7 @@
 			isin: fetchedIdentifierType === 'isin' ? fetchedIdentifier : null,
 			wkn: fetchedIdentifierType === 'wkn' ? fetchedIdentifier : null,
 			currency: lookupEditCurrency,
+			classification: lookupResult.classification ?? 'unknown',
 			prices: $state.snapshot(lookupResult.prices),
 			formatConfig: null,
 			rawCSV: null,
@@ -231,6 +232,7 @@
 					isin,
 					wkn,
 					currency,
+					classification: 'unknown' as AssetClassification,
 					prices: result.prices,
 					formatConfig: result.detectedFormat,
 					rawCSV: text,
@@ -295,6 +297,7 @@
 			isin: assetIsin,
 			wkn: assetWkn,
 			currency: assetCurrency,
+			classification: 'unknown' as AssetClassification,
 			prices: result.prices,
 			formatConfig: result.detectedFormat,
 			rawCSV: rawText,
