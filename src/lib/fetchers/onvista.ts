@@ -10,7 +10,7 @@
  * 3. Fetch chart history using idNotation for daily resolution
  */
 
-import type { PricePoint } from '$lib/types';
+import type { PricePoint, AssetClassification } from '$lib/types';
 import type { FetchOutcome, FetchResult } from './types';
 
 const BASE_URL = 'https://api.onvista.de/api/v1';
@@ -77,6 +77,20 @@ function entityTypePath(entityType: string): string {
     CURRENCY: 'currencies',
   };
   return map[entityType] ?? entityType.toLowerCase();
+}
+
+/** Map Onvista entity types to our asset classification. */
+function mapEntityTypeToClassification(entityType: string): AssetClassification {
+  const map: Record<string, AssetClassification> = {
+    STOCK: 'stock',
+    ETF: 'etf',
+    FUND: 'fund',
+    BOND: 'bond',
+    COMMODITY: 'commodity',
+    PRECIOUS_METAL: 'commodity',
+    DERIVATIVE: 'certificate',
+  };
+  return map[entityType] ?? 'unknown';
 }
 
 /** Convert a unix timestamp (seconds or milliseconds) to YYYY-MM-DD. */
@@ -246,6 +260,7 @@ export async function fetchPriceData(query: string): Promise<FetchOutcome> {
       isin: snapshot.isin ?? instrument.isin ?? null,
       wkn: snapshot.wkn ?? null,
       currency: snapshot.isoCurrency ?? null,
+      classification: mapEntityTypeToClassification(instrument.entityType),
     };
 
     return { success: true, data: result };

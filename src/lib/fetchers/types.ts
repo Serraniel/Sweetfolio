@@ -2,7 +2,7 @@
  * Shared types for data fetcher modules.
  */
 
-import type { PricePoint } from '$lib/types';
+import type { PricePoint, AssetClassification } from '$lib/types';
 
 /** Result from a successful price data fetch. */
 export interface FetchResult {
@@ -11,6 +11,7 @@ export interface FetchResult {
   isin: string | null;
   wkn: string | null;
   currency: string | null;
+  classification: AssetClassification | null;
 }
 
 /** Error from a failed fetch attempt. */
