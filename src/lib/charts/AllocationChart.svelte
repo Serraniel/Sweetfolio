@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SERIES_COLORS, COLORS, isDarkTheme, observeThemeChanges } from './utils';
+	import { getAssetColor, COLORS, isDarkTheme, observeThemeChanges } from './utils';
 
 	interface Allocation {
 		label: string;
@@ -57,7 +57,7 @@
 
 			slices.push({
 				path,
-				color: SERIES_COLORS[i % SERIES_COLORS.length],
+				color: getAssetColor(i),
 				label: a.label,
 				weight: a.weight,
 				midAngle
@@ -101,7 +101,7 @@
 			<div class="legend-item">
 				<span
 					class="legend-dot"
-					style:background-color={SERIES_COLORS[i % SERIES_COLORS.length]}
+					style:background-color={getAssetColor(i)}
 				></span>
 				<span class="legend-label">{alloc.label}</span>
 				<span class="legend-value">{(alloc.weight * 100).toFixed(1)}%</span>

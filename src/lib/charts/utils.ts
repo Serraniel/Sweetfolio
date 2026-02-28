@@ -13,40 +13,25 @@ export const COLORS = {
 	darkBg: '#2E3035'
 } as const;
 
-/** Ordered series colors for multi-asset charts (benchmark excluded). */
-export const SERIES_COLORS = [
-	COLORS.mikuTeal,
-	COLORS.deepTeal,
-	'#5EAFA0',
-	'#3FBFB5',
-	'#6AC5C5',
-	'#47A0A0',
-	'#79D4CB',
-	'#2D9999'
-] as const;
-
 export const BENCHMARK_COLOR = COLORS.hotPink;
 
 /**
- * Generate N visually distinct, vibrant colors for asset markers.
- * Uses evenly-spaced hues with consistent saturation and lightness
- * so colors feel cohesive while being maximally distinguishable.
+ * Get a deterministic, visually distinct color for an asset by index.
+ * Uses golden-angle hue spacing starting from teal to match the app palette.
  * Avoids the hot-pink hue range reserved for the benchmark.
+ * Use this everywhere assets need automatic colors (charts, legends, dots).
  */
-export function generateAssetColors(count: number): string[] {
-	if (count === 0) return [];
-	const colors: string[] = [];
-	// Use golden-angle spacing for maximum perceptual separation
+export function getAssetColor(index: number): string {
 	const goldenAngle = 137.508;
-	// Start at teal-ish hue (170) to match the app's palette feel
 	const startHue = 170;
-	for (let i = 0; i < count; i++) {
-		const hue = (startHue + i * goldenAngle) % 360;
-		// Skip hues too close to benchmark pink (330-350)
-		const adjustedHue = (hue >= 320 && hue <= 355) ? (hue + 40) % 360 : hue;
-		colors.push(`hsl(${adjustedHue.toFixed(0)}, 65%, 55%)`);
-	}
-	return colors;
+	const hue = (startHue + index * goldenAngle) % 360;
+	const adjustedHue = (hue >= 320 && hue <= 355) ? (hue + 40) % 360 : hue;
+	return `hsl(${adjustedHue.toFixed(0)}, 65%, 55%)`;
+}
+
+/** Generate N asset colors. Convenience wrapper around getAssetColor. */
+export function generateAssetColors(count: number): string[] {
+	return Array.from({ length: count }, (_, i) => getAssetColor(i));
 }
 
 // --- Theme detection ---

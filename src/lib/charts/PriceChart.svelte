@@ -9,7 +9,7 @@
 		observeThemeChanges,
 		dateToUnix,
 		BENCHMARK_COLOR,
-		SERIES_COLORS,
+		getAssetColor,
 		fmtPct
 	} from './utils';
 
@@ -169,7 +169,7 @@
 			{}, // x-axis
 			...series.map((s, i) => ({
 				label: s.label,
-				stroke: s.isBenchmark ? BENCHMARK_COLOR : SERIES_COLORS[i % SERIES_COLORS.length],
+				stroke: s.isBenchmark ? BENCHMARK_COLOR : getAssetColor(i),
 				width: s.isBenchmark ? 2 : 1.5,
 				points: { show: false }
 			}))
