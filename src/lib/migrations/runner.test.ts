@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { writable, get } from 'svelte/store';
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+declare const require: (id: string) => Record<string, unknown>;
+
 const { mockSettingsStore, mockSetSetting } = vi.hoisted(() => {
   // Must import writable inline since hoisted block runs before imports
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { writable: w } = require('svelte/store');
+  const { writable: w } = require('svelte/store') as { writable: typeof import('svelte/store').writable };
   const store = w<Record<string, unknown>>({});
   const setSetting = vi.fn(async (key: string, value: unknown) => {
     store.update((s: Record<string, unknown>) => ({ ...s, [key]: value }));
@@ -115,7 +117,7 @@ describe('migration runner', () => {
     expect(completedCall).toBeDefined();
 
     // Verify the settings store now has the migration marked completed
-    const s = get(mockSettingsStore);
+    const s = get(mockSettingsStore) as Record<string, unknown>;
     expect(s.completedMigrations as string[]).toContain(id);
   });
 
@@ -221,7 +223,7 @@ describe('migration runner', () => {
     expect(progress.result!.changes).toEqual([]);
 
     // Should NOT have been marked as completed
-    const s = get(mockSettingsStore);
+    const s = get(mockSettingsStore) as Record<string, unknown>;
     const completed = (s.completedMigrations as string[]) ?? [];
     expect(completed).not.toContain(id);
   });
