@@ -67,11 +67,19 @@ export interface CorrelationMatrix {
 
 // --- Monte Carlo ---
 
+/** Per-asset weight constraint for Monte Carlo simulation. */
+export interface WeightConstraint {
+  assetId: string;
+  min: number; // 0..1, minimum allocation (0 = no minimum)
+  max: number; // 0..1, maximum allocation (1 = no maximum)
+}
+
 export interface MonteCarloConfig {
   simulationCount: number;
   assetIds: string[];
   riskFreeRate: number;
   benchmarkPortfolioId: string | null;
+  constraints?: WeightConstraint[];
 }
 
 export interface SimulatedPortfolio {

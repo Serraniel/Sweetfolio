@@ -10,9 +10,11 @@ import type {
   PricePoint,
   SimulatedPortfolio,
   MonteCarloResult,
+  WeightConstraint,
 } from '$lib/types';
 import { alignPriceSeries } from '$lib/utils/dates';
 import { logReturns, mean, stddev } from '$lib/utils/math';
+import { generateRandomWeights } from '$lib/engine/weights';
 
 const TRADING_DAYS_PER_YEAR = 252;
 const PROGRESS_INTERVAL = 500;
@@ -21,7 +23,7 @@ self.onmessage = (event: MessageEvent<MonteCarloWorkerRequest>) => {
   const { config, assets } = event.data.payload;
 
   try {
-    const result = runSimulation(config.simulationCount, config.riskFreeRate, assets);
+    const result = runSimulation(config.simulationCount, config.riskFreeRate, assets, config.constraints);
     const response: MonteCarloWorkerResponse = {
       type: 'simulation-result',
       payload: result,
@@ -46,6 +48,7 @@ function runSimulation(
   simulationCount: number,
   riskFreeRate: number,
   assets: Array<{ id: string; prices: PricePoint[] }>,
+  constraints?: WeightConstraint[],
 ): MonteCarloResult {
   const n = assets.length;
   if (n === 0) return {
@@ -61,6 +64,14 @@ function runSimulation(
   const fullReturns = assets.map((a) => logReturns(a.prices.map((p) => p.close)));
   const assetMeans = fullReturns.map((r) => mean(r) * TRADING_DAYS_PER_YEAR);
   const assetIds = assets.map((a) => a.id);
+
+  // Build per-asset constraint arrays (min/max weight for each position)
+  const constraintMap = new Map<string, WeightConstraint>();
+  if (constraints) {
+    for (const c of constraints) constraintMap.set(c.assetId, c);
+  }
+  const mins = assetIds.map((id) => constraintMap.get(id)?.min ?? 0);
+  const maxs = assetIds.map((id) => constraintMap.get(id)?.max ?? 1);
 
   // Covariance matrix requires synchronized (contemporaneous) observations,
   // so we align all series to their common date intersection.
@@ -78,8 +89,8 @@ function runSimulation(
   let count = 0;
 
   for (let sim = 0; sim < simulationCount; sim++) {
-    // Generate random weights (non-negative, sum to 1, discrete steps)
-    const weights = generateRandomWeights(n);
+    // Generate random weights (non-negative, sum to 1, discrete steps, respecting constraints)
+    const weights = generateRandomWeights(n, mins, maxs);
 
     // Deduplicate: skip if we've seen this exact weight combo before
     const key = weights.map((w) => w.toFixed(3)).join(',');
@@ -151,76 +162,7 @@ function runSimulation(
   };
 }
 
-/**
- * Generate a random weight vector with discrete allocation steps.
- *
- * Rules:
- * - Weights are multiples of STEP (0.5% = 0.005)
- * - Each weight is either 0% (excluded from portfolio) or >= MIN_WEIGHT (3%)
- * - All weights sum to 1.0
- *
- * Uses Dirichlet-based generation, then snaps to the step grid while
- * enforcing the minimum allocation constraint.
- */
-const STEP = 0.005; // 0.5%
-const MIN_WEIGHT = 0.03; // 3%
-
-function generateRandomWeights(n: number): number[] {
-  // Generate raw Dirichlet weights
-  const raw = new Array(n);
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    raw[i] = -Math.log(Math.random() || 1e-10);
-    sum += raw[i];
-  }
-  for (let i = 0; i < n; i++) {
-    raw[i] /= sum;
-  }
-
-  // Snap to step grid: weights below MIN_WEIGHT become 0 (excluded)
-  const snapped = new Array(n);
-  let snappedSum = 0;
-  for (let i = 0; i < n; i++) {
-    if (raw[i] < MIN_WEIGHT) {
-      snapped[i] = 0;
-    } else {
-      snapped[i] = Math.round(raw[i] / STEP) * STEP;
-      snappedSum += snapped[i];
-    }
-  }
-
-  // If all got zeroed out, give equal weight to the two largest raw weights
-  if (snappedSum === 0) {
-    const sorted = raw.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
-    snapped[sorted[0].i] = 0.5;
-    snapped[sorted[1].i] = 0.5;
-    return snapped;
-  }
-
-  // Normalize to sum to 1.0, re-snap to grid
-  for (let i = 0; i < n; i++) {
-    if (snapped[i] > 0) {
-      snapped[i] = Math.round((snapped[i] / snappedSum) / STEP) * STEP;
-    }
-  }
-
-  // Fix rounding residual: adjust the largest weight
-  let finalSum = 0;
-  let maxIdx = 0;
-  for (let i = 0; i < n; i++) {
-    finalSum += snapped[i];
-    if (snapped[i] > snapped[maxIdx]) maxIdx = i;
-  }
-  const residual = Math.round((1.0 - finalSum) / STEP) * STEP;
-  snapped[maxIdx] += residual;
-
-  // Ensure minimum constraint still holds after adjustment
-  if (snapped[maxIdx] < MIN_WEIGHT && snapped[maxIdx] > 0) {
-    snapped[maxIdx] = MIN_WEIGHT;
-  }
-
-  return snapped;
-}
+// Weight generation is in $lib/engine/weights.ts (shared with tests)
 
 function computeCovarianceMatrix(returns: number[][]): number[][] {
   const n = returns.length;
