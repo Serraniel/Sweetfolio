@@ -13,6 +13,7 @@
 	const scopeLabels: Record<SweetfolioScope, string> = {
 		assets: 'Assets',
 		portfolios: 'Portfolios',
+		strategies: 'Strategies',
 		settings: 'Settings',
 		currencies: 'Exchange Rates',
 		simulations: 'Simulations',

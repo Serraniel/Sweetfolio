@@ -7,6 +7,8 @@
 	import SunburstChart from '$lib/charts/SunburstChart.svelte';
 	import IcicleChart from '$lib/charts/IcicleChart.svelte';
 	import GenerateSleevesDialog from '$lib/components/strategy/GenerateSleevesDialog.svelte';
+	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
+	import { encodeStrategy } from '$lib/sharing/codec';
 	import { strategies, updateStrategy, removeStrategy } from '$lib/stores/strategies';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios, addPortfolio } from '$lib/stores/portfolios';
@@ -16,6 +18,7 @@
 	import type { Strategy, Portfolio } from '$lib/types';
 
 	let chartMode: 'sunburst' | 'icicle' = $state('sunburst');
+	let shareToast: string | null = $state(null);
 
 	const slug = $derived(page.params.slug ?? '');
 	const strategy = $derived($strategies.find((s) => slugify(s.name) === slug));
@@ -100,6 +103,18 @@
 		if (!strategy) return false;
 		return strategy.updatedAt > portfolioUpdatedAt;
 	}
+
+	const shareUrl = $derived.by(() => {
+		if (!strategy || strategy.root.children.length === 0) return '';
+		if (typeof window === 'undefined') return '';
+		const hash = encodeStrategy(strategy.name, strategy.root);
+		return `${window.location.origin}${window.location.pathname}${hash}`;
+	});
+
+	function handleShareToast(message: string) {
+		shareToast = message;
+		setTimeout(() => (shareToast = null), 2500);
+	}
 </script>
 
 <svelte:head>
@@ -149,6 +164,13 @@
 					</div>
 				</div>
 				<div class="header-actions">
+					<ShareButton
+						url={shareUrl}
+						title={strategy.name}
+						disabled={strategy.root.children.length === 0}
+						size="sm"
+						ontoast={handleShareToast}
+					/>
 					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
 				</div>
 			</div>
@@ -238,6 +260,10 @@
 			bind:open={showGenerateDialog}
 			ongenerate={handleGenerateSleeves}
 		/>
+
+		{#if shareToast}
+			<div class="toast">{shareToast}</div>
+		{/if}
 	</div>
 {/if}
 
@@ -465,5 +491,19 @@
 
 	.empty-state h3 {
 		color: var(--color-text-secondary);
+	}
+
+	.toast {
+		position: fixed;
+		bottom: var(--spacing-xl);
+		left: 50%;
+		transform: translateX(-50%);
+		padding: var(--spacing-sm) var(--spacing-lg);
+		background: var(--color-bg-secondary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: var(--font-size-sm);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		z-index: 100;
 	}
 </style>

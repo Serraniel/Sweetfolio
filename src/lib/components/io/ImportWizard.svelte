@@ -7,11 +7,13 @@
 	import { applyImport } from '$lib/io/apply';
 	import * as assetsDb from '$lib/storage/assets';
 	import * as portfoliosDb from '$lib/storage/portfolios';
+	import * as strategiesDb from '$lib/storage/strategies';
 	import * as currenciesDb from '$lib/storage/currencies';
 	import * as simulationsDb from '$lib/storage/simulations';
 	import * as settingsDb from '$lib/storage/settings';
 	import { loadAssets } from '$lib/stores/assets';
 	import { loadPortfolios } from '$lib/stores/portfolios';
+	import { loadStrategies } from '$lib/stores/strategies';
 	import { loadCurrencies } from '$lib/stores/currencies';
 	import { loadSettings } from '$lib/stores/settings';
 
@@ -33,6 +35,7 @@
 	const scopeLabels: Record<SweetfolioScope, string> = {
 		assets: 'Assets',
 		portfolios: 'Portfolios',
+		strategies: 'Strategies',
 		settings: 'Settings',
 		currencies: 'Exchange Rates',
 		simulations: 'Simulations',
@@ -84,6 +87,7 @@
 			const existing = {
 				assets: selectedScopes.has('assets') ? await assetsDb.getAll() : [],
 				portfolios: selectedScopes.has('portfolios') ? await portfoliosDb.getAll() : [],
+				strategies: selectedScopes.has('strategies') ? await strategiesDb.getAll() : [],
 				currencies: selectedScopes.has('currencies') ? await currenciesDb.getAll() : [],
 				simulations: selectedScopes.has('simulations') ? await simulationsDb.getAll() : [],
 				settings: selectedScopes.has('settings') ? await settingsDb.getAll() : {},
@@ -92,6 +96,7 @@
 			const filteredData: SweetfolioExport['data'] = {};
 			if (selectedScopes.has('assets')) filteredData.assets = importData.data.assets;
 			if (selectedScopes.has('portfolios')) filteredData.portfolios = importData.data.portfolios;
+			if (selectedScopes.has('strategies')) filteredData.strategies = importData.data.strategies;
 			if (selectedScopes.has('settings')) filteredData.settings = importData.data.settings;
 			if (selectedScopes.has('currencies')) filteredData.currencies = importData.data.currencies;
 			if (selectedScopes.has('simulations')) filteredData.simulations = importData.data.simulations;
@@ -123,7 +128,7 @@
 
 	function hasUnresolvedConflicts(): boolean {
 		if (!conflictReport) return false;
-		const scopes = ['assets', 'portfolios', 'currencies', 'simulations'] as const;
+		const scopes = ['assets', 'portfolios', 'strategies', 'currencies', 'simulations'] as const;
 		for (const scope of scopes) {
 			if (conflictReport[scope].conflicts.some((c) => !c.resolution)) return true;
 		}
@@ -140,7 +145,7 @@
 			await applyImport(conflictReport);
 
 			applyProgress = 'Reloading data...';
-			await Promise.all([loadAssets(), loadPortfolios(), loadCurrencies(), loadSettings()]);
+			await Promise.all([loadAssets(), loadPortfolios(), loadStrategies(), loadCurrencies(), loadSettings()]);
 
 			step = 'done';
 		} catch (err) {
@@ -154,6 +159,7 @@
 		return (
 			conflictReport.assets.newItems.length +
 			conflictReport.portfolios.newItems.length +
+			conflictReport.strategies.newItems.length +
 			conflictReport.currencies.newItems.length +
 			conflictReport.simulations.newItems.length +
 			conflictReport.settings.newItems.length
@@ -165,6 +171,7 @@
 		return (
 			conflictReport.assets.conflicts.length +
 			conflictReport.portfolios.conflicts.length +
+			conflictReport.strategies.conflicts.length +
 			conflictReport.currencies.conflicts.length +
 			conflictReport.simulations.conflicts.length +
 			conflictReport.settings.conflicts.length
@@ -220,7 +227,7 @@
 		</div>
 
 		{#if conflictReport}
-			{#each ['assets', 'portfolios', 'currencies', 'simulations'] as scope}
+			{#each ['assets', 'portfolios', 'strategies', 'currencies', 'simulations'] as scope}
 				{@const report = conflictReport[scope as keyof ConflictReport]}
 				{#if 'conflicts' in report && (report.conflicts.length > 0 || report.newItems.length > 0)}
 					<div class="conflict-scope">

@@ -4,8 +4,9 @@
 	import type { SharePayload } from '$lib/sharing/codec';
 	import { assets, addAsset } from '$lib/stores/assets';
 	import { addPortfolio } from '$lib/stores/portfolios';
+	import { addStrategy } from '$lib/stores/strategies';
 	import { fetchByISIN } from '$lib/scraper/index';
-	import type { Asset, AssetClassification } from '$lib/types';
+	import type { Asset, AssetClassification, StrategyNode } from '$lib/types';
 
 	let {
 		open = $bindable(false),
@@ -32,6 +33,14 @@
 	// Resolve items whenever payload changes
 	$effect(() => {
 		if (!payload) {
+			items = [];
+			importDone = false;
+			importError = null;
+			return;
+		}
+
+		if (payload.type === 'strategy') {
+			// Strategies don't need ISIN resolution
 			items = [];
 			importDone = false;
 			importError = null;
@@ -112,8 +121,39 @@
 		}
 	}
 
+	function reIdTree(node: StrategyNode): StrategyNode {
+		if (node.type === 'leaf') {
+			return { ...node, id: crypto.randomUUID() };
+		}
+		return { ...node, id: crypto.randomUUID(), children: node.children.map(reIdTree) };
+	}
+
 	async function handleImport() {
 		if (!payload) return;
+
+		if (payload.type === 'strategy') {
+			importing = true;
+			importError = null;
+			try {
+				const now = new Date().toISOString();
+				const newRoot = reIdTree(payload.root);
+				if (newRoot.type !== 'group') throw new Error('Invalid strategy root');
+				await addStrategy({
+					id: crypto.randomUUID(),
+					name: payload.name,
+					root: newRoot,
+					generatedPortfolioIds: [],
+					createdAt: now,
+					updatedAt: now,
+				});
+				importDone = true;
+			} catch {
+				importError = 'An error occurred importing the strategy.';
+			} finally {
+				importing = false;
+			}
+			return;
+		}
 
 		// Fetch missing assets first
 		if (needsFetch) {
@@ -158,6 +198,7 @@
 					name: payload.name,
 					allocations: normalized,
 					isBenchmark: false,
+					sourceStrategyId: null,
 					createdAt: now,
 					updatedAt: now
 				});
@@ -180,7 +221,7 @@
 	}
 </script>
 
-<Modal bind:open title={payload?.type === 'portfolio' ? 'Shared Portfolio' : 'Shared Assets'}>
+<Modal bind:open title={payload?.type === 'portfolio' ? 'Shared Portfolio' : payload?.type === 'strategy' ? 'Shared Strategy' : 'Shared Assets'}>
 	{#if !payload}
 		<p class="muted">Invalid share link.</p>
 	{:else if importDone}
@@ -192,13 +233,21 @@
 			{#if payload.type === 'portfolio'}
 				<h4>Portfolio "{payload.name}" imported</h4>
 				<p class="muted">The portfolio and its assets have been added to your library.</p>
+			{:else if payload.type === 'strategy'}
+				<h4>Strategy "{payload.name}" imported</h4>
+				<p class="muted">The strategy has been added to your library.</p>
 			{:else}
 				<h4>Assets imported</h4>
 				<p class="muted">{items.filter((it) => it.existingAsset).length} asset(s) added to your library.</p>
 			{/if}
 		</div>
 	{:else}
-		{#if payload.type === 'portfolio'}
+		{#if payload.type === 'strategy'}
+			<div class="share-info">
+				<h4>{payload.name}</h4>
+				<p class="muted">Someone shared a strategy with you. Import it to add it to your library.</p>
+			</div>
+		{:else if payload.type === 'portfolio'}
 			<div class="share-info">
 				<h4>{payload.name}</h4>
 				<p class="muted">Someone shared a portfolio with you.</p>

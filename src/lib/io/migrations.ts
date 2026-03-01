@@ -16,6 +16,10 @@ const migrations: Record<number, Migration> = {
     }
     return { ...d, version: 2 };
   },
+  2: (data) => {
+    // v2→v3: strategies scope added (no data transformation needed)
+    return { ...(data as Record<string, unknown>), version: 3 };
+  },
 };
 
 export function migrateToLatest(data: SweetfolioExport): SweetfolioExport {

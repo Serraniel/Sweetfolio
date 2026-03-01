@@ -2,6 +2,7 @@ import { untrack } from 'svelte';
 import type { ConflictReport, ConflictItem } from './conflicts';
 import * as assetsDb from '$lib/storage/assets';
 import * as portfoliosDb from '$lib/storage/portfolios';
+import * as strategiesDb from '$lib/storage/strategies';
 import * as currenciesDb from '$lib/storage/currencies';
 import * as simulationsDb from '$lib/storage/simulations';
 import * as settingsDb from '$lib/storage/settings';
@@ -49,6 +50,7 @@ async function applySettingsScope(report: ConflictReport['settings']): Promise<v
 export async function applyImport(report: ConflictReport): Promise<void> {
   await applyIdScope(report.assets, assetsDb.put);
   await applyIdScope(report.portfolios, portfoliosDb.put);
+  await applyIdScope(report.strategies, strategiesDb.put);
   await applyCurrencyScope(report.currencies);
   await applyIdScope(report.simulations, simulationsDb.put);
   await applySettingsScope(report.settings);

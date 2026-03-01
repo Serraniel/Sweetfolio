@@ -3,6 +3,7 @@ import type { Asset, StoredSimulation } from '$lib/types';
 import { CURRENT_VERSION } from './schema';
 import * as assetsDb from '$lib/storage/assets';
 import * as portfoliosDb from '$lib/storage/portfolios';
+import * as strategiesDb from '$lib/storage/strategies';
 import * as settingsDb from '$lib/storage/settings';
 import * as currenciesDb from '$lib/storage/currencies';
 import * as simulationsDb from '$lib/storage/simulations';
@@ -40,6 +41,7 @@ export async function buildExport(scopes: SweetfolioScope[]): Promise<Sweetfolio
     data.assets = assets.map(stripAssetBulk);
   }
   if (scopes.includes('portfolios')) data.portfolios = await portfoliosDb.getAll();
+  if (scopes.includes('strategies')) data.strategies = await strategiesDb.getAll();
   if (scopes.includes('settings')) data.settings = await settingsDb.getAll();
   if (scopes.includes('currencies')) data.currencies = await currenciesDb.getAll();
   if (scopes.includes('simulations')) {
