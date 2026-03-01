@@ -60,14 +60,17 @@ jobs:
         if: steps.command.outputs.action == 'enqueue'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           PR=${{ github.event.issue.number }}
           # Ensure the label exists (create if needed)
           gh label create merge-queue --color "3CB371" --description "PR is in the merge queue" \
             --repo ${{ github.repository }} 2>/dev/null || true
           gh pr edit $PR --add-label merge-queue --repo ${{ github.repository }}
-          gh pr comment $PR --body "🚀 Added to merge queue. Processing will begin shortly." \
+          gh pr comment $PR --body "🚀 Added to merge queue. Processing will begin shortly. [Follow progress]($RUN_URL)" \
             --repo ${{ github.repository }}
+          # Give GitHub time to index the label before querying
+          sleep 5
 
       # --- Process queue ---
       - name: Checkout repository
@@ -89,4 +92,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          MERGE_QUEUE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: bash .github/scripts/merge-queue.sh

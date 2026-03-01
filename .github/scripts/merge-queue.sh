@@ -5,6 +5,10 @@ REPO="$GITHUB_REPOSITORY"
 MAIN_BRANCH="main"
 TEMP_BRANCH="merge-queue/validation"
 
+# Configure git identity for merge commits on the runner
+git config user.name "merge-queue[bot]"
+git config user.email "merge-queue[bot]@users.noreply.github.com"
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 log()  { echo "::group::$1"; }
@@ -108,7 +112,7 @@ while true; do
     # Try to merge into temp branch
     if ! git merge --no-ff "origin/$PR_BRANCH" -m "merge-queue: validate PR #$pr ($PR_BRANCH)"; then
       echo "::error::Merge conflict for PR #$pr"
-      git merge --abort
+      git merge --abort 2>/dev/null || true
 
       remove_from_queue "$pr"
       comment_pr "$pr" "$(cat <<EOF
@@ -122,6 +126,7 @@ Please rebase your branch on \`$MAIN_BRANCH\` and re-add with \`/merge\`.
 
 Position: $((${#VALIDATED[@]} + 1)) of ${#QUEUE[@]}
 PRs ahead: ${VALIDATED[*]:-none}
+[View CI run]($MERGE_QUEUE_RUN_URL)
 </details>
 EOF
 )"
@@ -150,6 +155,7 @@ Please fix the issue and re-add with \`/merge\`.
 
 Position: $((${#VALIDATED[@]} + 1)) of ${#QUEUE[@]}
 PRs ahead: ${VALIDATED[*]:-none}
+[View CI run]($MERGE_QUEUE_RUN_URL)
 </details>
 EOF
 )"
@@ -197,7 +203,7 @@ EOF
 
     if gh pr merge "$pr" --merge --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
-      comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`."
+      comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
       remove_from_queue "$pr"
     else
       echo "::error::Failed to merge PR #$pr via GitHub API"
