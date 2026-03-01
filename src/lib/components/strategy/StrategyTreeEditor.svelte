@@ -27,13 +27,16 @@
 		workingStrategy = strategy;
 	});
 
-	// Undo stack: stores previous workingStrategy states
+	// Undo/redo stacks
 	let undoStack = $state<Strategy[]>([]);
+	let redoStack = $state<Strategy[]>([]);
 	const canUndo = $derived(undoStack.length > 0);
+	const canRedo = $derived(redoStack.length > 0);
 
 	function save(updated: Strategy, { pushUndo = true } = {}) {
 		if (pushUndo) {
 			undoStack = [...undoStack.slice(-19), workingStrategy];
+			redoStack = [];
 		}
 		workingStrategy = updated;
 		debouncedSave(updated);
@@ -43,8 +46,18 @@
 		if (undoStack.length === 0) return;
 		const previous = undoStack[undoStack.length - 1];
 		undoStack = undoStack.slice(0, -1);
+		redoStack = [...redoStack, workingStrategy];
 		workingStrategy = previous;
 		debouncedSave(previous);
+	}
+
+	function redo() {
+		if (redoStack.length === 0) return;
+		const next = redoStack[redoStack.length - 1];
+		redoStack = redoStack.slice(0, -1);
+		undoStack = [...undoStack, workingStrategy];
+		workingStrategy = next;
+		debouncedSave(next);
 	}
 
 	function updateNode(nodeId: string, changes: Partial<StrategyNode>): void {
@@ -163,15 +176,24 @@
 			</svg>
 			<span class="root-name">{workingStrategy.root.label}</span>
 		</div>
-		{#if canUndo}
-			<button class="undo-btn" onclick={undo} title="Undo (Ctrl+Z)">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<polyline points="1 4 1 10 7 10" />
-					<path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-				</svg>
-				Undo
-			</button>
-		{/if}
+		<div class="history-buttons">
+			{#if canUndo}
+				<button class="history-btn" onclick={undo} title="Undo">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="1 4 1 10 7 10" />
+						<path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+					</svg>
+				</button>
+			{/if}
+			{#if canRedo}
+				<button class="history-btn" onclick={redo} title="Redo">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="23 4 23 10 17 10" />
+						<path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10" />
+					</svg>
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	{#if workingStrategy.root.children.length === 0}
@@ -256,12 +278,17 @@
 		color: var(--color-accent);
 	}
 
-	.undo-btn {
+	.history-buttons {
+		display: flex;
+		gap: 2px;
+	}
+
+	.history-btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
-		padding: var(--spacing-xs) var(--spacing-sm);
-		font-size: var(--font-size-xs);
+		justify-content: center;
+		width: 28px;
+		height: 28px;
 		color: var(--color-text-muted);
 		background: none;
 		border: 1px solid var(--color-border);
@@ -270,7 +297,7 @@
 		transition: color var(--transition-fast), border-color var(--transition-fast);
 	}
 
-	.undo-btn:hover {
+	.history-btn:hover {
 		color: var(--color-accent);
 		border-color: var(--color-accent);
 	}
