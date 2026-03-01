@@ -113,6 +113,27 @@
 	const periods: PeriodKey[] = ['1y', '3y', '5y', '10y', '15y', 'all'];
 	let selectedPeriod: PeriodKey = $state('all');
 
+	// Disable periods where ALL compared assets have null metrics (insufficient data)
+	const disabledPeriods = $derived.by(() => {
+		const disabled = new Set<PeriodKey>();
+		for (const p of periods) {
+			if (p === 'all') continue;
+			const allNull = compareAssets.every((a) => {
+				const m = metricsMap.get(a.id);
+				return !m || m.periods[p] === null;
+			});
+			if (allNull) disabled.add(p);
+		}
+		return disabled;
+	});
+
+	// Reset to 'all' if the currently selected period becomes disabled
+	$effect(() => {
+		if (disabledPeriods.has(selectedPeriod)) {
+			selectedPeriod = 'all';
+		}
+	});
+
 	const metricRows = [
 		{ key: 'cumulativeReturn', label: 'Cumulative Return', format: formatPercent },
 		{ key: 'annualizedReturn', label: 'Annualized Return', format: formatPercent },
@@ -210,6 +231,7 @@
 						<button
 							class="period-tab"
 							class:active={selectedPeriod === p}
+							disabled={disabledPeriods.has(p)}
 							onclick={() => (selectedPeriod = p)}
 						>
 							{p === 'all' ? 'ALL' : p.toUpperCase()}
@@ -528,6 +550,11 @@
 		background: var(--color-accent-deep, #1a8a8a);
 		color: #fff;
 		border-color: var(--color-accent-deep, #1a8a8a);
+	}
+
+	.period-tab:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	/* Comparison table */
