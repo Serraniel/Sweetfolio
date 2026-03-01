@@ -209,17 +209,6 @@
 			<div class="wizard-error">{error}</div>
 		{/if}
 
-		{#snippet footer()}
-			<Button variant="default" onclick={handleClose}>Cancel</Button>
-			<Button
-				variant="primary"
-				onclick={handleDetectConflicts}
-				disabled={selectedScopes.size === 0}
-			>
-				Next
-			</Button>
-		{/snippet}
-
 	{:else if step === 'resolve-conflicts'}
 		<div class="conflict-summary">
 			<span class="summary-new">{totalNewItems()} new items</span>
@@ -306,7 +295,26 @@
 			<div class="wizard-error">{error}</div>
 		{/if}
 
-		{#snippet footer()}
+	{:else if step === 'applying'}
+		<p class="wizard-description">Importing data... {applyProgress}</p>
+
+	{:else if step === 'done'}
+		<p class="wizard-description">Import completed successfully.</p>
+	{/if}
+
+	{#snippet footer()}
+		{#if step === 'select-file'}
+			<Button variant="default" onclick={handleClose}>Cancel</Button>
+		{:else if step === 'select-scopes'}
+			<Button variant="default" onclick={handleClose}>Cancel</Button>
+			<Button
+				variant="primary"
+				onclick={handleDetectConflicts}
+				disabled={selectedScopes.size === 0}
+			>
+				Next
+			</Button>
+		{:else if step === 'resolve-conflicts'}
 			<Button variant="default" onclick={handleClose}>Cancel</Button>
 			<Button
 				variant="primary"
@@ -315,18 +323,10 @@
 			>
 				{hasUnresolvedConflicts() ? 'Resolve all conflicts first' : 'Apply Import'}
 			</Button>
-		{/snippet}
-
-	{:else if step === 'applying'}
-		<p class="wizard-description">Importing data... {applyProgress}</p>
-
-	{:else if step === 'done'}
-		<p class="wizard-description">Import completed successfully.</p>
-
-		{#snippet footer()}
+		{:else if step === 'done'}
 			<Button variant="primary" onclick={handleClose}>Done</Button>
-		{/snippet}
-	{/if}
+		{/if}
+	{/snippet}
 </Modal>
 
 <style>
