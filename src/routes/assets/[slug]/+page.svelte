@@ -9,7 +9,7 @@
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
 	import { encodeAssetList } from '$lib/sharing/codec';
-	import { shareOrCopy } from '$lib/sharing/share';
+	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { settings } from '$lib/stores/settings';
 	import { currencies } from '$lib/stores/currencies';
 	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
@@ -170,13 +170,11 @@
 		}, 4000);
 	}
 
-	async function handleShare() {
-		if (!asset?.isin) return;
+	const shareUrl = $derived.by(() => {
+		if (!asset?.isin) return '';
 		const hash = encodeAssetList([asset.isin]);
-		const url = `${window.location.origin}${window.location.pathname}${hash}`;
-		const msg = await shareOrCopy(url, asset.name);
-		if (msg) showToast(msg);
-	}
+		return `${window.location.origin}${window.location.pathname}${hash}`;
+	});
 
 	async function handleDelete() {
 		if (!asset) return;
@@ -220,16 +218,11 @@
 				</div>
 				<div class="header-actions">
 					{#if asset.isin}
-						<Button variant="default" size="sm" onclick={handleShare}>
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<circle cx="18" cy="5" r="3"/>
-								<circle cx="6" cy="12" r="3"/>
-								<circle cx="18" cy="19" r="3"/>
-								<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-								<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-							</svg>
-							Share
-						</Button>
+						<ShareButton
+							url={shareUrl}
+							title={asset.name}
+							ontoast={showToast}
+						/>
 					{/if}
 					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
 						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}

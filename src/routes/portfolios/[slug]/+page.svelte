@@ -12,7 +12,7 @@
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { assets } from '$lib/stores/assets';
 	import { encodePortfolio } from '$lib/sharing/codec';
-	import { shareOrCopy } from '$lib/sharing/share';
+	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { settings } from '$lib/stores/settings';
 	import { benchmarkRef, benchmark as resolvedBenchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { computePortfolioPrices } from '$lib/engine/portfolio';
@@ -204,8 +204,8 @@
 		(portfolio?.allocations.length ?? 0) - sharableAllocations.length
 	);
 
-	async function handleShare() {
-		if (!portfolio || sharableAllocations.length === 0) return;
+	const shareUrl = $derived.by(() => {
+		if (!portfolio || sharableAllocations.length === 0) return '';
 
 		const allocations: Array<{ isin: string; weight: number }> = [];
 		for (const alloc of sharableAllocations) {
@@ -223,12 +223,14 @@
 		}
 
 		const hash = encodePortfolio(portfolio.name, allocations);
-		const url = `${window.location.origin}${window.location.pathname}${hash}`;
+		return `${window.location.origin}${window.location.pathname}${hash}`;
+	});
 
-		const msg = await shareOrCopy(url, portfolio.name);
-		if (msg) {
-			const suffix = skippedCount > 0 ? ` (${skippedCount} asset(s) without ISIN skipped)` : '';
-			showToast(msg + suffix);
+	function handleShareToast(msg: string) {
+		if (skippedCount > 0) {
+			showToast(`${msg} (${skippedCount} asset(s) without ISIN skipped)`);
+		} else {
+			showToast(msg);
 		}
 	}
 
@@ -274,16 +276,12 @@
 				</div>
 				<div class="header-actions">
 					<span title={sharableAllocations.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared' : skippedCount > 0 ? `${skippedCount} asset(s) without ISIN will be skipped` : ''}>
-						<Button variant="default" size="sm" onclick={handleShare} disabled={sharableAllocations.length === 0}>
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<circle cx="18" cy="5" r="3"/>
-								<circle cx="6" cy="12" r="3"/>
-								<circle cx="18" cy="19" r="3"/>
-								<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-								<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-							</svg>
-							Share
-						</Button>
+						<ShareButton
+							url={shareUrl}
+							title={portfolio.name}
+							disabled={sharableAllocations.length === 0}
+							ontoast={handleShareToast}
+						/>
 					</span>
 					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
 					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
