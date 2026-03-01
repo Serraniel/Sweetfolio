@@ -15,6 +15,8 @@
 		ontoast?: (message: string) => void;
 	} = $props();
 
+	let copied = $state(false);
+
 	function toast(msg: string) {
 		if (msg && ontoast) ontoast(msg);
 	}
@@ -22,7 +24,9 @@
 	async function handleCopy() {
 		try {
 			await navigator.clipboard.writeText(url);
+			copied = true;
 			toast('Link copied to clipboard');
+			setTimeout(() => { copied = false; }, 1500);
 		} catch {
 			toast('Could not copy to clipboard');
 		}
@@ -37,14 +41,21 @@
 <div class="share-group share-group--{size}" class:disabled>
 	<button
 		class="share-btn share-copy"
+		class:copied
 		{disabled}
 		onclick={handleCopy}
 		title="Copy link to clipboard"
 	>
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-			<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-			<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-		</svg>
+		{#if copied}
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<polyline points="20 6 9 17 4 12"/>
+			</svg>
+		{:else}
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+				<path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+			</svg>
+		{/if}
 	</button>
 	<button
 		class="share-btn share-action"
@@ -100,6 +111,10 @@
 
 	.share-copy {
 		border-right: 1px solid var(--color-border);
+	}
+
+	.share-copy.copied {
+		color: var(--color-accent);
 	}
 
 	.share-group--sm .share-btn {
