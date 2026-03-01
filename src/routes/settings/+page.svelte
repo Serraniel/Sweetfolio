@@ -477,11 +477,20 @@
 					<div class="setting-control">
 						<div class="input-with-suffix">
 							<input
-								type="number"
-								min="0"
-								max="100"
-								step="0.01"
-								bind:value={riskFreeRate}
+								type="text"
+								inputmode="decimal"
+								value={riskFreeRate}
+								oninput={(e) => {
+									const raw = e.currentTarget.value;
+									if (raw === '' || raw === '-') return;
+									const num = parseFloat(raw);
+									if (!Number.isNaN(num) && num >= 0 && num <= 100) {
+										riskFreeRate = num;
+									} else {
+										e.currentTarget.value = String(riskFreeRate);
+									}
+								}}
+								onblur={(e) => { e.currentTarget.value = String(riskFreeRate); }}
 							/>
 							<span class="suffix">%</span>
 						</div>
