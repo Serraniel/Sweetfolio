@@ -232,22 +232,7 @@
 				{#if resolvedAllocations.length === 0}
 					<p class="muted">No allocations configured.</p>
 				{:else}
-					<div class="allocation-layout">
-						<div class="allocation-bars">
-							{#each resolvedAllocations as alloc}
-								<div class="alloc-row">
-									<span class="alloc-name">{alloc.assetName}</span>
-									<div class="alloc-bar-track">
-										<div class="alloc-bar" style="width: {alloc.weight * 100}%"></div>
-									</div>
-									<span class="alloc-weight">{(alloc.weight * 100).toFixed(1)}%</span>
-								</div>
-							{/each}
-						</div>
-						<div class="allocation-chart-container">
-							<AllocationChart allocations={resolvedAllocations.map(a => ({ label: a.assetName, weight: a.weight }))} size={180} />
-						</div>
-					</div>
+					<AllocationChart allocations={resolvedAllocations.map(a => ({ label: a.assetName, weight: a.weight }))} size={200} />
 				{/if}
 			</Card>
 		</section>
@@ -419,51 +404,6 @@
 		font-size: var(--font-size-sm);
 	}
 
-	.allocation-bars {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-	}
-
-	.alloc-row {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
-	}
-
-	.alloc-name {
-		width: 140px;
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-		flex-shrink: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.alloc-bar-track {
-		flex: 1;
-		height: 8px;
-		background: var(--color-bg-tertiary);
-		border-radius: 4px;
-		overflow: hidden;
-	}
-
-	.alloc-bar {
-		height: 100%;
-		background: linear-gradient(90deg, var(--color-deep-teal), var(--color-miku-teal));
-		border-radius: 4px;
-		transition: width var(--transition-base);
-	}
-
-	.alloc-weight {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-		min-width: 50px;
-		text-align: right;
-		color: var(--color-text-muted);
-	}
-
 	.charts-section {
 		display: flex;
 		flex-direction: column;
@@ -488,22 +428,6 @@
 		padding: var(--spacing-md);
 		color: var(--color-text-muted);
 		font-size: var(--font-size-sm);
-	}
-
-	.allocation-layout {
-		display: flex;
-		gap: var(--spacing-xl);
-		align-items: center;
-	}
-
-	.allocation-chart-container {
-		flex-shrink: 0;
-	}
-
-	@media (max-width: 700px) {
-		.allocation-layout {
-			flex-direction: column;
-		}
 	}
 
 	.edit-form {

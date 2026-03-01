@@ -13,11 +13,12 @@
 	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
+	import { slugify } from '$lib/utils/slug';
 
 	let simulationCount = $state(10000);
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
-	let savedPortfolioId: string | null = $state(null);
+	let savedPortfolioSlug: string | null = $state(null);
 	let rendering = $state(false);
 	let hoveredAssetName: string | null = $state(null);
 
@@ -182,7 +183,7 @@
 
 	function handleSelect(portfolio: SimulatedPortfolio) {
 		selectedPortfolio = portfolio;
-		savedPortfolioId = null;
+		savedPortfolioSlug = null;
 	}
 
 	// Resolve asset names for inspector, filtering out 0% allocations
@@ -219,7 +220,7 @@
 		};
 
 		await addPortfolio(portfolio);
-		savedPortfolioId = portfolio.id;
+		savedPortfolioSlug = slugify(portfolioName);
 	}
 </script>
 
@@ -376,8 +377,8 @@
 										</svg>
 										Save as Portfolio
 									</Button>
-									{#if savedPortfolioId}
-										<a href="/portfolios/{savedPortfolioId}" class="open-portfolio-link">
+									{#if savedPortfolioSlug}
+										<a href="/portfolios/{savedPortfolioSlug}" class="open-portfolio-link">
 											Open
 											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 												<path d="M5 12h14"/>
