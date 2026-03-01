@@ -20,8 +20,9 @@
 		saveTimeout = setTimeout(() => onsave(updated), 300);
 	}
 
-	// Keep a local working copy so rapid edits don't lose changes during debounce
-	let workingStrategy = $state(strategy);
+	// Keep a local working copy so rapid edits don't lose changes during debounce.
+	// Initialized via $effect to stay reactive when the prop updates from the store.
+	let workingStrategy = $state<Strategy>(undefined!);
 	$effect(() => {
 		workingStrategy = strategy;
 	});
