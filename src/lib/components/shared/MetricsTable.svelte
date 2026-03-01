@@ -116,7 +116,7 @@
 		border-bottom: 1px solid var(--color-border);
 	}
 
-	.metric-label-col {
+	.metrics-table .metric-label-col {
 		text-align: left;
 	}
 
