@@ -1,0 +1,41 @@
+name: Dependabot Auto-Merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-approve non-major updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr review "$PR_NUMBER" --approve --repo "$REPO"
+
+      - name: Add to merge queue
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh label create merge-queue --color "3CB371" --description "PR is in the merge queue" \
+            --repo "$REPO" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label merge-queue --repo "$REPO"
+          gh pr comment "$PR_NUMBER" --body "🤖 **Auto-merge**: Non-major dependabot update — approved and added to merge queue." \
+            --repo "$REPO"
