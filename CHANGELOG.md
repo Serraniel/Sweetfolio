@@ -1,3 +1,43 @@
+# [0.3.0](https://github.com/Serraniel/Sweetfolio/compare/v0.2.0...v0.3.0) (2026-03-01)
+
+
+### Bug Fixes
+
+* **changelog:** show version headings and add per-release sections ([1cad6bf](https://github.com/Serraniel/Sweetfolio/commit/1cad6bff4fcae1a486af82c062066f8f145ee201))
+* **changelog:** show version headings and split into per-release cards ([#10](https://github.com/Serraniel/Sweetfolio/issues/10)) ([dd5f458](https://github.com/Serraniel/Sweetfolio/commit/dd5f45816c3d2aeee6792267d5c96512604d6a94))
+* **charts:** prevent tooltip text from overflowing its container ([52ea681](https://github.com/Serraniel/Sweetfolio/commit/52ea681072e892e403e0d1764a3571b97720d655))
+* **docker:** inject release version via build arg ([18f8c2a](https://github.com/Serraniel/Sweetfolio/commit/18f8c2af15a898ac1b29a159edbf4b9200cf9b8f))
+* **docker:** inject release version via build arg ([#9](https://github.com/Serraniel/Sweetfolio/issues/9)) ([dabb04c](https://github.com/Serraniel/Sweetfolio/commit/dabb04cb283775bba217e954f1594d4a35d0ed37))
+* **e2e:** update comparison tests to use IndexedDB version 2 ([7a69f33](https://github.com/Serraniel/Sweetfolio/commit/7a69f3347139210d30510dbbd72a8ac02c721dcb))
+* Monte Carlo zero-allocation bug + UX enhancements ([#21](https://github.com/Serraniel/Sweetfolio/issues/21)) ([8c815ff](https://github.com/Serraniel/Sweetfolio/commit/8c815ff3746c21ab548738e872e445760d378ade))
+* **settings:** constrain benchmark dropdown width and hide number spinners ([0f3117d](https://github.com/Serraniel/Sweetfolio/commit/0f3117da2242b5fb38cd6493d3e463929fea07e8))
+* **settings:** use text input with numeric validation for risk-free rate ([127fb28](https://github.com/Serraniel/Sweetfolio/commit/127fb2850574999d68e7ebd1296bd03d4224d822))
+* **sharing:** add visual feedback to copy-to-clipboard button ([ddcaa53](https://github.com/Serraniel/Sweetfolio/commit/ddcaa53a5f4cac3542088ddc9150f6c01a3cd523))
+* **simulation:** exclude 0% allocation assets when saving as portfolio ([b6071fc](https://github.com/Serraniel/Sweetfolio/commit/b6071fc8c4aa28a018a758b001bc6fbbccb8c810))
+* **ui:** ensure Metric column header stays left-aligned ([2beef76](https://github.com/Serraniel/Sweetfolio/commit/2beef7628a7f05b35f477c55250072deb9d2d912))
+* **ui:** right-align period column headers in metrics table ([e28d37f](https://github.com/Serraniel/Sweetfolio/commit/e28d37fa5fa07f4017b7d4d6435e3397d8789d15))
+
+
+### Features
+
+* add asset comparison view with metrics table, charts, and add/remove controls ([76686b0](https://github.com/Serraniel/Sweetfolio/commit/76686b084e697c33918986f3f9e9aadd0f457c4b))
+* add asset comparison view with metrics table, charts, and add/remove controls ([#12](https://github.com/Serraniel/Sweetfolio/issues/12)) ([d4bb791](https://github.com/Serraniel/Sweetfolio/commit/d4bb79153b960e2fc79cc966d7ac9fb6a7ca1dea))
+* add Playwright screenshot & video capture for comparison feature demo ([4148545](https://github.com/Serraniel/Sweetfolio/commit/41485458c0b17024b2524c5c4ca031e4c081d9ee))
+* **charts:** default price chart to MAX range when available ([53e7f4a](https://github.com/Serraniel/Sweetfolio/commit/53e7f4a8c90cc5deb334546bbdd16f86b8634c1c))
+* **migration:** strip zero-weight allocations from existing portfolios ([d453d5b](https://github.com/Serraniel/Sweetfolio/commit/d453d5b25cedbed76c43f6cc765ccc3789b2ca36))
+* **sharing:** add per-asset share button, share icons, and Web Share API ([ce2dcfd](https://github.com/Serraniel/Sweetfolio/commit/ce2dcfddebf60143b32bb24b7ebca78ee45e8d0b))
+* **sharing:** add URL-based portfolio and asset sharing ([a515b95](https://github.com/Serraniel/Sweetfolio/commit/a515b95df406885ee32ce68544029200879cf06a))
+* **sharing:** split button with copy-to-clipboard and OS share ([e258507](https://github.com/Serraniel/Sweetfolio/commit/e2585071e8fe63ec51bbe9be0aea48e56427ae92))
+* **simulation:** add Open link after saving simulation as portfolio ([f23bbad](https://github.com/Serraniel/Sweetfolio/commit/f23bbad24a13e5e6bf13fa30716e7ae7271f9c4f))
+* **ui:** add info tooltips to financial metrics table ([9a2a31c](https://github.com/Serraniel/Sweetfolio/commit/9a2a31c062b05b82acb877c2dabb72dadfb00b96))
+* **ui:** improve allocation chart UX ([f65ba87](https://github.com/Serraniel/Sweetfolio/commit/f65ba87fad6dca5f5971f7d08756e92b3299acfe))
+* URL-based sharing for portfolios and assets ([#17](https://github.com/Serraniel/Sweetfolio/issues/17)) ([b9c1b8b](https://github.com/Serraniel/Sweetfolio/commit/b9c1b8bf59daf6b03ac4f7126c7e932e7493a7a5))
+
+
+### Reverts
+
+* remove demo screenshots from repository ([6ae4cc7](https://github.com/Serraniel/Sweetfolio/commit/6ae4cc78322313a9864a19e50f4235154be58223))
+
 # [0.2.0](https://github.com/Serraniel/Sweetfolio/compare/v0.1.0...v0.2.0) (2026-03-01)
 
 

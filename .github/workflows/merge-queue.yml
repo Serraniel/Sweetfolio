@@ -9,26 +9,26 @@ permissions:
   pull-requests: write
   issues: write
 
-concurrency:
-  group: merge-queue
-  cancel-in-progress: false
-
 jobs:
-  merge-queue:
+  # ── Immediate feedback (no concurrency gate) ──────────────────────────────
+  # This job runs instantly for every /merge comment, even if another queue
+  # run is in progress. It adds the label, posts a comment, and reacts.
+  gate:
     # Only run on human /merge comments (ignore bot comments to prevent feedback loops)
     if: |
       github.event.issue.pull_request &&
       github.event.comment.user.type != 'Bot' &&
       startsWith(github.event.comment.body, '/merge')
     runs-on: ubuntu-latest
-
+    outputs:
+      action: ${{ steps.command.outputs.action }}
     steps:
       - name: Determine command
         id: command
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          BODY=$(echo "$COMMENT_BODY" | xargs)  # trim whitespace
+          BODY=$(echo "$COMMENT_BODY" | xargs)
           if [ "$BODY" = "/merge cancel" ]; then
             echo "action=cancel" >> $GITHUB_OUTPUT
           elif [ "$BODY" = "/merge" ]; then
@@ -46,7 +46,6 @@ jobs:
           gh api repos/${{ github.repository }}/issues/comments/$COMMENT_ID/reactions \
             -f content='rocket' --silent || true
 
-      # --- Cancel ---
       - name: Cancel - remove from queue
         if: steps.command.outputs.action == 'cancel'
         env:
@@ -56,38 +55,48 @@ jobs:
           gh pr edit $PR --remove-label merge-queue --repo ${{ github.repository }} 2>/dev/null || true
           gh pr comment $PR --body "🚫 Removed from merge queue." --repo ${{ github.repository }}
 
-      # --- Enqueue ---
       - name: Enqueue - add to queue
         if: steps.command.outputs.action == 'enqueue'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           PR=${{ github.event.issue.number }}
-          # Ensure the label exists (create if needed)
           gh label create merge-queue --color "3CB371" --description "PR is in the merge queue" \
             --repo ${{ github.repository }} 2>/dev/null || true
           gh pr edit $PR --add-label merge-queue --repo ${{ github.repository }}
-          gh pr comment $PR --body "🚀 Added to merge queue. Processing will begin shortly." \
+          gh pr comment $PR --body "🚀 Added to merge queue. Processing will begin shortly. [Follow progress]($RUN_URL)" \
             --repo ${{ github.repository }}
 
-      # --- Process queue ---
+  # ── Queue processing (serialized by concurrency group) ────────────────────
+  # Only one instance processes the queue at a time. Additional runs wait
+  # in line until the current one finishes, then pick up whatever is queued.
+  process:
+    needs: gate
+    if: needs.gate.outputs.action == 'enqueue'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: merge-queue-process
+      cancel-in-progress: false
+    steps:
       - name: Checkout repository
-        if: steps.command.outputs.action == 'enqueue'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Setup Node.js
-        if: steps.command.outputs.action == 'enqueue'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      - name: Wait for label indexing
+        run: sleep 5
+
       - name: Process merge queue
-        if: steps.command.outputs.action == 'enqueue'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          MERGE_QUEUE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: bash .github/scripts/merge-queue.sh

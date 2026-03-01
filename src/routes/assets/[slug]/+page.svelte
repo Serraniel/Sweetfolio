@@ -8,6 +8,8 @@
 	import PriceChart from '$lib/charts/PriceChart.svelte';
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
+	import { encodeAssetList } from '$lib/sharing/codec';
+	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { settings } from '$lib/stores/settings';
 	import { currencies } from '$lib/stores/currencies';
 	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
@@ -156,6 +158,24 @@
 			: ''
 	);
 
+	// Toast notifications
+	let toasts: Array<{ id: number; message: string }> = $state([]);
+	let toastCounter = 0;
+
+	function showToast(message: string) {
+		const id = ++toastCounter;
+		toasts = [...toasts, { id, message }];
+		setTimeout(() => {
+			toasts = toasts.filter((t) => t.id !== id);
+		}, 4000);
+	}
+
+	const shareUrl = $derived.by(() => {
+		if (!asset?.isin) return '';
+		const hash = encodeAssetList([asset.isin]);
+		return `${window.location.origin}${window.location.pathname}${hash}`;
+	});
+
 	async function handleDelete() {
 		if (!asset) return;
 		if (!confirm(`Delete "${asset.name}"? This cannot be undone.`)) return;
@@ -197,6 +217,13 @@
 					</h1>
 				</div>
 				<div class="header-actions">
+					{#if asset.isin}
+						<ShareButton
+							url={shareUrl}
+							title={asset.name}
+							ontoast={showToast}
+						/>
+					{/if}
 					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
 						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
 					</Button>
@@ -305,6 +332,20 @@
 				<Button variant="primary" onclick={handleEditSave}>Save</Button>
 			{/snippet}
 		</Modal>
+	</div>
+{/if}
+
+{#if toasts.length > 0}
+	<div class="toast-container">
+		{#each toasts as toast (toast.id)}
+			<div class="toast">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+					<polyline points="22 4 12 14.01 9 11.01"/>
+				</svg>
+				<span>{toast.message}</span>
+			</div>
+		{/each}
 	</div>
 {/if}
 

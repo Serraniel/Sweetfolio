@@ -5,6 +5,27 @@ REPO="$GITHUB_REPOSITORY"
 MAIN_BRANCH="main"
 TEMP_BRANCH="merge-queue/validation"
 
+# Configure git identity for merge commits on the runner
+git config user.name "merge-queue[bot]"
+git config user.email "merge-queue[bot]@users.noreply.github.com"
+
+# Track the PR currently being processed so the trap can clean it up
+CURRENT_PR=""
+
+# ── Crash cleanup ────────────────────────────────────────────────────────────
+# If the script dies unexpectedly, remove the merge-queue label from the PR
+# that was being processed so it doesn't block the rest of the queue.
+on_error() {
+  local exit_code=$?
+  echo "::error::Merge queue script failed unexpectedly (exit $exit_code)"
+  if [ -n "$CURRENT_PR" ]; then
+    echo "Cleaning up: removing merge-queue label from PR #$CURRENT_PR"
+    gh pr edit "$CURRENT_PR" --remove-label merge-queue --repo "$REPO" 2>/dev/null || true
+    gh pr comment "$CURRENT_PR" --body "⚠️ **Merge queue: removed** — unexpected error during processing. Please check the [CI run]($MERGE_QUEUE_RUN_URL) for details and retry with \`/merge\`." --repo "$REPO" 2>/dev/null || true
+  fi
+}
+trap on_error ERR
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 log()  { echo "::group::$1"; }
@@ -96,6 +117,7 @@ while true; do
   VALIDATED=()
 
   for pr in "${QUEUE[@]}"; do
+    CURRENT_PR="$pr"
     log "Processing PR #$pr"
 
     # Get PR branch info
@@ -108,7 +130,7 @@ while true; do
     # Try to merge into temp branch
     if ! git merge --no-ff "origin/$PR_BRANCH" -m "merge-queue: validate PR #$pr ($PR_BRANCH)"; then
       echo "::error::Merge conflict for PR #$pr"
-      git merge --abort
+      git merge --abort 2>/dev/null || true
 
       remove_from_queue "$pr"
       comment_pr "$pr" "$(cat <<EOF
@@ -122,6 +144,7 @@ Please rebase your branch on \`$MAIN_BRANCH\` and re-add with \`/merge\`.
 
 Position: $((${#VALIDATED[@]} + 1)) of ${#QUEUE[@]}
 PRs ahead: ${VALIDATED[*]:-none}
+[View CI run]($MERGE_QUEUE_RUN_URL)
 </details>
 EOF
 )"
@@ -150,6 +173,7 @@ Please fix the issue and re-add with \`/merge\`.
 
 Position: $((${#VALIDATED[@]} + 1)) of ${#QUEUE[@]}
 PRs ahead: ${VALIDATED[*]:-none}
+[View CI run]($MERGE_QUEUE_RUN_URL)
 </details>
 EOF
 )"
@@ -162,6 +186,7 @@ EOF
 
     echo "✅ PR #$pr passed validation"
     VALIDATED+=("$pr")
+    CURRENT_PR=""
   done
 
   if [ "$FAILED" = true ]; then
@@ -195,9 +220,9 @@ EOF
   for pr in "${VALIDATED[@]}"; do
     log "Merging PR #$pr"
 
-    if gh pr merge "$pr" --merge --repo "$REPO"; then
+    if gh pr merge "$pr" --merge --admin --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
-      comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`."
+      comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
       remove_from_queue "$pr"
     else
       echo "::error::Failed to merge PR #$pr via GitHub API"
