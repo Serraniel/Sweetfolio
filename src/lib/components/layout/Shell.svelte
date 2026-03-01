@@ -26,7 +26,7 @@
 			<span class="footer-dot" aria-hidden="true">&bull;</span>
 			<a href="/changelog" class="footer-link">Changelog</a>
 			<span class="footer-dot" aria-hidden="true">&bull;</span>
-			<a href="/LICENSE" class="footer-link">EUPL-1.2</a>
+			<a href="/license" class="footer-link">EUPL-1.2</a>
 			<span class="footer-dot" aria-hidden="true">&bull;</span>
 			<a href="/licenses" class="footer-link">Third-Party Notices</a>
 		</footer>
