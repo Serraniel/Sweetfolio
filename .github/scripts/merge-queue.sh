@@ -9,6 +9,23 @@ TEMP_BRANCH="merge-queue/validation"
 git config user.name "merge-queue[bot]"
 git config user.email "merge-queue[bot]@users.noreply.github.com"
 
+# Track the PR currently being processed so the trap can clean it up
+CURRENT_PR=""
+
+# ── Crash cleanup ────────────────────────────────────────────────────────────
+# If the script dies unexpectedly, remove the merge-queue label from the PR
+# that was being processed so it doesn't block the rest of the queue.
+on_error() {
+  local exit_code=$?
+  echo "::error::Merge queue script failed unexpectedly (exit $exit_code)"
+  if [ -n "$CURRENT_PR" ]; then
+    echo "Cleaning up: removing merge-queue label from PR #$CURRENT_PR"
+    gh pr edit "$CURRENT_PR" --remove-label merge-queue --repo "$REPO" 2>/dev/null || true
+    gh pr comment "$CURRENT_PR" --body "⚠️ **Merge queue: removed** — unexpected error during processing. Please check the [CI run]($MERGE_QUEUE_RUN_URL) for details and retry with \`/merge\`." --repo "$REPO" 2>/dev/null || true
+  fi
+}
+trap on_error ERR
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 log()  { echo "::group::$1"; }
@@ -100,6 +117,7 @@ while true; do
   VALIDATED=()
 
   for pr in "${QUEUE[@]}"; do
+    CURRENT_PR="$pr"
     log "Processing PR #$pr"
 
     # Get PR branch info
@@ -168,6 +186,7 @@ EOF
 
     echo "✅ PR #$pr passed validation"
     VALIDATED+=("$pr")
+    CURRENT_PR=""
   done
 
   if [ "$FAILED" = true ]; then
