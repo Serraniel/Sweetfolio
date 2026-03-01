@@ -4,7 +4,7 @@
 	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
-	import { validateISIN, validateWKN, fetchByISIN, fetchByWKN, type ScraperResult } from '$lib/scraper/index';
+	import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN, fetchByTicker, type ScraperResult } from '$lib/scraper/index';
 	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
@@ -75,13 +75,14 @@
 	let fetchedIdentifier: string | null = $state(null);
 	let fetchedIdentifierType: IdentifierType = $state(null);
 
-	type IdentifierType = 'isin' | 'wkn' | null;
+	type IdentifierType = 'isin' | 'wkn' | 'ticker' | null;
 
 	const lookupIdentifierType: IdentifierType = $derived.by(() => {
 		const v = lookupInput.trim().toUpperCase();
 		if (v.length === 0) return null;
 		if (validateISIN(v)) return 'isin';
 		if (validateWKN(v)) return 'wkn';
+		if (validateTicker(v)) return 'ticker';
 		return null;
 	});
 
@@ -91,7 +92,8 @@
 		if (v.length === 0) return '';
 		if (lookupIdentifierType === 'isin') return 'Valid ISIN';
 		if (lookupIdentifierType === 'wkn') return 'Valid WKN';
-		return 'Not a valid ISIN or WKN';
+		if (lookupIdentifierType === 'ticker') return 'Crypto ticker';
+		return 'Not a valid ISIN, WKN, or crypto ticker';
 	});
 
 	async function handleLookup() {
@@ -105,9 +107,10 @@
 		fetchedIdentifierType = lookupIdentifierType;
 
 		try {
-			const outcome = fetchedIdentifierType === 'isin'
-				? await fetchByISIN(identifier)
-				: await fetchByWKN(identifier);
+			const outcome =
+				fetchedIdentifierType === 'isin' ? await fetchByISIN(identifier)
+				: fetchedIdentifierType === 'wkn' ? await fetchByWKN(identifier)
+				: await fetchByTicker(identifier);
 
 			if (outcome.success) {
 				lookupResult = outcome.data;
@@ -377,7 +380,7 @@
 					<input
 						type="text"
 						class="lookup-input"
-						placeholder="Enter ISIN or WKN..."
+						placeholder="Enter ISIN, WKN or crypto ticker..."
 						bind:value={lookupInput}
 						disabled={lookupFetching}
 						onkeydown={(e) => { if (e.key === 'Enter' && lookupValid) handleLookup(); }}
