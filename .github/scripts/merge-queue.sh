@@ -120,6 +120,17 @@ while true; do
     CURRENT_PR="$pr"
     log "Processing PR #$pr"
 
+    # Verify PR has an approving review before processing
+    REVIEW_DECISION=$(gh pr view "$pr" --json reviewDecision --jq '.reviewDecision' --repo "$REPO")
+    if [ "$REVIEW_DECISION" != "APPROVED" ]; then
+      echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) — skipping"
+      remove_from_queue "$pr"
+      comment_pr "$pr" "⏸️ **Merge queue: removed** — this PR requires an approving review before it can be merged. Please get a review and re-add with \`/merge\`."
+      FAILED=true
+      FAILED_PR=$pr
+      break
+    fi
+
     # Get PR branch info
     PR_BRANCH=$(gh pr view "$pr" --json headRefName --jq '.headRefName' --repo "$REPO")
     echo "PR #$pr branch: $PR_BRANCH"
@@ -220,7 +231,7 @@ EOF
   for pr in "${VALIDATED[@]}"; do
     log "Merging PR #$pr"
 
-    if gh pr merge "$pr" --merge --admin --repo "$REPO"; then
+    if gh pr merge "$pr" --merge --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
       comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
       remove_from_queue "$pr"

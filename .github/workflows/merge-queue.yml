@@ -23,6 +23,20 @@ jobs:
     outputs:
       action: ${{ steps.command.outputs.action }}
     steps:
+      - name: Check commenter permissions
+        id: permissions
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          PERM=$(gh api repos/${{ github.repository }}/collaborators/$COMMENTER/permission \
+            --jq '.permission')
+          echo "permission=$PERM" >> $GITHUB_OUTPUT
+          if [[ "$PERM" != "admin" && "$PERM" != "maintain" && "$PERM" != "write" ]]; then
+            echo "::error::User $COMMENTER has '$PERM' permission — write access or higher required for /merge"
+            exit 1
+          fi
+
       - name: Determine command
         id: command
         env:
