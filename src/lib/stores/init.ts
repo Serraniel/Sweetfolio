@@ -5,6 +5,7 @@ import { loadCurrencies } from './currencies';
 import { setBenchmark } from './benchmark';
 import { get } from 'svelte/store';
 import '$lib/migrations/classify-assets';
+import '$lib/migrations/strip-zero-allocations';
 import { runPendingMigrations } from '$lib/migrations/runner';
 
 let initialized = false;
