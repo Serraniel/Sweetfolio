@@ -35,8 +35,14 @@
 
 	function goToCompare() {
 		if (selectedForCompare.size < 2) return;
-		const ids = Array.from(selectedForCompare).join(',');
-		goto(`/compare?ids=${encodeURIComponent(ids)}`);
+		const slugs = Array.from(selectedForCompare)
+			.map((id) => {
+				const asset = $assets.find((a) => a.id === id);
+				return asset ? slugify(asset.name) : '';
+			})
+			.filter((s) => s.length > 0)
+			.join(',');
+		goto(`/compare?slugs=${encodeURIComponent(slugs)}`);
 	}
 
 	function isBenchmark(assetId: string): boolean {

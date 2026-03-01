@@ -18,41 +18,42 @@
 		bestInRow as findBestInRow
 	} from '$lib/utils/comparison';
 	import type { Asset, MetricsResult, PeriodKey, CurrencyRate } from '$lib/types';
+	import { slugify } from '$lib/utils/slug';
 
-	// Parse asset IDs from URL query params
-	const compareIds = $derived.by(() => {
-		const raw = page.url.searchParams.get('ids') ?? '';
-		return raw.split(',').filter((id) => id.length > 0);
+	// Parse asset slugs from URL query params
+	const compareSlugs = $derived.by(() => {
+		const raw = page.url.searchParams.get('slugs') ?? '';
+		return raw.split(',').filter((s) => s.length > 0);
 	});
 
 	// Resolve to actual assets
 	const compareAssets = $derived(
-		compareIds
-			.map((id) => $assets.find((a) => a.id === id))
+		compareSlugs
+			.map((slug) => $assets.find((a) => slugify(a.name) === slug))
 			.filter((a): a is Asset => a !== undefined)
 	);
 
 	// Assets available to add (not already in comparison)
 	const availableAssets = $derived(
-		$assets.filter((a) => !compareIds.includes(a.id))
+		$assets.filter((a) => !compareSlugs.includes(slugify(a.name)))
 	);
 
 	// Update URL when assets change
-	function updateUrl(ids: string[]) {
+	function updateUrl(slugs: string[]) {
 		const params = new URLSearchParams();
-		if (ids.length > 0) params.set('ids', ids.join(','));
+		if (slugs.length > 0) params.set('slugs', slugs.join(','));
 		goto(`/compare?${params.toString()}`, { replaceState: true, keepFocus: true });
 	}
 
-	function removeFromComparison(assetId: string) {
-		updateUrl(compareIds.filter((id) => id !== assetId));
+	function removeFromComparison(assetSlug: string) {
+		updateUrl(compareSlugs.filter((s) => s !== assetSlug));
 	}
 
-	let addAssetId = $state('');
+	let addAssetSlug = $state('');
 	function addToComparison() {
-		if (!addAssetId) return;
-		updateUrl([...compareIds, addAssetId]);
-		addAssetId = '';
+		if (!addAssetSlug) return;
+		updateUrl([...compareSlugs, addAssetSlug]);
+		addAssetSlug = '';
 	}
 
 	// Build chart series for PriceChart
@@ -183,13 +184,13 @@
 				<h3>Selected Assets ({compareAssets.length})</h3>
 				{#if availableAssets.length > 0}
 					<div class="add-asset-row">
-						<select class="add-asset-select" bind:value={addAssetId}>
+						<select class="add-asset-select" bind:value={addAssetSlug}>
 							<option value="">Add an asset...</option>
 							{#each availableAssets as a}
-								<option value={a.id}>{a.name}</option>
+								<option value={slugify(a.name)}>{a.name}</option>
 							{/each}
 						</select>
-						<Button variant="primary" size="sm" disabled={!addAssetId} onclick={addToComparison}>
+						<Button variant="primary" size="sm" disabled={!addAssetSlug} onclick={addToComparison}>
 							Add
 						</Button>
 					</div>
@@ -207,7 +208,7 @@
 							<span class="chip-meta">{asset.currency}</span>
 							<button
 								class="chip-remove"
-								onclick={() => removeFromComparison(asset.id)}
+								onclick={() => removeFromComparison(slugify(asset.name))}
 								aria-label="Remove {asset.name} from comparison"
 							>
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
