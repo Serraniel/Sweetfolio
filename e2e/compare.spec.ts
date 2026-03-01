@@ -80,14 +80,18 @@ const TEST_ASSETS = [
 async function seedAssets(page: import('@playwright/test').Page) {
 	await page.evaluate((assets) => {
 		return new Promise<void>((resolve, reject) => {
-			const request = indexedDB.open('sweetfolio', 1);
+			const request = indexedDB.open('sweetfolio', 2);
 			request.onupgradeneeded = () => {
 				const db = request.result;
 				if (!db.objectStoreNames.contains('assets')) {
-					db.createObjectStore('assets', { keyPath: 'id' });
+					const assetStore = db.createObjectStore('assets', { keyPath: 'id' });
+					assetStore.createIndex('by-isin', 'isin', { unique: false });
+					assetStore.createIndex('by-name', 'name', { unique: false });
+					assetStore.createIndex('by-classification', 'classification', { unique: false });
 				}
 				if (!db.objectStoreNames.contains('portfolios')) {
-					db.createObjectStore('portfolios', { keyPath: 'id' });
+					const portfolioStore = db.createObjectStore('portfolios', { keyPath: 'id' });
+					portfolioStore.createIndex('by-name', 'name', { unique: false });
 				}
 				if (!db.objectStoreNames.contains('currencies')) {
 					db.createObjectStore('currencies', { keyPath: 'pair' });
