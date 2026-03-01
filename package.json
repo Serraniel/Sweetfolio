@@ -12,9 +12,11 @@
     "test:watch": "vitest",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "check:licenses": "license-checker --production --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;EUPL-1.2;UNLICENSED'",
-    "generate:notices": "node scripts/generate-notices.mjs"
+    "generate:notices": "node scripts/generate-notices.mjs",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@sveltejs/adapter-static": "^3.0.0",
