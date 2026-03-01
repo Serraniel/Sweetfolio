@@ -4,15 +4,17 @@
 	import EfficientFrontier from '$lib/charts/EfficientFrontier.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { settings } from '$lib/stores/settings';
+	import { currencies } from '$lib/stores/currencies';
 	import { addPortfolio } from '$lib/stores/portfolios';
 	import { benchmark as benchmarkStore } from '$lib/stores/benchmark';
 	import { simulation, updateConfig, setProgress, setResult, setRunning, saveSimulation } from '$lib/stores/simulation';
 	import { createMonteCarloWorker } from '$lib/workers/manager';
 	import { annualizedLogReturn } from '$lib/engine/returns';
 	import { annualizedVolatility } from '$lib/engine/volatility';
+	import { convertPrices } from '$lib/engine/currency';
 	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
-	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio } from '$lib/types';
+	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint } from '$lib/types';
 	import { slugify } from '$lib/utils/slug';
 
 	let simulationCount = $state(10000);
@@ -33,6 +35,40 @@
 		}));
 	});
 
+	const mainCurrency = $derived(($settings.mainCurrency as string) ?? 'EUR');
+
+	// Find currency conversion data for an asset
+	function findCurrencyConversion(assetCurrency: string, targetCurrency: string, rates: CurrencyRate[]) {
+		if (assetCurrency === targetCurrency) return undefined;
+		const directPair = assetCurrency + targetCurrency;
+		const inversePair = targetCurrency + assetCurrency;
+		const rate = rates.find((r) => r.pair === directPair || r.pair === inversePair);
+		if (!rate) return undefined;
+		return { currencyRate: rate, sourceCurrency: assetCurrency, targetCurrency };
+	}
+
+	// Convert asset prices to main currency, returns null if conversion fails
+	function convertAssetPrices(assetCurrency: string, prices: PricePoint[]): PricePoint[] | null {
+		if (assetCurrency === mainCurrency) return prices;
+		const conversion = findCurrencyConversion(assetCurrency, mainCurrency, $currencies);
+		if (!conversion) return null;
+		return convertPrices(prices, conversion.currencyRate, conversion.sourceCurrency, conversion.targetCurrency);
+	}
+
+	// Track which assets have currency conversion issues (independent of selection)
+	const assetConversionWarnings = $derived.by((): Set<string> => {
+		const warnings = new Set<string>();
+		for (const sel of assetSelections) {
+			const asset = $assets.find((a) => a.id === sel.id);
+			if (!asset || asset.prices.length < 2) continue;
+			if (asset.currency !== mainCurrency) {
+				const converted = convertAssetPrices(asset.currency, asset.prices);
+				if (!converted || converted.length < 2) warnings.add(sel.id);
+			}
+		}
+		return warnings;
+	});
+
 	const assetColors = $derived(generateAssetColors(assetSelections.length));
 	const isRunning = $derived($simulation.running);
 	const progress = $derived(
@@ -48,9 +84,16 @@
 	const benchmarkPortfolio = $derived.by((): SimulatedPortfolio | null => {
 		const bm = $benchmarkStore;
 		if (!bm || bm.prices.length < 2) return null;
+		// Convert benchmark prices to main currency if needed
+		const bmAsset = $assets.find((a) => a.id === bm.ref.id);
+		let prices = bm.prices;
+		if (bmAsset && bmAsset.currency !== mainCurrency) {
+			const converted = convertAssetPrices(bmAsset.currency, bm.prices);
+			if (converted && converted.length >= 2) prices = converted;
+		}
 		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-		const ret = annualizedLogReturn(bm.prices);
-		const vol = annualizedVolatility(bm.prices);
+		const ret = annualizedLogReturn(prices);
+		const vol = annualizedVolatility(prices);
 		const sharpe = vol > 0 ? (ret - riskFreeRate) / vol : 0;
 		return {
 			weights: {},
@@ -62,6 +105,7 @@
 
 	// Compute per-asset markers using the same log-return-based metrics as the MC worker.
 	// Colors match the sidebar dots by using each asset's index in the full assetSelections list.
+	// Prices are converted to main currency for consistent comparison.
 	const assetMarkerList = $derived.by((): AssetMarker[] => {
 		if (!result) return [];
 		const markers: AssetMarker[] = [];
@@ -70,10 +114,12 @@
 			if (!sel.selected) continue;
 			const asset = $assets.find((a) => a.id === sel.id);
 			if (!asset || asset.prices.length < 2) continue;
+			const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
+			if (prices.length < 2) continue;
 			markers.push({
 				name: asset.name,
-				annualizedReturn: annualizedLogReturn(asset.prices),
-				volatility: annualizedVolatility(asset.prices),
+				annualizedReturn: annualizedLogReturn(prices),
+				volatility: annualizedVolatility(prices),
 				color: assetColors[i],
 			});
 		}
@@ -87,7 +133,9 @@
 			.map((sel) => {
 				const asset = $assets.find((a) => a.id === sel.id);
 				if (!asset) return null;
-				return { id: asset.id, prices: asset.prices };
+				// Convert prices to main currency for consistent simulation
+				const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
+				return { id: asset.id, prices };
 			})
 			.filter((a): a is NonNullable<typeof a> => a !== null);
 
@@ -284,6 +332,15 @@
 										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
 										<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
 										<span>{asset.name}</span>
+										{#if assetConversionWarnings.has(asset.id)}
+											<span class="currency-warning" title="No exchange rate data to convert {$assets.find((a) => a.id === asset.id)?.currency ?? '?'} to {mainCurrency}. Simulation uses unconverted prices.">
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+													<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+													<line x1="12" y1="9" x2="12" y2="13"/>
+													<line x1="12" y1="17" x2="12.01" y2="17"/>
+												</svg>
+											</span>
+										{/if}
 									</label>
 								{/each}
 							</div>
@@ -499,6 +556,15 @@
 		height: 8px;
 		border-radius: 50%;
 		flex-shrink: 0;
+	}
+
+	.currency-warning {
+		display: inline-flex;
+		align-items: center;
+		margin-left: auto;
+		color: var(--color-warning, #e6a700);
+		flex-shrink: 0;
+		cursor: help;
 	}
 
 	.checkbox-item.select-all {

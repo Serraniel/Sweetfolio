@@ -15,6 +15,7 @@
 	import type { DetectedFormat } from '$lib/types';
 	import { fetchPriceData as onvistaFetch } from '$lib/fetchers/onvista';
 	import { fetchPriceData as alphaVantageFetchPrice } from '$lib/fetchers/alphavantage';
+	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
 	import ExportModal from '$lib/components/io/ExportModal.svelte';
 	import ImportWizard from '$lib/components/io/ImportWizard.svelte';
 
@@ -107,6 +108,7 @@
 			setSetting('dataSourcePrimary', dataSourcePrimary),
 		]);
 		saving = false;
+		autoFetchCurrencyRates();
 	}
 
 	function handleCurrencyFiles(files: FileList) {
@@ -363,6 +365,10 @@
 			<div class="setting-section">
 				<h2>Exchange Rates</h2>
 				<p class="section-description">Upload historical exchange rate CSV files for cross-currency conversion.</p>
+
+				<div class="setting-hint success">
+					<strong>Automatic:</strong> Exchange rates for common currencies are fetched from the European Central Bank (ECB) automatically. Manual upload is only needed for unsupported currencies.
+				</div>
 
 				<div class="currency-pair-selector">
 					<div class="pair-select-row">

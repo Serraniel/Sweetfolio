@@ -11,6 +11,7 @@
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
 	import { settings } from '$lib/stores/settings';
+	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
 	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
@@ -169,6 +170,7 @@
 		};
 
 		await addAsset(asset);
+		autoFetchCurrencyRates();
 		showToast(`Imported "${asset.name}" (${asset.prices.length} data points)`);
 		handleLookupCancel();
 	}
@@ -287,6 +289,8 @@
 			}
 		}
 
+		autoFetchCurrencyRates();
+
 		// Queue ambiguous files for manual configuration
 		if (ambiguousFiles.length > 0) {
 			pendingFiles = ambiguousFiles;
@@ -346,6 +350,7 @@
 		};
 
 		await addAsset(asset);
+		autoFetchCurrencyRates();
 
 		showFormatModal = false;
 		rawText = '';

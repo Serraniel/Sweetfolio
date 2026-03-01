@@ -4,6 +4,7 @@ import { assets, updateAsset } from './assets';
 import { settings } from './settings';
 import { fetchByISIN, fetchByWKN } from '$lib/scraper/index';
 import { mergePrices, type PriceConflict } from '$lib/engine/price-merge';
+import { autoFetchCurrencyRates } from './currency-auto-fetch';
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -95,6 +96,7 @@ export async function autoRefreshAssets(): Promise<void> {
     }
   }
 
+  autoFetchCurrencyRates();
   progress.active = false;
   refreshProgress.set({ ...progress });
 }
