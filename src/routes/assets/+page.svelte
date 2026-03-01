@@ -5,6 +5,8 @@
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
 	import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN, fetchByTicker, type ScraperResult } from '$lib/scraper/index';
+	import { encodeAssetList } from '$lib/sharing/codec';
+	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
@@ -13,8 +15,28 @@
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
 	import { slugify } from '$lib/utils/slug';
+	import { goto } from '$app/navigation';
 	import { ASSET_CLASSIFICATIONS } from '$lib/types';
 	import type { DetectedFormat, AssetClassification } from '$lib/types';
+
+	// Comparison selection state
+	let selectedForCompare: Set<string> = $state(new Set());
+
+	function toggleCompareSelection(assetId: string) {
+		const next = new Set(selectedForCompare);
+		if (next.has(assetId)) {
+			next.delete(assetId);
+		} else {
+			next.add(assetId);
+		}
+		selectedForCompare = next;
+	}
+
+	function goToCompare() {
+		if (selectedForCompare.size < 2) return;
+		const ids = Array.from(selectedForCompare).join(',');
+		goto(`/compare?ids=${encodeURIComponent(ids)}`);
+	}
 
 	function isBenchmark(assetId: string): boolean {
 		const ref = $benchmarkRef;
@@ -344,6 +366,29 @@
 		}
 	}
 
+	const sharableIsins = $derived(
+		$assets
+			.filter((a) => a.isin)
+			.map((a) => a.isin as string)
+	);
+
+	async function handleShareAsset(isin: string, name: string) {
+		const hash = encodeAssetList([isin]);
+		const url = `${window.location.origin}${window.location.pathname}${hash}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			showToast(`Link for "${name}" copied`);
+		} catch {
+			showToast('Could not copy to clipboard');
+		}
+	}
+
+	const shareAllUrl = $derived.by(() => {
+		if (sharableIsins.length === 0) return '';
+		const hash = encodeAssetList(sharableIsins);
+		return `${window.location.origin}${window.location.pathname}${hash}`;
+	});
+
 	async function handleDelete(id: string) {
 		if (!confirm('Delete this asset? This cannot be undone.')) return;
 		await removeAsset(id);
@@ -361,6 +406,18 @@
 				<h1>Assets</h1>
 				<p class="page-subtitle">Manage your uploaded securities data</p>
 			</div>
+			{#if $assets.length > 0}
+				<div class="header-actions">
+					<span title={sharableIsins.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared via URL' : `Share ${sharableIsins.length} asset(s) with ISINs`}>
+						<ShareButton
+							url={shareAllUrl}
+							title="Sweetfolio Assets"
+							disabled={sharableIsins.length === 0}
+							ontoast={showToast}
+						/>
+					</span>
+				</div>
+			{/if}
 		</div>
 	</header>
 
@@ -475,6 +532,13 @@
 			</Card>
 		{:else}
 			<div class="asset-list-toolbar">
+				{#if selectedForCompare.size >= 2}
+					<Button variant="primary" size="sm" onclick={goToCompare}>
+						Compare {selectedForCompare.size} Assets
+					</Button>
+				{:else if selectedForCompare.size > 0}
+					<span class="compare-hint">Select at least 2 assets to compare</span>
+				{/if}
 				<select class="classification-filter" bind:value={classificationFilter}>
 					<option value="all">All types</option>
 					{#each ASSET_CLASSIFICATIONS as cls}
@@ -487,6 +551,13 @@
 					<table class="asset-table">
 						<thead>
 							<tr>
+								<th class="compare-col" title="Select for comparison">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
+										<polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
+										<line x1="4" y1="4" x2="9" y2="9"/>
+									</svg>
+								</th>
 								<th class="bm-col" title="Set as benchmark for comparison">Benchmark</th>
 								<th>Name</th>
 								<th>Type</th>
@@ -502,6 +573,15 @@
 						<tbody>
 							{#each filteredAssetList as asset}
 								<tr class:benchmark-row={isBenchmark(asset.id)} class:has-warnings={asset.health.warnings.length > 0}>
+									<td class="compare-col">
+										<input
+											type="checkbox"
+											class="compare-checkbox"
+											checked={selectedForCompare.has(asset.id)}
+											onchange={() => toggleCompareSelection(asset.id)}
+											aria-label="Select {asset.name} for comparison"
+										/>
+									</td>
 									<td class="bm-col">
 										<button
 											class="bm-toggle"
@@ -552,14 +632,25 @@
 									</td>
 									<td class="mono num-col">{asset.dataPoints.toLocaleString()}</td>
 									<td class="muted">{asset.dateRange}</td>
-									<td>
-										<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
+									<td class="action-col">
+									{#if asset.isin}
+										<Button variant="ghost" size="sm" onclick={() => handleShareAsset(asset.isin, asset.name)}>
 											<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-												<polyline points="3 6 5 6 21 6"/>
-												<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+												<circle cx="18" cy="5" r="3"/>
+												<circle cx="6" cy="12" r="3"/>
+												<circle cx="18" cy="19" r="3"/>
+												<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+												<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
 											</svg>
 										</Button>
-									</td>
+									{/if}
+									<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="3 6 5 6 21 6"/>
+											<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+										</svg>
+									</Button>
+								</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -618,6 +709,12 @@
 	.page-subtitle {
 		color: var(--color-text-muted);
 		font-size: var(--font-size-base);
+	}
+
+	.header-actions {
+		display: flex;
+		gap: var(--spacing-sm);
+		flex-shrink: 0;
 	}
 
 	.upload-section {
@@ -948,10 +1045,39 @@
 	.classification-commodity { color: #d4a574; background: rgba(212, 165, 116, 0.1); }
 	.classification-unknown { color: var(--color-text-muted); }
 
+	.compare-col {
+		width: 40px;
+		text-align: center;
+		padding-left: var(--spacing-sm);
+		padding-right: 0;
+	}
+
+	.compare-col svg {
+		color: var(--color-text-muted);
+	}
+
+	.compare-checkbox {
+		width: 16px;
+		height: 16px;
+		accent-color: var(--color-accent-deep, #1a8a8a);
+		cursor: pointer;
+	}
+
+	.compare-hint {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+	}
+
 	.asset-list-toolbar {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		gap: var(--spacing-sm);
 		margin-bottom: var(--spacing-sm);
+	}
+
+	.action-col {
+		white-space: nowrap;
 	}
 
 	.classification-filter {
