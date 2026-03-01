@@ -45,7 +45,7 @@
 		padding: var(--spacing-xl) var(--spacing-2xl);
 		transition: margin-left var(--transition-base);
 		max-width: 100%;
-		overflow-x: hidden;
+		overflow-x: clip;
 	}
 
 	.collapsed .main-content {
