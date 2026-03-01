@@ -612,6 +612,9 @@
 
 	.setting-control select {
 		min-width: 100px;
+		max-width: 280px;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.api-key-input {
@@ -649,6 +652,13 @@
 	.input-with-suffix input {
 		width: 80px;
 		text-align: right;
+		-moz-appearance: textfield;
+	}
+
+	.input-with-suffix input::-webkit-outer-spin-button,
+	.input-with-suffix input::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
 	}
 
 	.suffix {
