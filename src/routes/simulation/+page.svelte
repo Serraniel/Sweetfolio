@@ -17,7 +17,7 @@
 	let simulationCount = $state(10000);
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
-	let saveSuccess = $state(false);
+	let savedPortfolioId: string | null = $state(null);
 	let rendering = $state(false);
 	let hoveredAssetName: string | null = $state(null);
 
@@ -182,6 +182,7 @@
 
 	function handleSelect(portfolio: SimulatedPortfolio) {
 		selectedPortfolio = portfolio;
+		savedPortfolioId = null;
 	}
 
 	// Resolve asset names for inspector, filtering out 0% allocations
@@ -218,8 +219,7 @@
 		};
 
 		await addPortfolio(portfolio);
-		saveSuccess = true;
-		setTimeout(() => { saveSuccess = false; }, 3000);
+		savedPortfolioId = portfolio.id;
 	}
 </script>
 
@@ -376,8 +376,14 @@
 										</svg>
 										Save as Portfolio
 									</Button>
-									{#if saveSuccess}
-										<span class="save-feedback">Saved</span>
+									{#if savedPortfolioId}
+										<a href="/portfolios/{savedPortfolioId}" class="open-portfolio-link">
+											Open
+											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M5 12h14"/>
+												<path d="M12 5l7 7-7 7"/>
+											</svg>
+										</a>
 									{/if}
 								</div>
 							</div>
@@ -656,10 +662,18 @@
 		padding-top: var(--spacing-sm);
 	}
 
-	.save-feedback {
+	.open-portfolio-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: var(--font-size-xs);
 		color: var(--color-positive);
 		font-weight: 500;
+		text-decoration: none;
 		animation: fadeIn 200ms ease;
+	}
+
+	.open-portfolio-link:hover {
+		text-decoration: underline;
 	}
 </style>
