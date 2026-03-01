@@ -362,6 +362,10 @@
 				<h2>Exchange Rates</h2>
 				<p class="section-description">Upload historical exchange rate CSV files for cross-currency conversion.</p>
 
+				<div class="setting-hint info">
+					Exchange rates for common currencies are automatically fetched from the European Central Bank (ECB) when needed. Manual upload is only required for currencies not supported by the ECB.
+				</div>
+
 				<div class="currency-pair-selector">
 					<div class="pair-select-row">
 						<div class="pair-select-field">
