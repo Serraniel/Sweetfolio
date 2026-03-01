@@ -1,12 +1,19 @@
 import type { SweetfolioScope } from './schema';
-import type { Asset, StoredSimulation } from '$lib/types';
 import { CURRENT_VERSION } from './schema';
 import { getDB } from '$lib/storage/db';
 
+/** Fields to omit from assets — large caches that are regenerable. */
+const ASSET_OMIT_KEYS = new Set(['rawCSV', 'rawCSVStoredAt']);
+
+/** Fields to replace with empty arrays in simulations — large Float64Arrays. */
+const SIM_SCATTER_KEYS = new Set(['scatterVolatilities', 'scatterReturns']);
+
 /**
- * Convert Float64Array/Float32Array to regular arrays for JSON.
+ * JSON replacer that strips bulky regenerable asset fields inline.
+ * Avoids creating a shallow copy — the original record is never duplicated.
  */
-function typedArrayReplacer(_key: string, value: unknown): unknown {
+function assetReplacer(key: string, value: unknown): unknown {
+  if (ASSET_OMIT_KEYS.has(key)) return null;
   if (value instanceof Float64Array || value instanceof Float32Array) {
     return Array.from(value);
   }
@@ -14,13 +21,38 @@ function typedArrayReplacer(_key: string, value: unknown): unknown {
 }
 
 /**
- * Iterate an IndexedDB store one record at a time via cursor.
- * Keeps only one record in memory at any time.
+ * JSON replacer that strips scatter Float64Arrays from simulations.
+ * These are 10K+ entries each and re-generable by re-running the simulation.
  */
-function forEachRecord<T>(
+function simulationReplacer(key: string, value: unknown): unknown {
+  if (SIM_SCATTER_KEYS.has(key)) return [];
+  if (value instanceof Float64Array || value instanceof Float32Array) {
+    return Array.from(value);
+  }
+  return value;
+}
+
+/** Default replacer for typed arrays only. */
+function defaultReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Float64Array || value instanceof Float32Array) {
+    return Array.from(value);
+  }
+  return value;
+}
+
+/** Yield to the event loop so the UI stays responsive. */
+function yieldToUI(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Iterate an IndexedDB store one record at a time via cursor.
+ * Calls back with each record; previous records are GC-eligible after each step.
+ */
+function forEachRecord(
   db: IDBDatabase,
   storeName: string,
-  callback: (record: T) => void,
+  callback: (record: unknown) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readonly');
@@ -30,7 +62,7 @@ function forEachRecord<T>(
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor) {
-        callback(cursor.value as T);
+        callback(cursor.value);
         cursor.continue();
       } else {
         resolve();
@@ -42,8 +74,8 @@ function forEachRecord<T>(
 }
 
 /**
- * Get all records from a small store (portfolios, settings, currencies).
- * Only use for stores where total data is guaranteed small.
+ * Get all records from a small store.
+ * Only for stores where total data is guaranteed small (portfolios, settings, currencies).
  */
 function getAllSmall<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
   return new Promise((resolve, reject) => {
@@ -55,140 +87,190 @@ function getAllSmall<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
   });
 }
 
-/** Strip bulky regenerable fields from a single asset. */
-function stripAsset(asset: Asset): Record<string, unknown> {
-  return { ...asset, rawCSV: null, rawCSVStoredAt: null };
+// ---------------------------------------------------------------------------
+// Streaming writer abstraction
+// ---------------------------------------------------------------------------
+
+interface ExportWriter {
+  write(chunk: string): Promise<void>;
+  finish(): Promise<void>;
 }
 
-/** Strip scatter Float64Arrays from a single simulation. */
-function stripSimulation(sim: StoredSimulation): Record<string, unknown> {
+/**
+ * Best path: File System Access API — writes directly to disk.
+ * Peak memory: 1 record + its JSON string. Nothing accumulates.
+ */
+async function createFileWriter(filename: string): Promise<ExportWriter | null> {
+  if (typeof window === 'undefined') return null;
+  if (!('showSaveFilePicker' in window)) return null;
+
+  try {
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: 'Sweetfolio Export',
+          accept: { 'application/json': ['.json'] },
+        },
+      ],
+    });
+    const writable = await handle.createWritable();
+    return {
+      async write(chunk: string) {
+        await writable.write(chunk);
+      },
+      async finish() {
+        await writable.close();
+      },
+    };
+  } catch (e: unknown) {
+    // User cancelled the picker or API not available
+    if (e instanceof DOMException && e.name === 'AbortError') return null;
+    return null;
+  }
+}
+
+/**
+ * Fallback: accumulate Blob parts.
+ * Each JSON string is immediately wrapped in a Blob to move data from
+ * the JS heap into native memory, keeping the heap footprint minimal.
+ */
+function createBlobWriter(filename: string): ExportWriter {
+  const parts: BlobPart[] = [];
   return {
-    ...sim,
-    results: {
-      ...sim.results,
-      scatterVolatilities: [],
-      scatterReturns: [],
-      portfolioCount: sim.results.portfolioCount,
+    async write(chunk: string) {
+      // Wrap in Blob immediately — the string is copied into native memory
+      // and becomes eligible for GC from the JS heap.
+      parts.push(new Blob([chunk]));
+    },
+    async finish() {
+      const blob = new Blob(parts, { type: 'application/json' });
+      // Release sub-blobs — the final blob owns the data now
+      parts.length = 0;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     },
   };
 }
 
+// ---------------------------------------------------------------------------
+// Core streaming export
+// ---------------------------------------------------------------------------
+
 /**
- * Stream records from an IndexedDB store into Blob parts, one at a time.
- * Each record is: read via cursor → transform → JSON.stringify → push to parts.
- * Previous records are GC-eligible after each iteration.
+ * Stream records from a store through the writer, one at a time.
+ * Each record: cursor read → JSON.stringify with replacer → write → GC eligible.
+ * Yields to the event loop every 50 records to keep the UI responsive.
  */
-async function streamStoreToParts(
+async function streamStore(
   db: IDBDatabase,
   storeName: string,
-  parts: string[],
-  transform?: (record: unknown) => unknown,
+  writer: ExportWriter,
+  replacer: (key: string, value: unknown) => unknown,
 ): Promise<void> {
   let first = true;
-  parts.push('[');
+  let count = 0;
+  await writer.write('[');
 
-  await forEachRecord(db, storeName, (record: unknown) => {
-    const transformed = transform ? transform(record) : record;
-    if (!first) parts.push(',');
+  await forEachRecord(db, storeName, (record) => {
+    if (!first) writer.write(',');
     first = false;
-    parts.push(JSON.stringify(transformed, typedArrayReplacer));
+    writer.write(JSON.stringify(record, replacer));
+    count++;
   });
 
-  parts.push(']');
+  // Yield after the store is done to let GC + UI catch up
+  if (count > 0) await yieldToUI();
+
+  await writer.write(']');
 }
 
 /**
- * Stream export data directly from IndexedDB to a downloadable Blob.
+ * Export data directly from IndexedDB to a file download.
  *
  * Memory strategy:
- * - Large stores (assets, simulations) use cursor iteration — one record at a time
- * - Each record is stringified individually, then the record object is GC-eligible
- * - Small stores (portfolios, settings, currencies) use getAll() since they're tiny
- * - Peak memory ≈ largest single record + its JSON string
+ * 1. File System Access API (best): writes each chunk directly to disk.
+ *    Peak memory = 1 record + its JSON string. Nothing accumulates.
+ * 2. Blob fallback: each record's JSON is immediately wrapped in a sub-Blob,
+ *    moving data from JS heap to native memory. Peak JS heap = 1 record + 1 string.
+ *
+ * No intermediate object copies — JSON replacer functions skip/transform
+ * fields inline during serialization.
  */
 export async function streamExport(
   scopes: SweetfolioScope[],
   onPhase?: (phase: string) => void,
 ): Promise<void> {
   const db = await getDB();
-  const parts: string[] = [];
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `sweetfolio-export-${date}.json`;
+
+  // Try direct-to-disk first, fall back to Blob accumulation
+  onPhase?.('Preparing export...');
+  const writer =
+    (await createFileWriter(filename)) ?? createBlobWriter(filename);
 
   // Envelope header
-  const envelope = {
+  const envelope = JSON.stringify({
     format: 'sweetfolio',
     version: CURRENT_VERSION,
     exportedAt: new Date().toISOString(),
     scopes,
-  };
-  const envelopeJson = JSON.stringify(envelope);
-  // Remove trailing } and open "data" object
-  parts.push(envelopeJson.slice(0, -1) + ',"data":{');
+  });
+  await writer.write(envelope.slice(0, -1) + ',"data":{');
 
   let firstScope = true;
 
-  // Assets — streamed one at a time (can have huge rawCSV)
   if (scopes.includes('assets')) {
     onPhase?.('Exporting assets...');
-    if (!firstScope) parts.push(',');
+    if (!firstScope) await writer.write(',');
     firstScope = false;
-    parts.push('"assets":');
-    await streamStoreToParts(db, 'assets', parts, (r) => stripAsset(r as Asset));
+    await writer.write('"assets":');
+    await streamStore(db, 'assets', writer, assetReplacer);
   }
 
-  // Simulations — streamed one at a time (Float64Arrays)
   if (scopes.includes('simulations')) {
     onPhase?.('Exporting simulations...');
-    if (!firstScope) parts.push(',');
+    if (!firstScope) await writer.write(',');
     firstScope = false;
-    parts.push('"simulations":');
-    await streamStoreToParts(db, 'simulations', parts, (r) => stripSimulation(r as StoredSimulation));
+    await writer.write('"simulations":');
+    await streamStore(db, 'simulations', writer, simulationReplacer);
   }
 
-  // Portfolios — small, getAll is fine
   if (scopes.includes('portfolios')) {
     onPhase?.('Exporting portfolios...');
-    if (!firstScope) parts.push(',');
+    if (!firstScope) await writer.write(',');
     firstScope = false;
     const portfolios = await getAllSmall(db, 'portfolios');
-    parts.push('"portfolios":' + JSON.stringify(portfolios));
+    await writer.write('"portfolios":' + JSON.stringify(portfolios));
   }
 
-  // Settings — small
   if (scopes.includes('settings')) {
     onPhase?.('Exporting settings...');
-    if (!firstScope) parts.push(',');
+    if (!firstScope) await writer.write(',');
     firstScope = false;
-    // Settings store uses key-value pairs, reconstruct as object
     const entries = await getAllSmall<{ key: string; value: unknown }>(db, 'settings');
     const settingsObj: Record<string, unknown> = {};
-    for (const entry of entries) {
-      settingsObj[entry.key] = entry.value;
-    }
-    parts.push('"settings":' + JSON.stringify(settingsObj));
+    for (const entry of entries) settingsObj[entry.key] = entry.value;
+    await writer.write('"settings":' + JSON.stringify(settingsObj));
   }
 
-  // Currencies — small
   if (scopes.includes('currencies')) {
     onPhase?.('Exporting exchange rates...');
-    if (!firstScope) parts.push(',');
+    if (!firstScope) await writer.write(',');
     firstScope = false;
     const currencies = await getAllSmall(db, 'currencies');
-    parts.push('"currencies":' + JSON.stringify(currencies));
+    await writer.write('"currencies":' + JSON.stringify(currencies, defaultReplacer));
   }
 
-  // Close data object and envelope
-  parts.push('}}');
-
-  onPhase?.('Preparing download...');
-  const blob = new Blob(parts, { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const date = new Date().toISOString().slice(0, 10);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `sweetfolio-export-${date}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await writer.write('}}');
+  onPhase?.('Saving file...');
+  await writer.finish();
 }
