@@ -5,6 +5,7 @@
 	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
 	import { validateISIN, validateWKN, fetchByISIN, fetchByWKN, type ScraperResult } from '$lib/scraper/index';
+	import { encodeAssetList } from '$lib/sharing/codec';
 	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
@@ -341,6 +342,38 @@
 		}
 	}
 
+	const sharableIsins = $derived(
+		$assets
+			.filter((a) => a.isin)
+			.map((a) => a.isin as string)
+	);
+
+	async function handleShareAsset(isin: string, name: string) {
+		const hash = encodeAssetList([isin]);
+		const url = `${window.location.origin}${window.location.pathname}${hash}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			showToast(`Share link for "${name}" copied`);
+		} catch {
+			showToast('Could not copy to clipboard');
+		}
+	}
+
+	async function handleShareAll() {
+		if (sharableIsins.length === 0) {
+			showToast('No assets with ISINs to share');
+			return;
+		}
+		const hash = encodeAssetList(sharableIsins);
+		const url = `${window.location.origin}${window.location.pathname}${hash}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			showToast(`Share link copied (${sharableIsins.length} assets)`);
+		} catch {
+			showToast('Could not copy to clipboard');
+		}
+	}
+
 	async function handleDelete(id: string) {
 		if (!confirm('Delete this asset? This cannot be undone.')) return;
 		await removeAsset(id);
@@ -358,6 +391,15 @@
 				<h1>Assets</h1>
 				<p class="page-subtitle">Manage your uploaded securities data</p>
 			</div>
+			{#if $assets.length > 0}
+				<div class="header-actions">
+					<span title={sharableIsins.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared via URL' : `Share ${sharableIsins.length} asset(s) with ISINs`}>
+						<Button variant="default" size="sm" onclick={handleShareAll} disabled={sharableIsins.length === 0}>
+							Share All
+						</Button>
+					</span>
+				</div>
+			{/if}
 		</div>
 	</header>
 
@@ -549,14 +591,25 @@
 									</td>
 									<td class="mono num-col">{asset.dataPoints.toLocaleString()}</td>
 									<td class="muted">{asset.dateRange}</td>
-									<td>
-										<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
+									<td class="action-col">
+									{#if asset.isin}
+										<Button variant="ghost" size="sm" onclick={() => handleShareAsset(asset.isin, asset.name)}>
 											<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-												<polyline points="3 6 5 6 21 6"/>
-												<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+												<circle cx="18" cy="5" r="3"/>
+												<circle cx="6" cy="12" r="3"/>
+												<circle cx="18" cy="19" r="3"/>
+												<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+												<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
 											</svg>
 										</Button>
-									</td>
+									{/if}
+									<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+											<polyline points="3 6 5 6 21 6"/>
+											<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+										</svg>
+									</Button>
+								</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -615,6 +668,12 @@
 	.page-subtitle {
 		color: var(--color-text-muted);
 		font-size: var(--font-size-base);
+	}
+
+	.header-actions {
+		display: flex;
+		gap: var(--spacing-sm);
+		flex-shrink: 0;
 	}
 
 	.upload-section {
@@ -949,6 +1008,10 @@
 		display: flex;
 		justify-content: flex-end;
 		margin-bottom: var(--spacing-sm);
+	}
+
+	.action-col {
+		white-space: nowrap;
 	}
 
 	.classification-filter {

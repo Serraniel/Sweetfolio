@@ -11,6 +11,7 @@
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { assets } from '$lib/stores/assets';
+	import { encodePortfolio } from '$lib/sharing/codec';
 	import { settings } from '$lib/stores/settings';
 	import { benchmarkRef, benchmark as resolvedBenchmark, setBenchmark } from '$lib/stores/benchmark';
 	import { computePortfolioPrices } from '$lib/engine/portfolio';
@@ -176,6 +177,64 @@
 		}
 	}
 
+	// Toast notifications
+	let toasts: Array<{ id: number; message: string }> = $state([]);
+	let toastCounter = 0;
+
+	function showToast(message: string) {
+		const id = ++toastCounter;
+		toasts = [...toasts, { id, message }];
+		setTimeout(() => {
+			toasts = toasts.filter((t) => t.id !== id);
+		}, 4000);
+	}
+
+	// Share
+	const sharableAllocations = $derived(
+		portfolio
+			? portfolio.allocations.filter((alloc) => {
+					const asset = $assets.find((a) => a.id === alloc.assetId);
+					return !!asset?.isin;
+				})
+			: []
+	);
+
+	const skippedCount = $derived(
+		(portfolio?.allocations.length ?? 0) - sharableAllocations.length
+	);
+
+	async function handleShare() {
+		if (!portfolio || sharableAllocations.length === 0) return;
+
+		const allocations: Array<{ isin: string; weight: number }> = [];
+		for (const alloc of sharableAllocations) {
+			const asset = $assets.find((a) => a.id === alloc.assetId);
+			if (!asset?.isin) continue;
+			allocations.push({ isin: asset.isin, weight: alloc.weight });
+		}
+
+		// Re-normalize weights for the sharable subset
+		const totalWeight = allocations.reduce((sum, a) => sum + a.weight, 0);
+		if (totalWeight > 0) {
+			for (const a of allocations) {
+				a.weight = a.weight / totalWeight;
+			}
+		}
+
+		const hash = encodePortfolio(portfolio.name, allocations);
+		const url = `${window.location.origin}${window.location.pathname}${hash}`;
+
+		try {
+			await navigator.clipboard.writeText(url);
+			const msg = skippedCount > 0
+				? `Share link copied (${skippedCount} asset(s) without ISIN skipped)`
+				: 'Share link copied to clipboard';
+			showToast(msg);
+		} catch {
+			showToast('Could not copy to clipboard');
+		}
+	}
+
 	async function handleDelete() {
 		if (!portfolio) return;
 		if (!confirm(`Delete "${portfolio.name}"? This cannot be undone.`)) return;
@@ -217,6 +276,9 @@
 					</div>
 				</div>
 				<div class="header-actions">
+					<span title={sharableAllocations.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared' : skippedCount > 0 ? `${skippedCount} asset(s) without ISIN will be skipped` : ''}>
+						<Button variant="default" size="sm" onclick={handleShare} disabled={sharableAllocations.length === 0}>Share</Button>
+					</span>
 					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
 					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
 						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
@@ -351,6 +413,20 @@
 				</Button>
 			{/snippet}
 		</Modal>
+	</div>
+{/if}
+
+{#if toasts.length > 0}
+	<div class="toast-container">
+		{#each toasts as toast (toast.id)}
+			<div class="toast">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+					<polyline points="22 4 12 14.01 9 11.01"/>
+				</svg>
+				<span>{toast.message}</span>
+			</div>
+		{/each}
 	</div>
 {/if}
 
