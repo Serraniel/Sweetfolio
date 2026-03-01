@@ -4,6 +4,9 @@
  * Uses the free CoinGecko API (no key required).
  * Resolves ticker symbols (BTC, ETH) to CoinGecko IDs via /coins/list,
  * then fetches historical prices via /coins/{id}/market_chart.
+ *
+ * IMPORTANT: CoinGecko does not support CORS from browsers.
+ * A CORS proxy URL must be provided to route requests through.
  */
 
 import type { FetchOutcome } from './types';
@@ -23,10 +26,17 @@ export function _resetCoinListCache(): void {
   coinListCache = null;
 }
 
-async function fetchCoinList(): Promise<CoinListEntry[]> {
+/** Prepend CORS proxy URL if provided. */
+function proxied(url: string, corsProxyUrl?: string): string {
+  if (!corsProxyUrl) return url;
+  const base = corsProxyUrl.endsWith('/') ? corsProxyUrl : corsProxyUrl + '/';
+  return base + url;
+}
+
+async function fetchCoinList(corsProxyUrl?: string): Promise<CoinListEntry[]> {
   if (coinListCache) return coinListCache;
 
-  const response = await fetch(`${BASE_URL}/coins/list`);
+  const response = await fetch(proxied(`${BASE_URL}/coins/list`, corsProxyUrl));
   if (!response.ok) {
     throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
   }
@@ -48,10 +58,11 @@ function unixMsToISODate(timestampMs: number): string {
  *
  * @param ticker - Crypto ticker (e.g. "BTC", "ETH")
  * @param vsCurrency - Fiat currency for prices (e.g. "USD", "EUR")
+ * @param corsProxyUrl - CORS proxy URL prefix (required — CoinGecko blocks browser requests)
  */
-export async function fetchByTicker(ticker: string, vsCurrency: string): Promise<FetchOutcome> {
+export async function fetchByTicker(ticker: string, vsCurrency: string, corsProxyUrl?: string): Promise<FetchOutcome> {
   try {
-    const coins = await fetchCoinList();
+    const coins = await fetchCoinList(corsProxyUrl);
     const symbol = ticker.toLowerCase();
     const coin = coins.find((c) => c.symbol === symbol);
 
@@ -66,7 +77,10 @@ export async function fetchByTicker(ticker: string, vsCurrency: string): Promise
     }
 
     const vs = vsCurrency.toLowerCase();
-    const url = `${BASE_URL}/coins/${coin.id}/market_chart?vs_currency=${vs}&days=max&interval=daily`;
+    const url = proxied(
+      `${BASE_URL}/coins/${coin.id}/market_chart?vs_currency=${vs}&days=max&interval=daily`,
+      corsProxyUrl,
+    );
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);

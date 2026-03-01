@@ -197,6 +197,7 @@ registerDataSource({
 });
 
 import { fetchByTicker as coingeckoFetch } from '$lib/fetchers/coingecko';
+import { fetchCryptoByTicker as onvistaCryptoFetch } from '$lib/fetchers/onvista';
 import { fetchPriceData as alphaVantageFetch } from '$lib/fetchers/alphavantage';
 import { get } from 'svelte/store';
 import { settings } from '$lib/stores/settings';
@@ -232,7 +233,8 @@ registerDataSource({
 /**
  * Attempt to fetch historical price data by crypto ticker symbol.
  *
- * Uses CoinGecko to resolve the ticker and fetch price history.
+ * Tries Onvista first (CORS-friendly, no proxy needed), then falls back
+ * to CoinGecko (requires a CORS proxy).
  * The vs_currency is read from the user's mainCurrency setting.
  */
 export async function fetchByTicker(ticker: string): Promise<ScraperOutcome> {
@@ -247,10 +249,42 @@ export async function fetchByTicker(ticker: string): Promise<ScraperOutcome> {
     };
   }
 
+  // Try Onvista first (CORS-friendly, no proxy needed)
+  try {
+    const onvistaResult = await onvistaCryptoFetch(ticker.toUpperCase());
+    if (onvistaResult.success) {
+      return {
+        success: true,
+        data: {
+          prices: onvistaResult.data.prices,
+          name: onvistaResult.data.name,
+          currency: onvistaResult.data.currency,
+          source: 'onvista',
+          classification: onvistaResult.data.classification,
+        },
+      };
+    }
+  } catch {
+    // Onvista failed, try CoinGecko
+  }
+
+  // Fall back to CoinGecko (requires CORS proxy)
   const vsCurrency = (get(settings).mainCurrency as string) ?? 'EUR';
+  const corsProxyUrl = (get(settings).corsProxyUrl as string) || undefined;
+
+  if (!corsProxyUrl) {
+    return {
+      success: false,
+      error: {
+        message: `Could not fetch data for ticker "${ticker}" from Onvista. CoinGecko fallback requires a CORS proxy. Please configure a CORS Proxy URL in Settings, or upload a CSV file instead.`,
+        source: 'all',
+        recoverable: false,
+      },
+    };
+  }
 
   try {
-    const result = await coingeckoFetch(ticker.toUpperCase(), vsCurrency);
+    const result = await coingeckoFetch(ticker.toUpperCase(), vsCurrency, corsProxyUrl);
     if (result.success) {
       return {
         success: true,
@@ -276,7 +310,7 @@ export async function fetchByTicker(ticker: string): Promise<ScraperOutcome> {
       success: false,
       error: {
         message: `Could not fetch data for ticker ${ticker}. Please try again or upload a CSV file instead.`,
-        source: 'coingecko',
+        source: 'all',
         recoverable: true,
       },
     };

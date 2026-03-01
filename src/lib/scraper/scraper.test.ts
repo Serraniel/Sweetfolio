@@ -127,13 +127,14 @@ describe('fetchByTicker', () => {
     }
   });
 
-  it('returns failure when CoinGecko fails', async () => {
+  it('returns error when Onvista fails and no CORS proxy configured', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
     try {
       const result = await fetchByTicker('BTC');
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.recoverable).toBe(true);
+        expect(result.error.message).toContain('CORS proxy');
+        expect(result.error.source).toBe('all');
       }
     } finally {
       fetchSpy.mockRestore();
