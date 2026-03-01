@@ -1,3 +1,48 @@
+# [0.4.0](https://github.com/Serraniel/Sweetfolio/compare/v0.3.1...v0.4.0) (2026-03-01)
+
+
+### Bug Fixes
+
+* **io:** resolve export memory explosion and main thread blocking ([4bad956](https://github.com/Serraniel/Sweetfolio/commit/4bad9560794ed3a6abf08aa5a084cc0721566a1b))
+* **io:** resolve type errors in migrations and import wizard ([6ab8f87](https://github.com/Serraniel/Sweetfolio/commit/6ab8f876afae4f7225ea59522240890b34537dac))
+* **io:** stream export from IndexedDB one record at a time ([c95ef65](https://github.com/Serraniel/Sweetfolio/commit/c95ef652bc7b81bf97c5dfed9902e8acf0fff6f9))
+* **io:** strip bulky data and serialize scope-by-scope for lean export ([8ba431c](https://github.com/Serraniel/Sweetfolio/commit/8ba431c8d025f887a752e35f6e1b821ad19fbce4))
+* **io:** unwrap Svelte 5 proxies before IndexedDB writes and skip identical conflicts ([92d5fc3](https://github.com/Serraniel/Sweetfolio/commit/92d5fc3e0460a961e497cc113882af89a34d56bc))
+* **io:** use single footer snippet in ImportWizard for reliable rendering ([b6c4260](https://github.com/Serraniel/Sweetfolio/commit/b6c4260ce87df334c4e10603f1fb5095a29398c0)), closes [#snippet](https://github.com/Serraniel/Sweetfolio/issues/snippet)
+* **io:** zero-accumulation export with File System Access API fallback ([c8f4823](https://github.com/Serraniel/Sweetfolio/commit/c8f4823fb067eaba319cef6557158591604d24c0))
+* **simulation:** show currency warning icon regardless of selection ([bd1df36](https://github.com/Serraniel/Sweetfolio/commit/bd1df36ba75237d32361c839259bf45734b1e038))
+* **test:** use distinct data in currency conflict test ([3e7bf9f](https://github.com/Serraniel/Sweetfolio/commit/3e7bf9faa8d805132b5eecebc34d34ca619bb58c))
+
+
+### Features
+
+* add cross-rate derivation and rate merging utilities ([460c007](https://github.com/Serraniel/Sweetfolio/commit/460c007c6be3149144d7bc017a3f22abb9874a72))
+* add crypto ticker support to asset identifier lookup ([#13](https://github.com/Serraniel/Sweetfolio/issues/13)) ([a8ee1ab](https://github.com/Serraniel/Sweetfolio/commit/a8ee1ab43e687b825fb6e2529ba2399194568d88))
+* add currency auto-fetch store with ECB integration ([2817797](https://github.com/Serraniel/Sweetfolio/commit/28177974d6ca232bc92a360b5f70a464950e869e))
+* add CurrencyFetchToast component for exchange rate progress ([bc4f76c](https://github.com/Serraniel/Sweetfolio/commit/bc4f76c72efa621ec6213811f739e816e677e8f4))
+* add hint about automatic ECB currency fetching in settings ([45e4f28](https://github.com/Serraniel/Sweetfolio/commit/45e4f28a01d1e6cacfe9b977aa4adcdc317ec133))
+* **assets:** add crypto ticker support to identifier lookup UI ([b5e35cf](https://github.com/Serraniel/Sweetfolio/commit/b5e35cf1d070cae08acf2561c267bb4a1d137e00))
+* auto-fetch currency exchange rates from ECB ([#15](https://github.com/Serraniel/Sweetfolio/issues/15)) ([b8d3fae](https://github.com/Serraniel/Sweetfolio/commit/b8d3fae69f1ace3a317f880d6bb0b764b6ba3dea))
+* **crypto:** use Onvista as primary crypto data source with CoinGecko fallback ([b09d90a](https://github.com/Serraniel/Sweetfolio/commit/b09d90a84ed8e976510daee4e5358dde52671a9a))
+* **fetchers:** add CoinGecko fetcher for crypto price data ([04f41c5](https://github.com/Serraniel/Sweetfolio/commit/04f41c5ee77fb89c84a09be6008140b80b9d26ad))
+* **io:** add barrel export ([9866811](https://github.com/Serraniel/Sweetfolio/commit/9866811b53839a05155eb6da853c4bcf9b4e8bed))
+* **io:** add conflict detection for import ([d59db61](https://github.com/Serraniel/Sweetfolio/commit/d59db6140d48fb4c83d41207cac96033bcf692c9))
+* **io:** add data import/export with streaming export ([#14](https://github.com/Serraniel/Sweetfolio/issues/14)) ([f95f226](https://github.com/Serraniel/Sweetfolio/commit/f95f226f593733e5f7563c5a3e88429556253e8e))
+* **io:** add export builder ([2e74913](https://github.com/Serraniel/Sweetfolio/commit/2e7491354661e896de5f71e7b7334a6c554e0ee7))
+* **io:** add export modal component ([f69411a](https://github.com/Serraniel/Sweetfolio/commit/f69411ab2a62905e4be8ab643d640c6b5478f4ec))
+* **io:** add export schema types and validation ([f48b657](https://github.com/Serraniel/Sweetfolio/commit/f48b657b417bef90c53ce1a17dc0e720296cb751))
+* **io:** add file download helper ([15b333d](https://github.com/Serraniel/Sweetfolio/commit/15b333dda99a4c6eed0e40b3860666490edd447e))
+* **io:** add import apply logic with conflict resolution ([5df9913](https://github.com/Serraniel/Sweetfolio/commit/5df9913d86a779af334dc3bb3c8f304cdef70aad))
+* **io:** add import file parser with validation and migration ([8836292](https://github.com/Serraniel/Sweetfolio/commit/883629214e9d949a562c13b885622b02d5def8d9))
+* **io:** add import wizard with scope selection and conflict resolution ([0b4de78](https://github.com/Serraniel/Sweetfolio/commit/0b4de78ac70d11f9c313359f6c75f36e6a078d5d))
+* **io:** add version migration system ([d9e97ae](https://github.com/Serraniel/Sweetfolio/commit/d9e97aefd196f9408ba6121a1305d25738ef8fc6))
+* **io:** bump export schema to v2 with classification migration ([0eb811e](https://github.com/Serraniel/Sweetfolio/commit/0eb811ef1cae9026e6410bdf849de4147206f947))
+* **io:** wire import/export into settings page ([6e83f44](https://github.com/Serraniel/Sweetfolio/commit/6e83f442484030e5b443c413e691926cb481ef4c))
+* **scraper:** add fetchByTicker for crypto ticker lookup ([65222e8](https://github.com/Serraniel/Sweetfolio/commit/65222e89e2edd22f15792bab5f1862c5668cf003))
+* **scraper:** add validateTicker for crypto ticker detection ([c52c39b](https://github.com/Serraniel/Sweetfolio/commit/c52c39bbb40c7be1fa0d225a975e3673f822bb24))
+* **simulation:** convert asset prices to preferred currency ([6e7bf35](https://github.com/Serraniel/Sweetfolio/commit/6e7bf3529b47d7aabf43023897276025fb6e43b3))
+* wire up auto currency fetch triggers (startup, settings, refresh, import) ([fb97db1](https://github.com/Serraniel/Sweetfolio/commit/fb97db19076975fecef77578dc5069e3d52a0177))
+
 ## [0.3.1](https://github.com/Serraniel/Sweetfolio/compare/v0.3.0...v0.3.1) (2026-03-01)
 
 
