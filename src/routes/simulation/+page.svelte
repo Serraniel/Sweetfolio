@@ -15,11 +15,12 @@
 	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint } from '$lib/types';
+	import { slugify } from '$lib/utils/slug';
 
 	let simulationCount = $state(10000);
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
-	let saveSuccess = $state(false);
+	let savedPortfolioSlug: string | null = $state(null);
 	let rendering = $state(false);
 	let hoveredAssetName: string | null = $state(null);
 
@@ -230,6 +231,7 @@
 
 	function handleSelect(portfolio: SimulatedPortfolio) {
 		selectedPortfolio = portfolio;
+		savedPortfolioSlug = null;
 	}
 
 	// Resolve asset names for inspector, filtering out 0% allocations
@@ -246,10 +248,12 @@
 	async function handleSaveAsPortfolio() {
 		if (!selectedPortfolio) return;
 
-		const allocations = Object.entries(selectedPortfolio.weights).map(([assetId, weight]) => ({
-			assetId,
-			weight
-		}));
+		const allocations = Object.entries(selectedPortfolio.weights)
+			.filter(([, weight]) => weight > 0)
+			.map(([assetId, weight]) => ({
+				assetId,
+				weight
+			}));
 
 		const names = resolveWeights(selectedPortfolio.weights).map((w) => w.name);
 		const portfolioName = `Simulated (${names.join(', ')})`.slice(0, 60);
@@ -264,8 +268,7 @@
 		};
 
 		await addPortfolio(portfolio);
-		saveSuccess = true;
-		setTimeout(() => { saveSuccess = false; }, 3000);
+		savedPortfolioSlug = slugify(portfolioName);
 	}
 </script>
 
@@ -431,8 +434,14 @@
 										</svg>
 										Save as Portfolio
 									</Button>
-									{#if saveSuccess}
-										<span class="save-feedback">Saved</span>
+									{#if savedPortfolioSlug}
+										<a href="/portfolios/{savedPortfolioSlug}" class="open-portfolio-link">
+											Open
+											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+												<path d="M5 12h14"/>
+												<path d="M12 5l7 7-7 7"/>
+											</svg>
+										</a>
 									{/if}
 								</div>
 							</div>
@@ -720,10 +729,18 @@
 		padding-top: var(--spacing-sm);
 	}
 
-	.save-feedback {
+	.open-portfolio-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: var(--font-size-xs);
 		color: var(--color-positive);
 		font-weight: 500;
+		text-decoration: none;
 		animation: fadeIn 200ms ease;
+	}
+
+	.open-portfolio-link:hover {
+		text-decoration: underline;
 	}
 </style>

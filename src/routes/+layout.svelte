@@ -4,18 +4,35 @@
 	import RefreshProgressToast from '$lib/components/shared/RefreshProgressToast.svelte';
 	import MigrationToast from '$lib/components/shared/MigrationToast.svelte';
 	import CurrencyFetchToast from '$lib/components/shared/CurrencyFetchToast.svelte';
+	import ShareModal from '$lib/components/sharing/ShareModal.svelte';
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import { initStores } from '$lib/stores/init';
 	import { autoRefreshAssets } from '$lib/stores/auto-refresh';
 	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
+	import { decodeSharePayload, type SharePayload } from '$lib/sharing/codec';
 
 	let { children }: { children: Snippet } = $props();
+
+	let shareModalOpen = $state(false);
+	let sharePayload: SharePayload | null = $state(null);
 
 	onMount(async () => {
 		await initStores();
 		autoRefreshAssets();
 		autoFetchCurrencyRates();
+
+		// Detect share payload in URL hash
+		const hash = window.location.hash;
+		if (hash) {
+			const payload = decodeSharePayload(hash);
+			if (payload) {
+				sharePayload = payload;
+				shareModalOpen = true;
+				// Clear the hash fragment
+				history.replaceState(null, '', window.location.pathname + window.location.search);
+			}
+		}
 	});
 </script>
 
@@ -31,3 +48,4 @@
 <RefreshProgressToast />
 <MigrationToast />
 <CurrencyFetchToast />
+<ShareModal bind:open={shareModalOpen} payload={sharePayload} />

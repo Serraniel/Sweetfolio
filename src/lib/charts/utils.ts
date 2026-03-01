@@ -83,14 +83,22 @@ export function baseAxes(): uPlot.Axis[] {
 
 function createTooltipLine(color: string, label: string, formatted: string): HTMLElement {
 	const line = document.createElement('div');
+	line.style.cssText = 'display:flex;justify-content:space-between;gap:8px;white-space:nowrap;';
+
+	const left = document.createElement('span');
+	left.style.cssText = 'overflow:hidden;text-overflow:ellipsis;';
 
 	const dot = document.createElement('span');
 	dot.style.color = color;
 	dot.textContent = '\u25CF ';
-	line.appendChild(dot);
+	left.appendChild(dot);
+	left.appendChild(document.createTextNode(label));
+	line.appendChild(left);
 
-	const text = document.createTextNode(`${label}: ${formatted}`);
-	line.appendChild(text);
+	const val = document.createElement('span');
+	val.style.cssText = 'flex-shrink:0;font-variant-numeric:tabular-nums;';
+	val.textContent = formatted;
+	line.appendChild(val);
 
 	return line;
 }
@@ -114,7 +122,7 @@ export function tooltipPlugin(formatValue?: TooltipFormatter): uPlot.Plugin {
 			'display:none;position:absolute;pointer-events:none;z-index:100;' +
 			'padding:6px 10px;border-radius:6px;font-size:12px;line-height:1.5;' +
 			'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);' +
-			'box-shadow:0 2px 8px rgba(0,0,0,0.15);max-width:260px;white-space:nowrap;';
+			'box-shadow:0 2px 8px rgba(0,0,0,0.15);max-width:300px;min-width:160px;';
 		over.appendChild(tooltip);
 	}
 

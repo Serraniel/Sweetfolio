@@ -85,6 +85,7 @@
 	}
 
 	let slices = $derived(buildSlices(sorted));
+	let hoveredIndex: number | null = $state(null);
 
 	$effect(() => {
 		themeObs = observeThemeChanges(() => {
@@ -100,20 +101,35 @@
 	</div>
 {:else}
 <div class="allocation-wrapper">
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<svg
 		viewBox={`0 0 ${size} ${size}`}
 		class="allocation-chart"
+		onmouseleave={() => hoveredIndex = null}
 	>
-		{#each slices as slice}
-			<path d={slice.path} fill={slice.color} stroke={dark ? COLORS.darkBg : COLORS.white} stroke-width="1.5">
+		{#each slices as slice, i}
+			<path
+				d={slice.path}
+				fill={slice.color}
+				stroke={dark ? COLORS.darkBg : COLORS.white}
+				stroke-width="1.5"
+				opacity={hoveredIndex === null || hoveredIndex === i ? 1 : 0.3}
+				onmouseenter={() => hoveredIndex = i}
+			>
 				<title>{slice.label}: {(slice.weight * 100).toFixed(1)}%</title>
 			</path>
 		{/each}
 	</svg>
 
-	<div class="legend">
+	<div class="legend" role="list">
 		{#each sorted as alloc, i}
-			<div class="legend-item">
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="legend-item"
+				class:dimmed={hoveredIndex !== null && hoveredIndex !== i}
+				onmouseenter={() => hoveredIndex = i}
+				onmouseleave={() => hoveredIndex = null}
+			>
 				<span
 					class="legend-dot"
 					style:background-color={getAssetColor(i)}
@@ -145,10 +161,6 @@
 		transition: opacity 0.15s;
 	}
 
-	.allocation-chart path:hover {
-		opacity: 0.8;
-	}
-
 	.legend {
 		display: flex;
 		flex-direction: column;
@@ -161,6 +173,12 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		transition: opacity 0.15s;
+		cursor: default;
+	}
+
+	.legend-item.dimmed {
+		opacity: 0.3;
 	}
 
 	.legend-dot {
