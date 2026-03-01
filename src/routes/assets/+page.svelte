@@ -13,8 +13,28 @@
 	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
 	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
 	import { slugify } from '$lib/utils/slug';
+	import { goto } from '$app/navigation';
 	import { ASSET_CLASSIFICATIONS } from '$lib/types';
 	import type { DetectedFormat, AssetClassification } from '$lib/types';
+
+	// Comparison selection state
+	let selectedForCompare: Set<string> = $state(new Set());
+
+	function toggleCompareSelection(assetId: string) {
+		const next = new Set(selectedForCompare);
+		if (next.has(assetId)) {
+			next.delete(assetId);
+		} else {
+			next.add(assetId);
+		}
+		selectedForCompare = next;
+	}
+
+	function goToCompare() {
+		if (selectedForCompare.size < 2) return;
+		const ids = Array.from(selectedForCompare).join(',');
+		goto(`/compare?ids=${encodeURIComponent(ids)}`);
+	}
 
 	function isBenchmark(assetId: string): boolean {
 		const ref = $benchmarkRef;
@@ -472,6 +492,13 @@
 			</Card>
 		{:else}
 			<div class="asset-list-toolbar">
+				{#if selectedForCompare.size >= 2}
+					<Button variant="primary" size="sm" onclick={goToCompare}>
+						Compare {selectedForCompare.size} Assets
+					</Button>
+				{:else if selectedForCompare.size > 0}
+					<span class="compare-hint">Select at least 2 assets to compare</span>
+				{/if}
 				<select class="classification-filter" bind:value={classificationFilter}>
 					<option value="all">All types</option>
 					{#each ASSET_CLASSIFICATIONS as cls}
@@ -484,6 +511,13 @@
 					<table class="asset-table">
 						<thead>
 							<tr>
+								<th class="compare-col" title="Select for comparison">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+										<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
+										<polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
+										<line x1="4" y1="4" x2="9" y2="9"/>
+									</svg>
+								</th>
 								<th class="bm-col" title="Set as benchmark for comparison">Benchmark</th>
 								<th>Name</th>
 								<th>Type</th>
@@ -499,6 +533,15 @@
 						<tbody>
 							{#each filteredAssetList as asset}
 								<tr class:benchmark-row={isBenchmark(asset.id)} class:has-warnings={asset.health.warnings.length > 0}>
+									<td class="compare-col">
+										<input
+											type="checkbox"
+											class="compare-checkbox"
+											checked={selectedForCompare.has(asset.id)}
+											onchange={() => toggleCompareSelection(asset.id)}
+											aria-label="Select {asset.name} for comparison"
+										/>
+									</td>
 									<td class="bm-col">
 										<button
 											class="bm-toggle"
@@ -945,9 +988,34 @@
 	.classification-commodity { color: #d4a574; background: rgba(212, 165, 116, 0.1); }
 	.classification-unknown { color: var(--color-text-muted); }
 
+	.compare-col {
+		width: 40px;
+		text-align: center;
+		padding-left: var(--spacing-sm);
+		padding-right: 0;
+	}
+
+	.compare-col svg {
+		color: var(--color-text-muted);
+	}
+
+	.compare-checkbox {
+		width: 16px;
+		height: 16px;
+		accent-color: var(--color-accent-deep, #1a8a8a);
+		cursor: pointer;
+	}
+
+	.compare-hint {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+	}
+
 	.asset-list-toolbar {
 		display: flex;
 		justify-content: flex-end;
+		align-items: center;
+		gap: var(--spacing-sm);
 		margin-bottom: var(--spacing-sm);
 	}
 
