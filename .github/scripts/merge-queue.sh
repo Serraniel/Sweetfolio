@@ -231,6 +231,19 @@ EOF
   for pr in "${VALIDATED[@]}"; do
     log "Merging PR #$pr"
 
+    # Wait for the PR's own CI checks to pass (e.g. e2e) before merging.
+    # The merge queue runs build+test internally but not all required checks
+    # (like Playwright e2e). Since the merge token has admin bypass, gh pr merge
+    # won't enforce these — so we check explicitly.
+    echo "Waiting for PR #$pr status checks..."
+    if ! gh pr checks "$pr" --watch --fail-level all --repo "$REPO"; then
+      echo "::error::PR #$pr has failing status checks"
+      remove_from_queue "$pr"
+      comment_pr "$pr" "❌ **Merge queue: removed** — PR status checks failed. Please fix and re-add with \`/merge\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
+      MERGE_FAILED=true
+      break
+    fi
+
     if gh pr merge "$pr" --merge --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
       comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
