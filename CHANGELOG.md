@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/Serraniel/Sweetfolio/compare/v0.1.0...v0.2.0) (2026-03-01)
+
+
+### Features
+
+* **ci:** add DIY merge queue via GitHub Actions ([fcc1cdd](https://github.com/Serraniel/Sweetfolio/commit/fcc1cddcac11421ec49f695f3658b742b5334392))
+
 # [0.1.0](https://github.com/Serraniel/Sweetfolio/compare/v0.0.0...v0.1.0) (2026-03-01)
 
 
