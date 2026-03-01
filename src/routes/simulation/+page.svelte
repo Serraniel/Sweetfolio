@@ -198,10 +198,12 @@
 	async function handleSaveAsPortfolio() {
 		if (!selectedPortfolio) return;
 
-		const allocations = Object.entries(selectedPortfolio.weights).map(([assetId, weight]) => ({
-			assetId,
-			weight
-		}));
+		const allocations = Object.entries(selectedPortfolio.weights)
+			.filter(([, weight]) => weight > 0)
+			.map(([assetId, weight]) => ({
+				assetId,
+				weight
+			}));
 
 		const names = resolveWeights(selectedPortfolio.weights).map((w) => w.name);
 		const portfolioName = `Simulated (${names.join(', ')})`.slice(0, 60);
