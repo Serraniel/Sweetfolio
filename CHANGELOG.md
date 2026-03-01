@@ -1,3 +1,11 @@
+## [0.3.1](https://github.com/Serraniel/Sweetfolio/compare/v0.3.0...v0.3.1) (2026-03-01)
+
+
+### Bug Fixes
+
+* **ci:** prevent merge queue comment feedback loop ([eb78414](https://github.com/Serraniel/Sweetfolio/commit/eb78414f45c0bcfbca786d5c658d7c300bba40a0))
+* **ci:** prevent merge queue comment feedback loop ([#25](https://github.com/Serraniel/Sweetfolio/issues/25)) ([9692f4d](https://github.com/Serraniel/Sweetfolio/commit/9692f4d9b7036938a43705cedc15f0443604de88))
+
 # [0.3.0](https://github.com/Serraniel/Sweetfolio/compare/v0.2.0...v0.3.0) (2026-03-01)
 
 
