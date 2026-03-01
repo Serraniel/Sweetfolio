@@ -15,6 +15,7 @@
 	import type { DetectedFormat } from '$lib/types';
 	import { fetchPriceData as onvistaFetch } from '$lib/fetchers/onvista';
 	import { fetchPriceData as alphaVantageFetchPrice } from '$lib/fetchers/alphavantage';
+	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
@@ -103,6 +104,7 @@
 			setSetting('dataSourcePrimary', dataSourcePrimary),
 		]);
 		saving = false;
+		autoFetchCurrencyRates();
 	}
 
 	function handleCurrencyFiles(files: FileList) {
