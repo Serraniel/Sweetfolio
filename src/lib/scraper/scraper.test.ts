@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { validateISIN, validateWKN, fetchByISIN, fetchByWKN } from './index';
+import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN, fetchByTicker } from './index';
 
 describe('validateISIN', () => {
   it('accepts valid ISIN', () => {
@@ -29,6 +29,43 @@ describe('validateWKN', () => {
     expect(validateWKN('A0RPW')).toBe(false); // too short
     expect(validateWKN('A0RPWHX')).toBe(false); // too long
     expect(validateWKN('a0rpwh')).toBe(true); // case-insensitive
+  });
+});
+
+describe('validateTicker', () => {
+  it('accepts common crypto tickers', () => {
+    expect(validateTicker('BTC')).toBe(true);
+    expect(validateTicker('ETH')).toBe(true);
+    expect(validateTicker('DOGE')).toBe(true);
+    expect(validateTicker('SHIB')).toBe(true);
+  });
+
+  it('accepts tickers with digits', () => {
+    expect(validateTicker('1INCH')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(validateTicker('btc')).toBe(true);
+    expect(validateTicker('Eth')).toBe(true);
+  });
+
+  it('rejects empty and too-short input', () => {
+    expect(validateTicker('')).toBe(false);
+    expect(validateTicker('A')).toBe(false);
+  });
+
+  it('rejects input longer than 10 characters', () => {
+    expect(validateTicker('ABCDEFGHIJK')).toBe(false);
+  });
+
+  it('rejects strings that are valid ISIN or WKN', () => {
+    expect(validateTicker('US0378331005')).toBe(false);
+    expect(validateTicker('A0RPWH')).toBe(false);
+  });
+
+  it('rejects strings with special characters', () => {
+    expect(validateTicker('BTC!')).toBe(false);
+    expect(validateTicker('BTC-USD')).toBe(false);
   });
 });
 
@@ -73,6 +110,31 @@ describe('fetchByWKN', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.recoverable).toBe(true);
+      }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe('fetchByTicker', () => {
+  it('returns validation error for invalid ticker', async () => {
+    const result = await fetchByTicker('A');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.source).toBe('validation');
+      expect(result.error.recoverable).toBe(false);
+    }
+  });
+
+  it('returns error when Onvista fails and no CORS proxy configured', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    try {
+      const result = await fetchByTicker('BTC');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.message).toContain('CORS proxy');
+        expect(result.error.source).toBe('all');
       }
     } finally {
       fetchSpy.mockRestore();

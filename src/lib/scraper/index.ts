@@ -51,6 +51,19 @@ export function validateWKN(wkn: string): boolean {
 }
 
 /**
+ * Validate a crypto ticker symbol.
+ * Must be 2-10 alphanumeric characters, and must NOT match ISIN or WKN patterns
+ * (those are checked first in the UI detection flow).
+ */
+export function validateTicker(ticker: string): boolean {
+  const upper = ticker.toUpperCase();
+  if (!/^[A-Z0-9]{2,10}$/.test(upper)) return false;
+  if (validateISIN(upper)) return false;
+  if (validateWKN(upper)) return false;
+  return true;
+}
+
+/**
  * Attempt to fetch historical price data by ISIN.
  *
  * Tries available data sources in order until one succeeds.
@@ -183,6 +196,8 @@ registerDataSource({
   },
 });
 
+import { fetchByTicker as coingeckoFetch } from '$lib/fetchers/coingecko';
+import { fetchCryptoByTicker as onvistaCryptoFetch } from '$lib/fetchers/onvista';
 import { fetchPriceData as alphaVantageFetch } from '$lib/fetchers/alphavantage';
 import { get } from 'svelte/store';
 import { settings } from '$lib/stores/settings';
@@ -214,3 +229,90 @@ registerDataSource({
     };
   },
 });
+
+/**
+ * Attempt to fetch historical price data by crypto ticker symbol.
+ *
+ * Tries Onvista first (CORS-friendly, no proxy needed), then falls back
+ * to CoinGecko (requires a CORS proxy).
+ * The vs_currency is read from the user's mainCurrency setting.
+ */
+export async function fetchByTicker(ticker: string): Promise<ScraperOutcome> {
+  if (!validateTicker(ticker)) {
+    return {
+      success: false,
+      error: {
+        message: `Invalid ticker format: "${ticker}". Expected 2-10 character alphanumeric crypto ticker.`,
+        source: 'validation',
+        recoverable: false,
+      },
+    };
+  }
+
+  // Try Onvista first (CORS-friendly, no proxy needed)
+  try {
+    const onvistaResult = await onvistaCryptoFetch(ticker.toUpperCase());
+    if (onvistaResult.success) {
+      return {
+        success: true,
+        data: {
+          prices: onvistaResult.data.prices,
+          name: onvistaResult.data.name,
+          currency: onvistaResult.data.currency,
+          source: 'onvista',
+          classification: onvistaResult.data.classification,
+        },
+      };
+    }
+  } catch {
+    // Onvista failed, try CoinGecko
+  }
+
+  // Fall back to CoinGecko (requires CORS proxy)
+  const vsCurrency = (get(settings).mainCurrency as string) ?? 'EUR';
+  const corsProxyUrl = (get(settings).corsProxyUrl as string) || undefined;
+
+  if (!corsProxyUrl) {
+    return {
+      success: false,
+      error: {
+        message: `Could not fetch data for ticker "${ticker}" from Onvista. CoinGecko fallback requires a CORS proxy. Please configure a CORS Proxy URL in Settings, or upload a CSV file instead.`,
+        source: 'all',
+        recoverable: false,
+      },
+    };
+  }
+
+  try {
+    const result = await coingeckoFetch(ticker.toUpperCase(), vsCurrency, corsProxyUrl);
+    if (result.success) {
+      return {
+        success: true,
+        data: {
+          prices: result.data.prices,
+          name: result.data.name,
+          currency: result.data.currency,
+          source: 'coingecko',
+          classification: result.data.classification,
+        },
+      };
+    }
+    return {
+      success: false,
+      error: {
+        message: result.error.message,
+        source: 'coingecko',
+        recoverable: result.error.recoverable,
+      },
+    };
+  } catch {
+    return {
+      success: false,
+      error: {
+        message: `Could not fetch data for ticker ${ticker}. Please try again or upload a CSV file instead.`,
+        source: 'all',
+        recoverable: true,
+      },
+    };
+  }
+}
