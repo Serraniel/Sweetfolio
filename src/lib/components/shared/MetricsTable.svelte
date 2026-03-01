@@ -108,6 +108,7 @@
 		color: var(--color-text-muted);
 		padding: var(--spacing-sm) var(--spacing-md);
 		border-bottom: 1px solid var(--color-border);
+		text-align: right;
 	}
 
 	.metrics-table td {
