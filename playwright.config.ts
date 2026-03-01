@@ -9,7 +9,11 @@ export default defineConfig({
 	reporter: 'html',
 	use: {
 		baseURL: 'http://localhost:4173',
-		trace: 'on-first-retry'
+		trace: 'on-first-retry',
+		/* Record a video for every test — saved in test-results/ */
+		video: 'on',
+		/* Also capture a screenshot at the end of each test */
+		screenshot: 'on'
 	},
 	projects: [
 		{
