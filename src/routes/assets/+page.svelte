@@ -6,6 +6,7 @@
 	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
 	import { validateISIN, validateWKN, fetchByISIN, fetchByWKN, type ScraperResult } from '$lib/scraper/index';
 	import { encodeAssetList } from '$lib/sharing/codec';
+	import { shareOrCopy } from '$lib/sharing/share';
 	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
 	import { parseCSV } from '$lib/parsers/normalization';
 	import { parseCSVRows } from '$lib/parsers/csv';
@@ -351,12 +352,8 @@
 	async function handleShareAsset(isin: string, name: string) {
 		const hash = encodeAssetList([isin]);
 		const url = `${window.location.origin}${window.location.pathname}${hash}`;
-		try {
-			await navigator.clipboard.writeText(url);
-			showToast(`Share link for "${name}" copied`);
-		} catch {
-			showToast('Could not copy to clipboard');
-		}
+		const msg = await shareOrCopy(url, name);
+		if (msg) showToast(msg);
 	}
 
 	async function handleShareAll() {
@@ -366,12 +363,8 @@
 		}
 		const hash = encodeAssetList(sharableIsins);
 		const url = `${window.location.origin}${window.location.pathname}${hash}`;
-		try {
-			await navigator.clipboard.writeText(url);
-			showToast(`Share link copied (${sharableIsins.length} assets)`);
-		} catch {
-			showToast('Could not copy to clipboard');
-		}
+		const msg = await shareOrCopy(url, 'Sweetfolio Assets');
+		if (msg) showToast(msg);
 	}
 
 	async function handleDelete(id: string) {
@@ -395,6 +388,13 @@
 				<div class="header-actions">
 					<span title={sharableIsins.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared via URL' : `Share ${sharableIsins.length} asset(s) with ISINs`}>
 						<Button variant="default" size="sm" onclick={handleShareAll} disabled={sharableIsins.length === 0}>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<circle cx="18" cy="5" r="3"/>
+								<circle cx="6" cy="12" r="3"/>
+								<circle cx="18" cy="19" r="3"/>
+								<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+								<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+							</svg>
 							Share All
 						</Button>
 					</span>
