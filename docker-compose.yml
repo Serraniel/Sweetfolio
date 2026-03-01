@@ -1,0 +1,6 @@
+services:
+  sweetfolio:
+    image: ghcr.io/serraniel/sweetfolio:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
