@@ -472,7 +472,7 @@
 				<div class="setting-row">
 					<div class="setting-info">
 						<span class="setting-label">Risk-Free Rate</span>
-						<span class="setting-description">Used for Sharpe ratio calculations (annual rate)</span>
+						<span class="setting-description">The Sharpe ratio measures excess return per unit of risk: (portfolio return &minus; risk-free rate) &divide; volatility. A higher risk-free rate raises the bar for what counts as rewarded risk, lowering the ratio. Typical values: 0% for simplicity, or the current yield of a short-term government bond (e.g. 3-month T-Bill).</span>
 					</div>
 					<div class="setting-control">
 						<div class="input-with-suffix">
