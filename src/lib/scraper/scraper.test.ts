@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN } from './index';
+import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN, fetchByTicker } from './index';
 
 describe('validateISIN', () => {
   it('accepts valid ISIN', () => {
@@ -107,6 +107,30 @@ describe('fetchByWKN', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
     try {
       const result = await fetchByWKN('A0RPWH');
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.recoverable).toBe(true);
+      }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe('fetchByTicker', () => {
+  it('returns validation error for invalid ticker', async () => {
+    const result = await fetchByTicker('A');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.source).toBe('validation');
+      expect(result.error.recoverable).toBe(false);
+    }
+  });
+
+  it('returns failure when CoinGecko fails', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    try {
+      const result = await fetchByTicker('BTC');
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.recoverable).toBe(true);

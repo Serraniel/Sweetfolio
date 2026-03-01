@@ -196,6 +196,7 @@ registerDataSource({
   },
 });
 
+import { fetchByTicker as coingeckoFetch } from '$lib/fetchers/coingecko';
 import { fetchPriceData as alphaVantageFetch } from '$lib/fetchers/alphavantage';
 import { get } from 'svelte/store';
 import { settings } from '$lib/stores/settings';
@@ -227,3 +228,57 @@ registerDataSource({
     };
   },
 });
+
+/**
+ * Attempt to fetch historical price data by crypto ticker symbol.
+ *
+ * Uses CoinGecko to resolve the ticker and fetch price history.
+ * The vs_currency is read from the user's mainCurrency setting.
+ */
+export async function fetchByTicker(ticker: string): Promise<ScraperOutcome> {
+  if (!validateTicker(ticker)) {
+    return {
+      success: false,
+      error: {
+        message: `Invalid ticker format: "${ticker}". Expected 2-10 character alphanumeric crypto ticker.`,
+        source: 'validation',
+        recoverable: false,
+      },
+    };
+  }
+
+  const vsCurrency = (get(settings).mainCurrency as string) ?? 'EUR';
+
+  try {
+    const result = await coingeckoFetch(ticker.toUpperCase(), vsCurrency);
+    if (result.success) {
+      return {
+        success: true,
+        data: {
+          prices: result.data.prices,
+          name: result.data.name,
+          currency: result.data.currency,
+          source: 'coingecko',
+          classification: result.data.classification,
+        },
+      };
+    }
+    return {
+      success: false,
+      error: {
+        message: result.error.message,
+        source: 'coingecko',
+        recoverable: result.error.recoverable,
+      },
+    };
+  } catch {
+    return {
+      success: false,
+      error: {
+        message: `Could not fetch data for ticker ${ticker}. Please try again or upload a CSV file instead.`,
+        source: 'coingecko',
+        recoverable: true,
+      },
+    };
+  }
+}
