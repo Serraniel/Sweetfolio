@@ -75,6 +75,7 @@ function entityTypePath(entityType: string): string {
     COMMODITY: 'commodities',
     PRECIOUS_METAL: 'precious_metals',
     CURRENCY: 'currencies',
+    CRYPTO: 'crypto',
   };
   return map[entityType] ?? entityType.toLowerCase();
 }
@@ -89,6 +90,7 @@ function mapEntityTypeToClassification(entityType: string): AssetClassification 
     COMMODITY: 'commodity',
     PRECIOUS_METAL: 'commodity',
     DERIVATIVE: 'certificate',
+    CRYPTO: 'crypto',
   };
   return map[entityType] ?? 'unknown';
 }
@@ -212,6 +214,109 @@ export async function getChartHistory(
 
   prices.sort((a, b) => a.date.localeCompare(b.date));
   return prices;
+}
+
+/**
+ * Search Onvista for a crypto asset by ticker symbol (e.g. "BTC", "ETH").
+ * Filters results to the CRYPTO facet only.
+ */
+export async function searchCryptoByTicker(
+  ticker: string,
+): Promise<{ entityType: string; entityValue: string; isin: string; name: string } | null> {
+  const url = `${BASE_URL}/instruments/search/facet?perType=10&searchValue=${encodeURIComponent(ticker)}`;
+  const data = await fetchJSON<SearchFacetResult>(url);
+
+  // Look specifically in the CRYPTO facet
+  for (const facet of data.facets ?? []) {
+    if (facet.type === 'CRYPTO' && facet.results && facet.results.length > 0) {
+      return facet.results[0];
+    }
+  }
+
+  // Also check direct instrument match if it's a crypto type
+  if (data.instrument && data.instrument.entityType === 'CRYPTO') {
+    return {
+      entityType: data.instrument.entityType,
+      entityValue: data.instrument.entityValue,
+      isin: data.instrument.isin,
+      name: data.instrument.name,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Get a snapshot for a crypto instrument using entityValue (e.g. "BTCUSD").
+ * Crypto snapshots use a different URL pattern than ISIN-based instruments.
+ */
+export async function getCryptoSnapshot(
+  entityValue: string,
+): Promise<SnapshotResponse> {
+  const url = `${BASE_URL}/crypto/${encodeURIComponent(entityValue)}/snapshot`;
+  const raw = await fetchJSON<SnapshotRawResponse>(url);
+
+  const idNotation = raw.chart?.idNotation ?? raw.idNotation ?? 0;
+  const isoCurrency = raw.quote?.isoCurrency ?? raw.isoCurrency ?? 'EUR';
+  const name = raw.instrument?.name ?? raw.name ?? '';
+  const resolvedIsin = raw.instrument?.isin ?? raw.isin;
+  const wkn = raw.instrument?.wkn ?? raw.wkn;
+
+  return { idNotation, isoCurrency, name, isin: resolvedIsin, wkn };
+}
+
+/**
+ * Fetch historical price data for a crypto ticker from Onvista.
+ * Searches for the crypto asset, gets snapshot, and fetches chart history.
+ */
+export async function fetchCryptoByTicker(ticker: string): Promise<FetchOutcome> {
+  try {
+    const instrument = await searchCryptoByTicker(ticker);
+    if (!instrument) {
+      return {
+        success: false,
+        error: {
+          message: `No cryptocurrency found on Onvista for "${ticker}".`,
+          recoverable: true,
+        },
+      };
+    }
+
+    const snapshot = await getCryptoSnapshot(instrument.entityValue);
+
+    const prices = await getChartHistory(
+      instrument.entityType,
+      instrument.entityValue,
+      snapshot.idNotation,
+    );
+
+    if (prices.length === 0) {
+      return {
+        success: false,
+        error: {
+          message: `No price data available on Onvista for "${ticker}".`,
+          recoverable: true,
+        },
+      };
+    }
+
+    const result: FetchResult = {
+      prices,
+      name: snapshot.name ?? instrument.name ?? null,
+      isin: snapshot.isin ?? instrument.isin ?? null,
+      wkn: snapshot.wkn ?? null,
+      currency: snapshot.isoCurrency ?? null,
+      classification: 'crypto',
+    };
+
+    return { success: true, data: result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error fetching crypto from Onvista';
+    return {
+      success: false,
+      error: { message, recoverable: true },
+    };
+  }
 }
 
 /**

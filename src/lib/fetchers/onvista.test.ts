@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { searchInstrument, getSnapshot, getChartHistory, fetchPriceData } from './onvista';
+import { searchInstrument, getSnapshot, getChartHistory, fetchPriceData, searchCryptoByTicker, getCryptoSnapshot, fetchCryptoByTicker } from './onvista';
 
 function mockFetch(responses: Array<{ ok: boolean; json: () => unknown }>) {
   let callIndex = 0;
@@ -289,5 +289,200 @@ describe('fetchPriceData', () => {
 
     const result = await fetchPriceData('IE00B4L5Y983');
     expect(result.success).toBe(false);
+  });
+});
+
+describe('searchCryptoByTicker', () => {
+  it('returns crypto result from CRYPTO facet', async () => {
+    mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          facets: [
+            { type: 'STOCK', results: [{ entityType: 'STOCK', entityValue: '1', isin: 'US123', name: 'Stock' }] },
+            { type: 'CRYPTO', results: [{ entityType: 'CRYPTO', entityValue: 'BTCUSD', isin: 'XC000A2YY636', name: 'Bitcoin BTC/USD' }] },
+          ],
+        }),
+      },
+    ]);
+
+    const result = await searchCryptoByTicker('BTC');
+    expect(result).toEqual({
+      entityType: 'CRYPTO',
+      entityValue: 'BTCUSD',
+      isin: 'XC000A2YY636',
+      name: 'Bitcoin BTC/USD',
+    });
+  });
+
+  it('returns crypto from direct instrument match', async () => {
+    mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          instrument: { entityType: 'CRYPTO', entityValue: 'ETHUSD', isin: 'XC000A2YY644', name: 'Ethereum ETH/USD' },
+          facets: [],
+        }),
+      },
+    ]);
+
+    const result = await searchCryptoByTicker('ETH');
+    expect(result).toEqual({
+      entityType: 'CRYPTO',
+      entityValue: 'ETHUSD',
+      isin: 'XC000A2YY644',
+      name: 'Ethereum ETH/USD',
+    });
+  });
+
+  it('returns null when no CRYPTO facet found', async () => {
+    mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          facets: [
+            { type: 'STOCK', results: [{ entityType: 'STOCK', entityValue: '1', isin: 'US123', name: 'Stock' }] },
+          ],
+        }),
+      },
+    ]);
+
+    const result = await searchCryptoByTicker('NOTCRYPTO');
+    expect(result).toBeNull();
+  });
+
+  it('ignores non-CRYPTO direct instrument match', async () => {
+    mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          instrument: { entityType: 'STOCK', entityValue: '1', isin: 'US123', name: 'Stock' },
+          facets: [],
+        }),
+      },
+    ]);
+
+    const result = await searchCryptoByTicker('AAPL');
+    expect(result).toBeNull();
+  });
+});
+
+describe('getCryptoSnapshot', () => {
+  it('returns snapshot using crypto URL pattern', async () => {
+    const spy = mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          instrument: { name: 'Bitcoin BTC/USD', isin: 'XC000A2YY636', wkn: 'A2YY63' },
+          quote: { isoCurrency: 'USD' },
+          chart: { idNotation: 12345 },
+        }),
+      },
+    ]);
+
+    const result = await getCryptoSnapshot('BTCUSD');
+    expect(result.idNotation).toBe(12345);
+    expect(result.isoCurrency).toBe('USD');
+    expect(result.name).toBe('Bitcoin BTC/USD');
+    expect(result.isin).toBe('XC000A2YY636');
+    expect(result.wkn).toBe('A2YY63');
+    // Verify URL uses crypto/ path, not ISIN-based
+    expect(spy.mock.calls[0][0]).toContain('/crypto/BTCUSD/snapshot');
+  });
+});
+
+describe('fetchCryptoByTicker', () => {
+  it('returns full result on success', async () => {
+    mockFetch([
+      // searchCryptoByTicker
+      {
+        ok: true,
+        json: () => ({
+          facets: [
+            { type: 'CRYPTO', results: [{ entityType: 'CRYPTO', entityValue: 'BTCUSD', isin: 'XC000A2YY636', name: 'Bitcoin BTC/USD' }] },
+          ],
+        }),
+      },
+      // getCryptoSnapshot
+      {
+        ok: true,
+        json: () => ({
+          instrument: { name: 'Bitcoin BTC/USD', isin: 'XC000A2YY636', wkn: 'A2YY63' },
+          quote: { isoCurrency: 'USD' },
+          chart: { idNotation: 12345 },
+        }),
+      },
+      // getChartHistory
+      {
+        ok: true,
+        json: () => ({
+          datetimeLast: [1704067200000, 1704153600000],
+          last: [42000.0, 43000.0],
+        }),
+      },
+    ]);
+
+    const result = await fetchCryptoByTicker('BTC');
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.prices).toHaveLength(2);
+      expect(result.data.name).toBe('Bitcoin BTC/USD');
+      expect(result.data.classification).toBe('crypto');
+      expect(result.data.currency).toBe('USD');
+      expect(result.data.isin).toBe('XC000A2YY636');
+      expect(result.data.wkn).toBe('A2YY63');
+    }
+  });
+
+  it('returns error when no crypto found', async () => {
+    mockFetch([
+      { ok: true, json: () => ({ facets: [] }) },
+    ]);
+
+    const result = await fetchCryptoByTicker('NOTREAL');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain('No cryptocurrency found');
+      expect(result.error.recoverable).toBe(true);
+    }
+  });
+
+  it('returns error on network failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+    const result = await fetchCryptoByTicker('BTC');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain('Network error');
+      expect(result.error.recoverable).toBe(true);
+    }
+  });
+
+  it('returns error when no price data available', async () => {
+    mockFetch([
+      {
+        ok: true,
+        json: () => ({
+          facets: [
+            { type: 'CRYPTO', results: [{ entityType: 'CRYPTO', entityValue: 'BTCUSD', isin: 'XC000A2YY636', name: 'Bitcoin' }] },
+          ],
+        }),
+      },
+      {
+        ok: true,
+        json: () => ({
+          instrument: { name: 'Bitcoin' },
+          quote: { isoCurrency: 'USD' },
+          chart: { idNotation: 12345 },
+        }),
+      },
+      { ok: true, json: () => ({ datetimeLast: [], last: [] }) },
+    ]);
+
+    const result = await fetchCryptoByTicker('BTC');
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.message).toContain('No price data');
+    }
   });
 });

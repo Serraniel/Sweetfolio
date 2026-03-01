@@ -16,6 +16,8 @@
 	import { fetchPriceData as onvistaFetch } from '$lib/fetchers/onvista';
 	import { fetchPriceData as alphaVantageFetchPrice } from '$lib/fetchers/alphavantage';
 	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
+	import ExportModal from '$lib/components/io/ExportModal.svelte';
+	import ImportWizard from '$lib/components/io/ImportWizard.svelte';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
@@ -30,6 +32,8 @@
 	let connectionTestResult: { ok: boolean; message: string } | null = $state(null);
 	let testingAlphaVantage = $state(false);
 	let alphaVantageTestResult: { ok: boolean; message: string } | null = $state(null);
+	let showExportModal = $state(false);
+	let showImportWizard = $state(false);
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
 
@@ -526,6 +530,33 @@
 
 		<Card>
 			<div class="setting-section">
+				<h2>Data Management</h2>
+				<p class="section-description">Export your data as a backup or import from a previous export.</p>
+
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Export</span>
+						<span class="setting-description">Download all your data as a JSON file</span>
+					</div>
+					<div class="setting-control">
+						<Button variant="default" size="sm" onclick={() => showExportModal = true}>Export Data</Button>
+					</div>
+				</div>
+
+				<div class="setting-row" style="margin-top: var(--spacing-lg);">
+					<div class="setting-info">
+						<span class="setting-label">Import</span>
+						<span class="setting-description">Restore data from a Sweetfolio export file</span>
+					</div>
+					<div class="setting-control">
+						<Button variant="default" size="sm" onclick={() => showImportWizard = true}>Import Data</Button>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
 				<h2>Data</h2>
 				<div class="setting-row">
 					<div class="setting-info">
@@ -559,6 +590,9 @@
 		<!-- Pair selection is handled inside the modal via the assetName field;
 		     the pair is derived from source/target selectors below the modal -->
 	{/if}
+
+	<ExportModal bind:open={showExportModal} />
+	<ImportWizard bind:open={showImportWizard} />
 </div>
 
 <style>

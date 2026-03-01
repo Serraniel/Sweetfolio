@@ -14,8 +14,10 @@ jobs:
   # This job runs instantly for every /merge comment, even if another queue
   # run is in progress. It adds the label, posts a comment, and reacts.
   gate:
+    # Only run on human /merge comments (ignore bot comments to prevent feedback loops)
     if: |
       github.event.issue.pull_request &&
+      github.event.comment.user.type != 'Bot' &&
       startsWith(github.event.comment.body, '/merge')
     runs-on: ubuntu-latest
     outputs:
