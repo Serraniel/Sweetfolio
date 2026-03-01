@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CorrelationMatrix } from '$lib/types';
 	import { COLORS, isDarkTheme, observeThemeChanges } from './utils';
+	import { goto } from '$app/navigation';
 
 	interface Props {
 		data: CorrelationMatrix;
@@ -12,6 +13,12 @@
 	let dark = $state(isDarkTheme());
 	let themeObs: MutationObserver | undefined;
 	let hoveredCell: { row: number; col: number } | null = $state(null);
+
+	function handleCellClick(row: number, col: number) {
+		if (row === col) return;
+		const ids = [data.assetIds[row], data.assetIds[col]].join(',');
+		goto(`/compare?ids=${encodeURIComponent(ids)}`);
+	}
 
 	function correlationColor(val: number): string {
 		// Negative: towards hot pink, zero: neutral grey, positive: towards teal
@@ -87,12 +94,15 @@
 				<div
 					class="cell data"
 					class:hovered={hoveredCell?.row === ri && hoveredCell?.col === ci}
+					class:clickable={ri !== ci}
 					style:background-color={correlationColor(val)}
 					style:color={textColor(val)}
 					role="gridcell"
 					tabindex="-1"
 					onmouseenter={() => (hoveredCell = { row: ri, col: ci })}
 					onmouseleave={() => (hoveredCell = null)}
+					onclick={() => handleCellClick(ri, ci)}
+					onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') handleCellClick(ri, ci); }}
 					title={`${labels[ri]} / ${labels[ci]}: ${val.toFixed(3)}`}
 				>
 					{val.toFixed(2)}
@@ -105,6 +115,9 @@
 		<div class="hover-info">
 			{labels[hoveredCell.row]} / {labels[hoveredCell.col]}:
 			<strong>{data.matrix[hoveredCell.row][hoveredCell.col].toFixed(4)}</strong>
+			{#if hoveredCell.row !== hoveredCell.col}
+				<span class="compare-hint">Click to compare</span>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -128,7 +141,6 @@
 		font-size: 12px;
 		font-family: system-ui, -apple-system, sans-serif;
 		border-radius: 2px;
-		transition: transform 0.1s;
 	}
 
 	.cell.header {
@@ -142,9 +154,13 @@
 		min-width: 48px;
 	}
 
+	.cell.data.clickable {
+		cursor: pointer;
+	}
+
 	.cell.data.hovered {
-		transform: scale(1.08);
-		box-shadow: 0 0 6px rgba(0, 0, 0, 0.2);
+		outline: 2px solid rgba(0, 0, 0, 0.3);
+		outline-offset: -1px;
 		z-index: 2;
 		position: relative;
 	}
@@ -168,6 +184,13 @@
 		font-size: 13px;
 		color: var(--color-text-primary, #3c3f44);
 		font-family: system-ui, -apple-system, sans-serif;
+		min-height: 1.5em;
+	}
+
+	.compare-hint {
+		margin-left: 8px;
+		font-size: 11px;
+		opacity: 0.6;
 	}
 
 	.chart-empty {
