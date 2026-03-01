@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { validateISIN, validateWKN, fetchByISIN, fetchByWKN } from './index';
+import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN } from './index';
 
 describe('validateISIN', () => {
   it('accepts valid ISIN', () => {
@@ -29,6 +29,43 @@ describe('validateWKN', () => {
     expect(validateWKN('A0RPW')).toBe(false); // too short
     expect(validateWKN('A0RPWHX')).toBe(false); // too long
     expect(validateWKN('a0rpwh')).toBe(true); // case-insensitive
+  });
+});
+
+describe('validateTicker', () => {
+  it('accepts common crypto tickers', () => {
+    expect(validateTicker('BTC')).toBe(true);
+    expect(validateTicker('ETH')).toBe(true);
+    expect(validateTicker('DOGE')).toBe(true);
+    expect(validateTicker('SHIB')).toBe(true);
+  });
+
+  it('accepts tickers with digits', () => {
+    expect(validateTicker('1INCH')).toBe(true);
+  });
+
+  it('is case-insensitive', () => {
+    expect(validateTicker('btc')).toBe(true);
+    expect(validateTicker('Eth')).toBe(true);
+  });
+
+  it('rejects empty and too-short input', () => {
+    expect(validateTicker('')).toBe(false);
+    expect(validateTicker('A')).toBe(false);
+  });
+
+  it('rejects input longer than 10 characters', () => {
+    expect(validateTicker('ABCDEFGHIJK')).toBe(false);
+  });
+
+  it('rejects strings that are valid ISIN or WKN', () => {
+    expect(validateTicker('US0378331005')).toBe(false);
+    expect(validateTicker('A0RPWH')).toBe(false);
+  });
+
+  it('rejects strings with special characters', () => {
+    expect(validateTicker('BTC!')).toBe(false);
+    expect(validateTicker('BTC-USD')).toBe(false);
   });
 });
 

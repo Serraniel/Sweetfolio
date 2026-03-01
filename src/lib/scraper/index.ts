@@ -51,6 +51,19 @@ export function validateWKN(wkn: string): boolean {
 }
 
 /**
+ * Validate a crypto ticker symbol.
+ * Must be 2-10 alphanumeric characters, and must NOT match ISIN or WKN patterns
+ * (those are checked first in the UI detection flow).
+ */
+export function validateTicker(ticker: string): boolean {
+  const upper = ticker.toUpperCase();
+  if (!/^[A-Z0-9]{2,10}$/.test(upper)) return false;
+  if (validateISIN(upper)) return false;
+  if (validateWKN(upper)) return false;
+  return true;
+}
+
+/**
  * Attempt to fetch historical price data by ISIN.
  *
  * Tries available data sources in order until one succeeds.
