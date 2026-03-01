@@ -30,7 +30,7 @@
 		initialRange?: TimeRange;
 	}
 
-	let { series, height = 350, initialMode, initialRange = 'all' as TimeRange }: Props = $props();
+	let { series, height = 350, initialMode, initialRange }: Props = $props();
 
 	let container: HTMLDivElement | undefined = $state();
 	let chart: uPlot | undefined;
@@ -48,8 +48,14 @@
 	$effect(() => {
 		viewMode = initialMode ?? (isMultiSeries ? 'relative' : 'absolute');
 	});
+	// Set default range when series data becomes available.
+	// Prefers explicit prop, then 'max' (multi-series overlap), then 'all'.
 	$effect(() => {
-		selectedRange = initialRange;
+		if (initialRange) {
+			selectedRange = initialRange;
+		} else if (maxRange && selectedRange === 'all') {
+			selectedRange = 'max';
+		}
 	});
 
 	/** Ordered fixed-duration ranges with their span in months. */

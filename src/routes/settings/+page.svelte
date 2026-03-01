@@ -476,16 +476,25 @@
 				<div class="setting-row">
 					<div class="setting-info">
 						<span class="setting-label">Risk-Free Rate</span>
-						<span class="setting-description">Used for Sharpe ratio calculations (annual rate)</span>
+						<span class="setting-description">The Sharpe ratio measures excess return per unit of risk: (portfolio return &minus; risk-free rate) &divide; volatility. A higher risk-free rate raises the bar for what counts as rewarded risk, lowering the ratio. Typical values: 0% for simplicity, or the current yield of a short-term government bond (e.g. 3-month T-Bill).</span>
 					</div>
 					<div class="setting-control">
 						<div class="input-with-suffix">
 							<input
-								type="number"
-								min="0"
-								max="100"
-								step="0.01"
-								bind:value={riskFreeRate}
+								type="text"
+								inputmode="decimal"
+								value={riskFreeRate}
+								oninput={(e) => {
+									const raw = e.currentTarget.value;
+									if (raw === '' || raw === '-') return;
+									const num = parseFloat(raw);
+									if (!Number.isNaN(num) && num >= 0 && num <= 100) {
+										riskFreeRate = num;
+									} else {
+										e.currentTarget.value = String(riskFreeRate);
+									}
+								}}
+								onblur={(e) => { e.currentTarget.value = String(riskFreeRate); }}
 							/>
 							<span class="suffix">%</span>
 						</div>
@@ -646,6 +655,9 @@
 
 	.setting-control select {
 		min-width: 100px;
+		max-width: 280px;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.api-key-input {
@@ -683,6 +695,13 @@
 	.input-with-suffix input {
 		width: 80px;
 		text-align: right;
+		-moz-appearance: textfield;
+	}
+
+	.input-with-suffix input::-webkit-outer-spin-button,
+	.input-with-suffix input::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
 	}
 
 	.suffix {
