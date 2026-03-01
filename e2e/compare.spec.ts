@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { slugify } from '../src/lib/utils/slug';
 
 /**
  * E2E tests for the Asset Comparison feature.
@@ -165,7 +166,7 @@ test.describe('Asset Comparison Feature', () => {
 			await expect(compareBtn).toBeVisible();
 		});
 
-		test('navigates to compare page with selected asset IDs', async ({ page }) => {
+		test('navigates to compare page with selected asset slugs', async ({ page }) => {
 			await page.goto('/assets');
 			await page.waitForSelector('.asset-table');
 
@@ -176,13 +177,13 @@ test.describe('Asset Comparison Feature', () => {
 			const compareBtn = page.getByRole('button', { name: /Compare 2 Assets/ });
 			await compareBtn.click();
 
-			await expect(page).toHaveURL(/\/compare\?ids=/);
+			await expect(page).toHaveURL(/\/compare\?slugs=/);
 		});
 	});
 
 	test.describe('Compare page', () => {
 		test('displays selected assets as chips', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.asset-chip');
 
 			const chips = page.locator('.asset-chip');
@@ -192,7 +193,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('shows financial metrics comparison table', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.comparison-table');
 
 			const table = page.locator('.comparison-table').first();
@@ -207,7 +208,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('shows period selector tabs', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.period-tabs');
 
 			const tabs = page.locator('.period-tab');
@@ -215,7 +216,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('switching period tabs updates metrics', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.period-tabs');
 
 			// Click "1Y" period tab
@@ -224,13 +225,13 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('shows price history chart section', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 
 			await expect(page.locator('text=Price History')).toBeVisible();
 		});
 
 		test('shows drawdown section', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 
 			await expect(page.locator('text=Drawdowns')).toBeVisible();
 			// Should have one drawdown card per asset
@@ -239,7 +240,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('shows asset details comparison table', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 
 			await expect(page.locator('text=Asset Details')).toBeVisible();
 
@@ -251,7 +252,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('can remove an asset from comparison', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.asset-chip');
 
 			await expect(page.locator('.asset-chip')).toHaveCount(2);
@@ -262,11 +263,11 @@ test.describe('Asset Comparison Feature', () => {
 
 			await expect(page.locator('.asset-chip')).toHaveCount(1);
 			// URL should update
-			await expect(page).toHaveURL(/\/compare\?ids=/);
+			await expect(page).toHaveURL(/\/compare\?slugs=/);
 		});
 
 		test('can add an asset to comparison from dropdown', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id},${TEST_ASSETS[1].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)},${slugify(TEST_ASSETS[1].name)}`);
 			await page.waitForSelector('.add-asset-select');
 
 			// The third asset should be available in the dropdown
@@ -284,7 +285,7 @@ test.describe('Asset Comparison Feature', () => {
 		});
 
 		test('shows prompt to add more when only 1 asset selected', async ({ page }) => {
-			await page.goto(`/compare?ids=${TEST_ASSETS[0].id}`);
+			await page.goto(`/compare?slugs=${slugify(TEST_ASSETS[0].name)}`);
 			await expect(page.locator('.empty-state')).toBeVisible();
 			await expect(page.locator('.empty-state')).toContainText('Add at least one more');
 		});

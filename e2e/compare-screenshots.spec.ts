@@ -170,7 +170,7 @@ test.describe('Comparison Feature — Visual Demo', () => {
 		// ── Step 3: Click "Compare 2 Assets" button ──
 		const compareBtn = page.getByRole('button', { name: /Compare 2 Assets/ });
 		await compareBtn.click();
-		await expect(page).toHaveURL(/\/compare\?ids=/);
+		await expect(page).toHaveURL(/\/compare\?slugs=/);
 
 		// Wait for metrics to load
 		await page.waitForSelector('.comparison-table');

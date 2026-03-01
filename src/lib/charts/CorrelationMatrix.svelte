@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { CorrelationMatrix } from '$lib/types';
 	import { COLORS, isDarkTheme, observeThemeChanges } from './utils';
+	import { slugify } from '$lib/utils/slug';
 	import { goto } from '$app/navigation';
 
 	interface Props {
@@ -16,8 +17,8 @@
 
 	function handleCellClick(row: number, col: number) {
 		if (row === col) return;
-		const ids = [data.assetIds[row], data.assetIds[col]].join(',');
-		goto(`/compare?ids=${encodeURIComponent(ids)}`);
+		const slugs = [slugify(labels[row]), slugify(labels[col])].join(',');
+		goto(`/compare?slugs=${encodeURIComponent(slugs)}`);
 	}
 
 	function correlationColor(val: number): string {
