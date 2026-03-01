@@ -52,7 +52,9 @@ function detectIdConflicts<T extends { id: string }>(
   for (const item of imported) {
     const match = existingMap.get(item.id);
     if (match) {
-      conflicts.push({ existing: match, imported: item });
+      if (JSON.stringify(match) !== JSON.stringify(item)) {
+        conflicts.push({ existing: match, imported: item });
+      }
     } else {
       newItems.push(item);
     }
@@ -74,7 +76,9 @@ export function detectConflicts(
     for (const item of imported.currencies) {
       const match = existingMap.get(item.pair);
       if (match) {
-        conflicts.push({ existing: match, imported: item });
+        if (JSON.stringify(match) !== JSON.stringify(item)) {
+          conflicts.push({ existing: match, imported: item });
+        }
       } else {
         newItems.push(item);
       }
@@ -88,7 +92,9 @@ export function detectConflicts(
     const conflicts: SettingConflict[] = [];
     for (const [key, value] of Object.entries(imported.settings)) {
       if (key in existing.settings) {
-        conflicts.push({ key, existing: existing.settings[key], imported: value });
+        if (JSON.stringify(existing.settings[key]) !== JSON.stringify(value)) {
+          conflicts.push({ key, existing: existing.settings[key], imported: value });
+        }
       } else {
         newItems.push({ key, value });
       }

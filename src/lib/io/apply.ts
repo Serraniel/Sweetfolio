@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import type { ConflictReport, ConflictItem } from './conflicts';
 import * as assetsDb from '$lib/storage/assets';
 import * as portfoliosDb from '$lib/storage/portfolios';
@@ -5,38 +6,42 @@ import * as currenciesDb from '$lib/storage/currencies';
 import * as simulationsDb from '$lib/storage/simulations';
 import * as settingsDb from '$lib/storage/settings';
 
+function unwrap<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function applyIdScope<T extends { id: string }>(
   report: { newItems: T[]; conflicts: ConflictItem<T>[] },
   put: (item: T) => Promise<void>,
 ): Promise<void> {
   for (const item of report.newItems) {
-    await put(item);
+    await put(unwrap(item));
   }
   for (const conflict of report.conflicts) {
     if (conflict.resolution === 'replace') {
-      await put(conflict.imported);
+      await put(unwrap(conflict.imported));
     }
   }
 }
 
 async function applyCurrencyScope(report: ConflictReport['currencies']): Promise<void> {
   for (const item of report.newItems) {
-    await currenciesDb.put(item);
+    await currenciesDb.put(unwrap(item));
   }
   for (const conflict of report.conflicts) {
     if (conflict.resolution === 'replace') {
-      await currenciesDb.put(conflict.imported);
+      await currenciesDb.put(unwrap(conflict.imported));
     }
   }
 }
 
 async function applySettingsScope(report: ConflictReport['settings']): Promise<void> {
   for (const item of report.newItems) {
-    await settingsDb.set(item.key, item.value);
+    await settingsDb.set(item.key, unwrap(item.value));
   }
   for (const conflict of report.conflicts) {
     if (conflict.resolution === 'replace') {
-      await settingsDb.set(conflict.key, conflict.imported);
+      await settingsDb.set(conflict.key, unwrap(conflict.imported));
     }
   }
 }
