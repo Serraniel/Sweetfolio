@@ -38,6 +38,7 @@
 	let themeObs: MutationObserver | undefined;
 	let logScale: boolean = $state(false);
 	let selectedRange: TimeRange = $state('all');
+	let rangeInitialized = false;
 
 	// Default: relative when multi-series, absolute when single
 	let viewMode: ViewMode = $state('absolute');
@@ -48,13 +49,16 @@
 	$effect(() => {
 		viewMode = initialMode ?? (isMultiSeries ? 'relative' : 'absolute');
 	});
-	// Set default range when series data becomes available.
+	// Set default range once when series data becomes available.
 	// Prefers explicit prop, then 'max' (multi-series overlap), then 'all'.
 	$effect(() => {
+		if (rangeInitialized) return;
 		if (initialRange) {
 			selectedRange = initialRange;
-		} else if (maxRange && selectedRange === 'all') {
+			rangeInitialized = true;
+		} else if (maxRange) {
 			selectedRange = 'max';
+			rangeInitialized = true;
 		}
 	});
 
