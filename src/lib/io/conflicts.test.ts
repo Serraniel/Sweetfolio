@@ -26,9 +26,10 @@ describe('detectConflicts', () => {
   });
 
   it('detects currency conflict by matching pair', () => {
-    const rate: CurrencyRate = { pair: 'USDEUR', rates: [] };
-    const imported = { currencies: [rate] };
-    const existing = { assets: [], portfolios: [], currencies: [rate], simulations: [], settings: {} };
+    const existingRate: CurrencyRate = { pair: 'USDEUR', rates: [{ date: '2024-01-01', rate: 0.9 }] };
+    const importedRate: CurrencyRate = { pair: 'USDEUR', rates: [{ date: '2024-01-01', rate: 0.95 }] };
+    const imported = { currencies: [importedRate] };
+    const existing = { assets: [], portfolios: [], currencies: [existingRate], simulations: [], settings: {} };
     const report = detectConflicts(imported, existing);
     expect(report.currencies.conflicts).toHaveLength(1);
     expect(report.currencies.newItems).toHaveLength(0);
