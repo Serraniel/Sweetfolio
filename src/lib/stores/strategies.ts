@@ -6,18 +6,25 @@ import { unlinkPortfoliosFromStrategy } from './portfolios';
 
 export const strategies = writable<Strategy[]>([]);
 
+/** Strip Svelte 5 $state proxies so IndexedDB can clone the object. */
+function toPlain(strategy: Strategy): Strategy {
+  return JSON.parse(JSON.stringify(strategy));
+}
+
 export async function loadStrategies(): Promise<void> {
   strategies.set(await db.getAll());
 }
 
 export async function addStrategy(strategy: Strategy): Promise<void> {
-  await db.put(strategy);
-  strategies.update((list) => [...list, strategy]);
+  const plain = toPlain(strategy);
+  await db.put(plain);
+  strategies.update((list) => [...list, plain]);
 }
 
 export async function updateStrategy(strategy: Strategy): Promise<void> {
-  await db.put(strategy);
-  strategies.update((list) => list.map((s) => (s.id === strategy.id ? strategy : s)));
+  const plain = toPlain(strategy);
+  await db.put(plain);
+  strategies.update((list) => list.map((s) => (s.id === strategy.id ? plain : s)));
 }
 
 export async function removeStrategy(id: string): Promise<void> {
