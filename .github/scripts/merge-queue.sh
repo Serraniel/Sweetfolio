@@ -220,7 +220,7 @@ EOF
   for pr in "${VALIDATED[@]}"; do
     log "Merging PR #$pr"
 
-    if gh pr merge "$pr" --merge --repo "$REPO"; then
+    if gh pr merge "$pr" --merge --admin --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
       comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
       remove_from_queue "$pr"
