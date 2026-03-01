@@ -54,11 +54,10 @@
 		return convertPrices(prices, conversion.currencyRate, conversion.sourceCurrency, conversion.targetCurrency);
 	}
 
-	// Track which assets have currency conversion issues
+	// Track which assets have currency conversion issues (independent of selection)
 	const assetConversionWarnings = $derived.by((): Set<string> => {
 		const warnings = new Set<string>();
 		for (const sel of assetSelections) {
-			if (!sel.selected) continue;
 			const asset = $assets.find((a) => a.id === sel.id);
 			if (!asset || asset.prices.length < 2) continue;
 			if (asset.currency !== mainCurrency) {
