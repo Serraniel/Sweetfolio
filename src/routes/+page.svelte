@@ -4,6 +4,7 @@
 	import CorrelationMatrix from '$lib/charts/CorrelationMatrix.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios } from '$lib/stores/portfolios';
+	import { strategies } from '$lib/stores/strategies';
 	import { calculateCorrelation } from '$lib/workers/manager';
 	import type { CorrelationMatrix as CorrelationMatrixData } from '$lib/types';
 
@@ -71,6 +72,25 @@
 				<div class="summary-info">
 					<span class="summary-value">{$assets.length}</span>
 					<span class="summary-label">Assets</span>
+				</div>
+			</div>
+		</Card>
+
+		<Card variant="accent">
+			<div class="summary-card">
+				<div class="summary-icon strategies-icon">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+						<circle cx="12" cy="5" r="2"/>
+						<line x1="12" y1="7" x2="12" y2="12"/>
+						<line x1="12" y1="12" x2="6" y2="18"/>
+						<line x1="12" y1="12" x2="18" y2="18"/>
+						<circle cx="6" cy="19" r="1.5"/>
+						<circle cx="18" cy="19" r="1.5"/>
+					</svg>
+				</div>
+				<div class="summary-info">
+					<span class="summary-value">{$strategies.length}</span>
+					<span class="summary-label">Strategies</span>
 				</div>
 			</div>
 		</Card>
@@ -219,6 +239,11 @@
 	.assets-icon {
 		background: rgba(141, 208, 196, 0.15);
 		color: var(--color-miku-teal);
+	}
+
+	.strategies-icon {
+		background: rgba(83, 173, 163, 0.15);
+		color: #53ada3;
 	}
 
 	.portfolios-icon {
