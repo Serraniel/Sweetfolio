@@ -1,3 +1,21 @@
+# [0.5.0](https://github.com/Serraniel/Sweetfolio/compare/v0.4.0...v0.5.0) (2026-03-01)
+
+
+### Bug Fixes
+
+* changelog sticky sidebar, version injection, and release note dedup ([c0f2e2a](https://github.com/Serraniel/Sweetfolio/commit/c0f2e2a178944f795e703bd663605570dec171fe))
+* changelog sticky sidebar, version injection, and release note dedup ([#29](https://github.com/Serraniel/Sweetfolio/issues/29)) ([a459b1d](https://github.com/Serraniel/Sweetfolio/commit/a459b1d073d2606a14058b2fbba658664dbd65f4)), closes [#N](https://github.com/Serraniel/Sweetfolio/issues/N)
+* **charts:** stabilize correlation matrix hover and add click-to-compare ([29a10c9](https://github.com/Serraniel/Sweetfolio/commit/29a10c9cc608f0e792f544916c2b199565b8aa95))
+* **charts:** stabilize correlation matrix hover and add click-to-compare ([#27](https://github.com/Serraniel/Sweetfolio/issues/27)) ([6e7b946](https://github.com/Serraniel/Sweetfolio/commit/6e7b9461aa425c1ff4352327d1e300dd5d199c3a))
+* **compare:** disable invalid time periods in metrics comparison ([d1e9ad8](https://github.com/Serraniel/Sweetfolio/commit/d1e9ad82e66c58af9f6711041ed693edbd498b1f))
+* **compare:** disable invalid time periods in metrics comparison ([#26](https://github.com/Serraniel/Sweetfolio/issues/26)) ([48ded3e](https://github.com/Serraniel/Sweetfolio/commit/48ded3e5fdce04eac99461cd4252607ecb6eb031))
+
+
+### Features
+
+* **nav:** reorder navigation and nest Compare under Assets ([0b4f4ca](https://github.com/Serraniel/Sweetfolio/commit/0b4f4caea3430502c5919de1cdac1b2d2da1ccb5))
+* **nav:** reorder navigation and nest Compare under Assets ([#28](https://github.com/Serraniel/Sweetfolio/issues/28)) ([3fa8acb](https://github.com/Serraniel/Sweetfolio/commit/3fa8acb6e9989c82166ff066464bff768457bdb0))
+
 # [0.4.0](https://github.com/Serraniel/Sweetfolio/compare/v0.3.1...v0.4.0) (2026-03-01)
 
 
