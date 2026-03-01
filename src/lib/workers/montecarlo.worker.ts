@@ -55,16 +55,18 @@ function runSimulation(
     efficientFrontier: [],
   };
 
-  // Align and compute log returns for all assets
-  const { alignedSeries } = alignPriceSeries(assets.map((a) => a.prices));
-  const assetReturns = alignedSeries.map((prices) => logReturns(prices));
-
-  // Pre-compute per-asset annualized stats
-  const assetMeans = assetReturns.map((r) => mean(r) * TRADING_DAYS_PER_YEAR);
+  // Per-asset expected returns use each asset's FULL individual history.
+  // This gives a better estimate since the mean only depends on one series.
+  // (Hybrid approach per Stambaugh 1997 / practitioner convention.)
+  const fullReturns = assets.map((a) => logReturns(a.prices.map((p) => p.close)));
+  const assetMeans = fullReturns.map((r) => mean(r) * TRADING_DAYS_PER_YEAR);
   const assetIds = assets.map((a) => a.id);
 
-  // Pre-compute covariance matrix for portfolio volatility
-  const covMatrix = computeCovarianceMatrix(assetReturns);
+  // Covariance matrix requires synchronized (contemporaneous) observations,
+  // so we align all series to their common date intersection.
+  const { alignedSeries } = alignPriceSeries(assets.map((a) => a.prices));
+  const alignedReturns = alignedSeries.map((prices) => logReturns(prices));
+  const covMatrix = computeCovarianceMatrix(alignedReturns);
 
   // Pre-allocate typed arrays at max capacity; trim after deduplication
   const volArr = new Float64Array(simulationCount);

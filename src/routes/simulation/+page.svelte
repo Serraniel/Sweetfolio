@@ -12,6 +12,8 @@
 	import { annualizedLogReturn } from '$lib/engine/returns';
 	import { annualizedVolatility } from '$lib/engine/volatility';
 	import { convertPrices } from '$lib/engine/currency';
+	import { alignPriceSeries } from '$lib/utils/dates';
+	import { logReturns, stddev } from '$lib/utils/math';
 	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
 	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint } from '$lib/types';
@@ -103,12 +105,15 @@
 		};
 	});
 
-	// Compute per-asset markers using the same log-return-based metrics as the MC worker.
-	// Colors match the sidebar dots by using each asset's index in the full assetSelections list.
-	// Prices are converted to main currency for consistent comparison.
+	// Compute per-asset markers matching the MC worker's hybrid approach:
+	// - Expected return: full individual history (better estimate, more data)
+	// - Volatility: aligned (intersection) window (consistent with portfolio covariance)
+	const TRADING_DAYS_PER_YEAR = 252;
 	const assetMarkerList = $derived.by((): AssetMarker[] => {
 		if (!result) return [];
-		const markers: AssetMarker[] = [];
+
+		// Collect selected assets with converted prices (same as handleRun sends to worker)
+		const selected: Array<{ idx: number; name: string; prices: PricePoint[] }> = [];
 		for (let i = 0; i < assetSelections.length; i++) {
 			const sel = assetSelections[i];
 			if (!sel.selected) continue;
@@ -116,11 +121,34 @@
 			if (!asset || asset.prices.length < 2) continue;
 			const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
 			if (prices.length < 2) continue;
+			selected.push({ idx: i, name: asset.name, prices });
+		}
+
+		if (selected.length < 2) {
+			return selected.map((s) => ({
+				name: s.name,
+				annualizedReturn: annualizedLogReturn(s.prices),
+				volatility: annualizedVolatility(s.prices),
+				color: assetColors[s.idx],
+			}));
+		}
+
+		// Volatility uses the aligned intersection (same as MC covariance matrix)
+		const { alignedSeries } = alignPriceSeries(selected.map((s) => s.prices));
+
+		const markers: AssetMarker[] = [];
+		for (let i = 0; i < selected.length; i++) {
+			// Return from full individual history (same as MC worker)
+			const annReturn = annualizedLogReturn(selected[i].prices);
+			// Volatility from aligned window (consistent with MC covariance)
+			const alignedRet = logReturns(alignedSeries[i]);
+			if (alignedRet.length < 2) continue;
+			const annVol = stddev(alignedRet) * Math.sqrt(TRADING_DAYS_PER_YEAR);
 			markers.push({
-				name: asset.name,
-				annualizedReturn: annualizedLogReturn(prices),
-				volatility: annualizedVolatility(prices),
-				color: assetColors[i],
+				name: selected[i].name,
+				annualizedReturn: annReturn,
+				volatility: annVol,
+				color: assetColors[selected[i].idx],
 			});
 		}
 		return markers;
