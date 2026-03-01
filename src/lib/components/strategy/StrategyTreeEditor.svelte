@@ -27,9 +27,24 @@
 		workingStrategy = strategy;
 	});
 
-	function save(updated: Strategy) {
+	// Undo stack: stores previous workingStrategy states
+	let undoStack = $state<Strategy[]>([]);
+	const canUndo = $derived(undoStack.length > 0);
+
+	function save(updated: Strategy, { pushUndo = true } = {}) {
+		if (pushUndo) {
+			undoStack = [...undoStack.slice(-19), workingStrategy];
+		}
 		workingStrategy = updated;
 		debouncedSave(updated);
+	}
+
+	function undo() {
+		if (undoStack.length === 0) return;
+		const previous = undoStack[undoStack.length - 1];
+		undoStack = undoStack.slice(0, -1);
+		workingStrategy = previous;
+		debouncedSave(previous);
 	}
 
 	function updateNode(nodeId: string, changes: Partial<StrategyNode>): void {
@@ -49,8 +64,18 @@
 	function addChildToNode(parentId: string, child: StrategyNode): void {
 		const parent = findNode(workingStrategy.root, parentId);
 		if (!parent || parent.type !== 'group') return;
-		const newChildren = normalizeChildren([...parent.children, child]) as StrategyNode[];
+		const newChildren = [...parent.children, child];
 		const newRoot = applyUpdate(workingStrategy.root, parentId, { children: newChildren } as Partial<StrategyGroupNode>);
+		if (!newRoot) return;
+		const updated = { ...workingStrategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
+		save(updated);
+	}
+
+	function normalizeGroup(groupId: string): void {
+		const group = findNode(workingStrategy.root, groupId);
+		if (!group || group.type !== 'group' || group.children.length === 0) return;
+		const normalized = normalizeChildren(group.children) as StrategyNode[];
+		const newRoot = applyUpdate(workingStrategy.root, groupId, { children: normalized } as Partial<StrategyGroupNode>);
 		if (!newRoot) return;
 		const updated = { ...workingStrategy, root: newRoot as StrategyGroupNode, updatedAt: new Date().toISOString() };
 		save(updated);
@@ -69,9 +94,7 @@
 
 	function applyUpdate(node: StrategyNode, targetId: string, changes: Partial<StrategyNode>): StrategyNode | null {
 		if (node.id === targetId) {
-			const updated = { ...node, ...changes } as StrategyNode;
-			// If weight changed and this node has a parent, normalization happens at parent level
-			return updated;
+			return { ...node, ...changes } as StrategyNode;
 		}
 		if (node.type === 'group') {
 			let changed = false;
@@ -82,34 +105,16 @@
 			});
 
 			if (!changed) return node;
-
-			// If a weight was changed, normalize siblings
-			const needsNormalize = 'weight' in changes;
-			const finalChildren = needsNormalize ? normalizeAfterEdit(newChildren, targetId, changes.weight as number) : newChildren;
-
-			return { ...node, children: finalChildren };
+			return { ...node, children: newChildren };
 		}
 		return node;
-	}
-
-	function normalizeAfterEdit(children: StrategyNode[], editedId: string, newWeight: number): StrategyNode[] {
-		// Set the edited node's weight, distribute remaining weight proportionally among siblings
-		const others = children.filter((c) => c.id !== editedId);
-		const remainingWeight = Math.max(0, 1 - newWeight);
-		const otherTotal = others.reduce((sum, c) => sum + c.weight, 0);
-
-		return children.map((c) => {
-			if (c.id === editedId) return { ...c, weight: newWeight };
-			if (otherTotal === 0) return { ...c, weight: remainingWeight / others.length };
-			return { ...c, weight: (c.weight / otherTotal) * remainingWeight };
-		});
 	}
 
 	function applyRemove(root: StrategyGroupNode, targetId: string): StrategyGroupNode | null {
 		function removeFromChildren(children: StrategyNode[]): StrategyNode[] | null {
 			const filtered = children.filter((c) => c.id !== targetId);
 			if (filtered.length < children.length) {
-				return filtered.length > 0 ? normalizeChildren(filtered) as StrategyNode[] : null;
+				return filtered.length > 0 ? filtered : null;
 			}
 			const result: StrategyNode[] = [];
 			for (const child of filtered) {
@@ -121,7 +126,7 @@
 					result.push(child);
 				}
 			}
-			return result.length > 0 ? normalizeChildren(result) as StrategyNode[] : null;
+			return result.length > 0 ? result : null;
 		}
 
 		const newChildren = removeFromChildren(root.children);
@@ -131,10 +136,17 @@
 
 	function addToRoot(type: 'group' | 'asset', assetId?: string) {
 		const child: StrategyNode = type === 'group'
-			? { type: 'group', id: crypto.randomUUID(), label: 'New Group', weight: 1, children: [] }
-			: { type: 'leaf', id: crypto.randomUUID(), assetId: assetId!, weight: 1 };
-		const newChildren = normalizeChildren([...workingStrategy.root.children, child]) as StrategyNode[];
-		const newRoot = { ...workingStrategy.root, children: newChildren };
+			? { type: 'group', id: crypto.randomUUID(), label: 'New Group', weight: 0, children: [] }
+			: { type: 'leaf', id: crypto.randomUUID(), assetId: assetId!, weight: 0 };
+		const newRoot = { ...workingStrategy.root, children: [...workingStrategy.root.children, child] };
+		const updated = { ...workingStrategy, root: newRoot, updatedAt: new Date().toISOString() };
+		save(updated);
+	}
+
+	function normalizeRoot(): void {
+		if (workingStrategy.root.children.length === 0) return;
+		const normalized = normalizeChildren(workingStrategy.root.children) as StrategyNode[];
+		const newRoot = { ...workingStrategy.root, children: normalized };
 		const updated = { ...workingStrategy, root: newRoot, updatedAt: new Date().toISOString() };
 		save(updated);
 	}
@@ -144,11 +156,22 @@
 </script>
 
 <div class="tree-editor" role="tree">
-	<div class="root-label">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-			<path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm2 6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2zm3 6a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
-		</svg>
-		<span class="root-name">{workingStrategy.root.label}</span>
+	<div class="root-header">
+		<div class="root-label">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm2 6a1 1 0 011-1h10a1 1 0 011 1v2a1 1 0 01-1 1H7a1 1 0 01-1-1v-2zm3 6a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1v-2z" />
+			</svg>
+			<span class="root-name">{workingStrategy.root.label}</span>
+		</div>
+		{#if canUndo}
+			<button class="undo-btn" onclick={undo} title="Undo (Ctrl+Z)">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<polyline points="1 4 1 10 7 10" />
+					<path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+				</svg>
+				Undo
+			</button>
+		{/if}
 	</div>
 
 	{#if workingStrategy.root.children.length === 0}
@@ -156,6 +179,7 @@
 			<p>No allocations yet. Add your first group or asset to start building your strategy.</p>
 		</div>
 	{:else}
+		{@const rootSum = Math.round(workingStrategy.root.children.reduce((s, c) => s + c.weight, 0) * 100)}
 		{#each workingStrategy.root.children as child (child.id)}
 			<StrategyTreeNode
 				node={child}
@@ -164,8 +188,15 @@
 				onupdate={updateNode}
 				onremove={removeNode}
 				onaddchild={addChildToNode}
+				onnormalize={normalizeGroup}
 			/>
 		{/each}
+		<div class="weight-sum-row" class:imbalanced={rootSum !== 100}>
+			<span class="weight-sum-label">Total: {rootSum}%</span>
+			{#if rootSum !== 100}
+				<button class="normalize-btn" onclick={normalizeRoot}>Normalize to 100%</button>
+			{/if}
+		</div>
 	{/if}
 
 	<div class="root-add-row">
@@ -204,11 +235,18 @@
 		gap: var(--spacing-xs);
 	}
 
+	.root-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 var(--spacing-sm);
+	}
+
 	.root-label {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-sm);
-		padding: var(--spacing-sm);
+		padding: var(--spacing-sm) 0;
 		color: var(--color-text-primary);
 		font-weight: 600;
 		font-size: var(--font-size-sm);
@@ -216,6 +254,57 @@
 
 	.root-label svg {
 		color: var(--color-accent);
+	}
+
+	.undo-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition: color var(--transition-fast), border-color var(--transition-fast);
+	}
+
+	.undo-btn:hover {
+		color: var(--color-accent);
+		border-color: var(--color-accent);
+	}
+
+	.weight-sum-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-xs) var(--spacing-sm);
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+	}
+
+	.weight-sum-row.imbalanced {
+		color: var(--color-negative, #e8175d);
+	}
+
+	.weight-sum-row.imbalanced .weight-sum-label {
+		font-weight: 600;
+	}
+
+	.normalize-btn {
+		padding: 2px var(--spacing-sm);
+		font-size: var(--font-size-xs);
+		color: var(--color-accent);
+		background: none;
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+		transition: background var(--transition-fast);
+	}
+
+	.normalize-btn:hover {
+		background: rgba(141, 208, 196, 0.1);
 	}
 
 	.empty-tree {

@@ -9,6 +9,7 @@
 		onupdate,
 		onremove,
 		onaddchild,
+		onnormalize,
 	}: {
 		node: StrategyNode;
 		depth?: number;
@@ -16,7 +17,14 @@
 		onupdate: (nodeId: string, changes: Partial<StrategyNode>) => void;
 		onremove: (nodeId: string) => void;
 		onaddchild: (parentId: string, child: StrategyNode) => void;
+		onnormalize: (groupId: string) => void;
 	} = $props();
+
+	const childrenSum = $derived(
+		node.type === 'group' && node.children.length > 0
+			? Math.round(node.children.reduce((s, c) => s + c.weight, 0) * 100)
+			: 100
+	);
 
 	let collapsed = $state(false);
 	let showAddMenu = $state(false);
@@ -164,8 +172,15 @@
 					{onupdate}
 					{onremove}
 					{onaddchild}
+					{onnormalize}
 				/>
 			{/each}
+			{#if node.children.length > 0 && childrenSum !== 100}
+				<div class="weight-sum-row imbalanced">
+					<span class="weight-sum-label">{childrenSum}%</span>
+					<button class="normalize-btn" onclick={() => onnormalize(node.id)}>Normalize</button>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -383,5 +398,35 @@
 	.asset-option.cancel {
 		color: var(--color-text-muted);
 		border-top: 1px solid var(--color-border);
+	}
+
+	.weight-sum-row {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-xs) 0;
+		font-size: var(--font-size-xs);
+	}
+
+	.weight-sum-row.imbalanced {
+		color: var(--color-negative, #e8175d);
+	}
+
+	.weight-sum-row .weight-sum-label {
+		font-weight: 600;
+	}
+
+	.normalize-btn {
+		padding: 1px var(--spacing-xs);
+		font-size: var(--font-size-xs);
+		color: var(--color-accent);
+		background: none;
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-sm);
+		cursor: pointer;
+	}
+
+	.normalize-btn:hover {
+		background: rgba(141, 208, 196, 0.1);
 	}
 </style>
