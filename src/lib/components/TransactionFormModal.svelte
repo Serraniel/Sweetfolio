@@ -17,7 +17,7 @@
 		onsave: (tx: Transaction) => void;
 	} = $props();
 
-	let type: TransactionType = $state('buy');
+	let type = $state<TransactionType>('buy');
 	let assetId = $state('');
 	let date = $state('');
 	let quantity = $state<number | null>(null);
