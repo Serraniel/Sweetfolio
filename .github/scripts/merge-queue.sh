@@ -125,19 +125,37 @@ while true; do
     # approving their own PRs will show reviewDecision="" instead of "APPROVED".
     # For those cases, we check if the PR author has write+ permissions — the
     # /merge command itself is already gated to write+ users in the workflow.
+    # Bot authors (e.g. dependabot) are not regular users, so the collaborator
+    # API returns 404 for them — we skip the permission fallback and require
+    # a proper review for bot PRs.
     REVIEW_DECISION=$(gh pr view "$pr" --json reviewDecision --jq '.reviewDecision' --repo "$REPO")
     if [ "$REVIEW_DECISION" != "APPROVED" ]; then
       PR_AUTHOR=$(gh pr view "$pr" --json author --jq '.author.login' --repo "$REPO")
-      AUTHOR_PERM=$(gh api "repos/$REPO/collaborators/$PR_AUTHOR/permission" --jq '.permission')
-      if [[ "$AUTHOR_PERM" != "admin" && "$AUTHOR_PERM" != "maintain" && "$AUTHOR_PERM" != "write" ]]; then
-        echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) and author $PR_AUTHOR has '$AUTHOR_PERM' permission — skipping"
+      IS_BOT=$(gh pr view "$pr" --json author --jq '.author.is_bot' --repo "$REPO")
+      SKIP=false
+
+      if [ "$IS_BOT" = "true" ]; then
+        # Bot PRs (dependabot, etc.) cannot be checked via collaborator API.
+        # They always require a human review.
+        echo "::warning::PR #$pr by bot $PR_AUTHOR has no approving review (status: $REVIEW_DECISION) — skipping"
+        SKIP=true
+      else
+        AUTHOR_PERM=$(gh api "repos/$REPO/collaborators/$PR_AUTHOR/permission" --jq '.permission' 2>/dev/null || echo "none")
+        if [[ "$AUTHOR_PERM" != "admin" && "$AUTHOR_PERM" != "maintain" && "$AUTHOR_PERM" != "write" ]]; then
+          echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) and author $PR_AUTHOR has '$AUTHOR_PERM' permission — skipping"
+          SKIP=true
+        else
+          echo "PR #$pr: no formal review approval, but author $PR_AUTHOR has '$AUTHOR_PERM' permission — proceeding"
+        fi
+      fi
+
+      if [ "$SKIP" = true ]; then
         remove_from_queue "$pr"
         comment_pr "$pr" "⏸️ **Merge queue: removed** — this PR requires an approving review before it can be merged. Please get a review and re-add with \`/merge\`."
         FAILED=true
         FAILED_PR=$pr
         break
       fi
-      echo "PR #$pr: no formal review approval, but author $PR_AUTHOR has '$AUTHOR_PERM' permission — proceeding"
     fi
 
     # Get PR branch info
