@@ -61,7 +61,7 @@
 			null;
 
 		for (const line of lines) {
-			const versionMatch = line.match(/^# \[(\d+\.\d+\.\d+[^\]]*)\].*\((\d{4}-\d{2}-\d{2})\)/);
+			const versionMatch = line.match(/^#{1,2} \[(\d+\.\d+\.\d+[^\]]*)\].*\((\d{4}-\d{2}-\d{2})\)/);
 			if (versionMatch) {
 				if (currentSection) {
 					sections.push({
