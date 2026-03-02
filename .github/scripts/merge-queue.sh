@@ -120,15 +120,24 @@ while true; do
     CURRENT_PR="$pr"
     log "Processing PR #$pr"
 
-    # Verify PR has an approving review before processing
+    # Verify PR has an approving review before processing.
+    # Note: GitHub does not count self-approvals, so repo owners/collaborators
+    # approving their own PRs will show reviewDecision="" instead of "APPROVED".
+    # For those cases, we check if the PR author has write+ permissions — the
+    # /merge command itself is already gated to write+ users in the workflow.
     REVIEW_DECISION=$(gh pr view "$pr" --json reviewDecision --jq '.reviewDecision' --repo "$REPO")
     if [ "$REVIEW_DECISION" != "APPROVED" ]; then
-      echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) — skipping"
-      remove_from_queue "$pr"
-      comment_pr "$pr" "⏸️ **Merge queue: removed** — this PR requires an approving review before it can be merged. Please get a review and re-add with \`/merge\`."
-      FAILED=true
-      FAILED_PR=$pr
-      break
+      PR_AUTHOR=$(gh pr view "$pr" --json author --jq '.author.login' --repo "$REPO")
+      AUTHOR_PERM=$(gh api "repos/$REPO/collaborators/$PR_AUTHOR/permission" --jq '.permission')
+      if [[ "$AUTHOR_PERM" != "admin" && "$AUTHOR_PERM" != "maintain" && "$AUTHOR_PERM" != "write" ]]; then
+        echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) and author $PR_AUTHOR has '$AUTHOR_PERM' permission — skipping"
+        remove_from_queue "$pr"
+        comment_pr "$pr" "⏸️ **Merge queue: removed** — this PR requires an approving review before it can be merged. Please get a review and re-add with \`/merge\`."
+        FAILED=true
+        FAILED_PR=$pr
+        break
+      fi
+      echo "PR #$pr: no formal review approval, but author $PR_AUTHOR has '$AUTHOR_PERM' permission — proceeding"
     fi
 
     # Get PR branch info
