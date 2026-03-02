@@ -120,36 +120,31 @@ while true; do
     CURRENT_PR="$pr"
     log "Processing PR #$pr"
 
-    # Verify PR has an approving review before processing.
-    # Note: GitHub does not count self-approvals, so repo owners/collaborators
-    # approving their own PRs will show reviewDecision="" instead of "APPROVED".
-    # For those cases, we check if the PR author has write+ permissions — the
-    # /merge command itself is already gated to write+ users in the workflow.
-    # Bot authors (e.g. dependabot) are not regular users, so the collaborator
-    # API returns 404 for them — we skip the permission fallback and require
-    # a proper review for bot PRs.
+    # Verify PR is approved before processing.
+    #
+    # We check two things (in order):
+    #   1. Does the PR have at least one APPROVED review from anyone?
+    #      (GitHub's reviewDecision may be empty when required_approving_review_count=0,
+    #       so we also check the reviews array directly.)
+    #   2. If no review exists, is the PR author a collaborator with write+ access?
+    #      (Covers self-authored PRs where GitHub won't count self-approvals.)
+    #
+    # The /merge command itself is already gated to write+ users in the workflow,
+    # so this check adds defense-in-depth against unauthorized merges.
     REVIEW_DECISION=$(gh pr view "$pr" --json reviewDecision --jq '.reviewDecision' --repo "$REPO")
-    if [ "$REVIEW_DECISION" != "APPROVED" ]; then
+    HAS_APPROVED_REVIEW=$(gh pr view "$pr" --json reviews --jq '[.reviews[] | select(.state == "APPROVED")] | length > 0' --repo "$REPO")
+
+    if [[ "$REVIEW_DECISION" != "APPROVED" && "$HAS_APPROVED_REVIEW" != "true" ]]; then
+      # No review at all — check if author has write+ permissions (self-approval case).
+      # Bot authors (e.g. app/dependabot) are not regular users and the collaborator
+      # API returns 404 for them, so they always need an explicit review.
       PR_AUTHOR=$(gh pr view "$pr" --json author --jq '.author.login' --repo "$REPO")
-      IS_BOT=$(gh pr view "$pr" --json author --jq '.author.is_bot' --repo "$REPO")
-      SKIP=false
+      AUTHOR_PERM=$(gh api "repos/$REPO/collaborators/$PR_AUTHOR/permission" --jq '.permission' 2>/dev/null || echo "none")
 
-      if [ "$IS_BOT" = "true" ]; then
-        # Bot PRs (dependabot, etc.) cannot be checked via collaborator API.
-        # They always require a human review.
-        echo "::warning::PR #$pr by bot $PR_AUTHOR has no approving review (status: $REVIEW_DECISION) — skipping"
-        SKIP=true
+      if [[ "$AUTHOR_PERM" == "admin" || "$AUTHOR_PERM" == "maintain" || "$AUTHOR_PERM" == "write" ]]; then
+        echo "PR #$pr: no review, but author $PR_AUTHOR has '$AUTHOR_PERM' permission — proceeding"
       else
-        AUTHOR_PERM=$(gh api "repos/$REPO/collaborators/$PR_AUTHOR/permission" --jq '.permission' 2>/dev/null || echo "none")
-        if [[ "$AUTHOR_PERM" != "admin" && "$AUTHOR_PERM" != "maintain" && "$AUTHOR_PERM" != "write" ]]; then
-          echo "::warning::PR #$pr has no approving review (status: $REVIEW_DECISION) and author $PR_AUTHOR has '$AUTHOR_PERM' permission — skipping"
-          SKIP=true
-        else
-          echo "PR #$pr: no formal review approval, but author $PR_AUTHOR has '$AUTHOR_PERM' permission — proceeding"
-        fi
-      fi
-
-      if [ "$SKIP" = true ]; then
+        echo "::warning::PR #$pr has no approving review and author $PR_AUTHOR has '$AUTHOR_PERM' permission — skipping"
         remove_from_queue "$pr"
         comment_pr "$pr" "⏸️ **Merge queue: removed** — this PR requires an approving review before it can be merged. Please get a review and re-add with \`/merge\`."
         FAILED=true
