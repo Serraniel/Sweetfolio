@@ -83,8 +83,11 @@
 			const portfolio: Portfolio = {
 				id: crypto.randomUUID(),
 				name: `${strategy.name} - ${sleeve.label}`,
+				mode: 'model' as const,
 				allocations: sleeve.allocations,
 				isBenchmark: false,
+				trackCash: false,
+				cashCurrency: 'EUR',
 				sourceStrategyId: strategy.id,
 				createdAt: now,
 				updatedAt: now,

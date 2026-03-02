@@ -19,6 +19,7 @@ function emptyReport(): ConflictReport {
     strategies: { newItems: [], conflicts: [] },
     currencies: { newItems: [], conflicts: [] },
     simulations: { newItems: [], conflicts: [] },
+    transactions: { newItems: [], conflicts: [] },
     settings: { newItems: [], conflicts: [] },
   };
 }

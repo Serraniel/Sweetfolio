@@ -196,8 +196,11 @@
 				await addPortfolio({
 					id: crypto.randomUUID(),
 					name: payload.name,
+					mode: 'model' as const,
 					allocations: normalized,
 					isBenchmark: false,
+					trackCash: false,
+					cashCurrency: 'EUR',
 					sourceStrategyId: null,
 					createdAt: now,
 					updatedAt: now

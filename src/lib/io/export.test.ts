@@ -48,6 +48,7 @@ describe('buildExport', () => {
     expect(result.data.settings).toBeUndefined();
     expect(result.data.currencies).toBeUndefined();
     expect(result.data.simulations).toBeUndefined();
+    expect(result.data.transactions).toBeUndefined();
   });
 
   it('exports multiple scopes', async () => {

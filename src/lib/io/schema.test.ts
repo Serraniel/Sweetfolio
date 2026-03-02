@@ -13,8 +13,8 @@ describe('schema', () => {
     expect(Number.isInteger(CURRENT_VERSION)).toBe(true);
   });
 
-  it('ALL_SCOPES contains all six categories', () => {
-    expect(ALL_SCOPES).toEqual(['assets', 'portfolios', 'strategies', 'settings', 'currencies', 'simulations']);
+  it('ALL_SCOPES contains all seven categories', () => {
+    expect(ALL_SCOPES).toEqual(['assets', 'portfolios', 'strategies', 'transactions', 'settings', 'currencies', 'simulations']);
   });
 
   it('isValidExportEnvelope accepts valid envelope', () => {

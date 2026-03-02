@@ -6,6 +6,7 @@ import * as strategiesDb from '$lib/storage/strategies';
 import * as currenciesDb from '$lib/storage/currencies';
 import * as simulationsDb from '$lib/storage/simulations';
 import * as settingsDb from '$lib/storage/settings';
+import * as transactionsDb from '$lib/storage/transactions';
 
 function unwrap<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -53,5 +54,6 @@ export async function applyImport(report: ConflictReport): Promise<void> {
   await applyIdScope(report.strategies, strategiesDb.put);
   await applyCurrencyScope(report.currencies);
   await applyIdScope(report.simulations, simulationsDb.put);
+  await applyIdScope(report.transactions, transactionsDb.put);
   await applySettingsScope(report.settings);
 }

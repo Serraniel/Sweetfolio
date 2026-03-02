@@ -15,7 +15,7 @@ async function seedTestData(page: import('@playwright/test').Page) {
       // Delete and recreate the database to start fresh
       const deleteReq = indexedDB.deleteDatabase('sweetfolio');
       deleteReq.onsuccess = () => {
-        const openReq = indexedDB.open('sweetfolio', 3);
+        const openReq = indexedDB.open('sweetfolio', 4);
 
         openReq.onupgradeneeded = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
@@ -32,12 +32,17 @@ async function seedTestData(page: import('@playwright/test').Page) {
           db.createObjectStore('currencies', { keyPath: 'pair' });
           db.createObjectStore('settings', { keyPath: 'key' });
           db.createObjectStore('simulations', { keyPath: 'id' });
+
+          const txStore = db.createObjectStore('transactions', { keyPath: 'id' });
+          txStore.createIndex('by-portfolioId', 'portfolioId', { unique: false });
+          txStore.createIndex('by-date', 'date', { unique: false });
+          txStore.createIndex('by-assetId', 'assetId', { unique: false });
         };
 
         openReq.onsuccess = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
           const tx = db.transaction(
-            ['assets', 'portfolios', 'strategies', 'currencies', 'settings'],
+            ['assets', 'portfolios', 'strategies', 'currencies', 'settings', 'transactions'],
             'readwrite',
           );
 
@@ -101,11 +106,15 @@ async function seedTestData(page: import('@playwright/test').Page) {
           portfolioStore.put({
             id: 'portfolio-1',
             name: 'My Test Portfolio',
+            mode: 'both',
             allocations: [
               { assetId: 'asset-1', weight: 0.6 },
               { assetId: 'asset-2', weight: 0.4 },
             ],
             isBenchmark: false,
+            trackCash: true,
+            cashCurrency: 'EUR',
+            sourceStrategyId: null,
             createdAt: '2024-01-02T00:00:00.000Z',
             updatedAt: '2024-01-10T00:00:00.000Z',
           });
@@ -164,6 +173,41 @@ async function seedTestData(page: import('@playwright/test').Page) {
             value: ['classify-assets-v1'],
           });
 
+          // --- Transactions ---
+          const transactionsStore = tx.objectStore('transactions');
+          transactionsStore.put({
+            id: 'tx-1',
+            portfolioId: 'portfolio-1',
+            type: 'buy',
+            assetId: 'asset-1',
+            date: '2024-01-15',
+            quantity: 10,
+            price: 50,
+            fee: 5,
+            amount: null,
+            withholdingTax: 0,
+            currency: 'EUR',
+            notes: 'Initial buy',
+            createdAt: '2024-01-15T00:00:00.000Z',
+            updatedAt: '2024-01-15T00:00:00.000Z',
+          });
+          transactionsStore.put({
+            id: 'tx-2',
+            portfolioId: 'portfolio-1',
+            type: 'dividend',
+            assetId: 'asset-1',
+            date: '2024-06-15',
+            quantity: null,
+            price: null,
+            fee: 0,
+            amount: 25,
+            withholdingTax: 6.5,
+            currency: 'EUR',
+            notes: 'H1 dividend',
+            createdAt: '2024-06-15T00:00:00.000Z',
+            updatedAt: '2024-06-15T00:00:00.000Z',
+          });
+
           tx.oncomplete = () => {
             db.close();
             resolve();
@@ -189,17 +233,18 @@ async function readAllData(page: import('@playwright/test').Page) {
       strategies: any[];
       currencies: any[];
       settings: Record<string, any>;
+      transactions: any[];
     }>((resolve, reject) => {
-      const openReq = indexedDB.open('sweetfolio', 3);
+      const openReq = indexedDB.open('sweetfolio', 4);
       openReq.onsuccess = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         const tx = db.transaction(
-          ['assets', 'portfolios', 'strategies', 'currencies', 'settings'],
+          ['assets', 'portfolios', 'strategies', 'currencies', 'settings', 'transactions'],
           'readonly',
         );
 
         const results: any = {};
-        const stores = ['assets', 'portfolios', 'strategies', 'currencies', 'settings'];
+        const stores = ['assets', 'portfolios', 'strategies', 'currencies', 'settings', 'transactions'];
         let pending = stores.length;
 
         for (const storeName of stores) {
@@ -276,6 +321,7 @@ test.describe('Import / Export round-trip', () => {
     expect(sourceData.strategies).toHaveLength(1);
     expect(sourceData.currencies).toHaveLength(1);
     expect(sourceData.settings.mainCurrency).toBe('EUR');
+    expect(sourceData.transactions).toHaveLength(2);
 
     // Navigate to settings for export
     await sourcePage.goto('/settings');
@@ -300,16 +346,18 @@ test.describe('Import / Export round-trip', () => {
     const exportContent = fs.readFileSync(exportFilePath, 'utf-8');
     const exportJson = JSON.parse(exportContent);
     expect(exportJson.format).toBe('sweetfolio');
-    expect(exportJson.version).toBe(2);
+    expect(exportJson.version).toBe(4);
     expect(exportJson.scopes).toContain('assets');
     expect(exportJson.scopes).toContain('portfolios');
     expect(exportJson.scopes).toContain('strategies');
     expect(exportJson.scopes).toContain('settings');
     expect(exportJson.scopes).toContain('currencies');
+    expect(exportJson.scopes).toContain('transactions');
     expect(exportJson.data.assets).toHaveLength(2);
     expect(exportJson.data.portfolios).toHaveLength(1);
     expect(exportJson.data.strategies).toHaveLength(1);
     expect(exportJson.data.currencies).toHaveLength(1);
+    expect(exportJson.data.transactions).toHaveLength(2);
 
     // Verify bulky data was stripped from export
     for (const asset of exportJson.data.assets) {
@@ -333,6 +381,7 @@ test.describe('Import / Export round-trip', () => {
     expect(freshDataBefore.portfolios).toHaveLength(0);
     expect(freshDataBefore.strategies).toHaveLength(0);
     expect(freshDataBefore.currencies).toHaveLength(0);
+    expect(freshDataBefore.transactions).toHaveLength(0);
 
     // Click "Import Data" button
     await freshPage.getByRole('button', { name: 'Import Data' }).click();
@@ -397,6 +446,9 @@ test.describe('Import / Export round-trip', () => {
         expect(imported.allocations[i].weight).toBe(sourcePortfolio.allocations[i].weight);
       }
       expect(imported.isBenchmark).toBe(sourcePortfolio.isBenchmark);
+      expect(imported.mode).toBe(sourcePortfolio.mode);
+      expect(imported.trackCash).toBe(sourcePortfolio.trackCash);
+      expect(imported.cashCurrency).toBe(sourcePortfolio.cashCurrency);
     }
 
     // --- Currencies ---
@@ -420,6 +472,22 @@ test.describe('Import / Export round-trip', () => {
       expect(imported.root.type).toBe('group');
       expect(imported.root.children).toHaveLength(sourceStrategy.root.children.length);
       expect(imported.generatedPortfolioIds).toEqual(sourceStrategy.generatedPortfolioIds);
+    }
+
+    // --- Transactions ---
+    expect(importedData.transactions).toHaveLength(sourceData.transactions.length);
+    for (const sourceTx of sourceData.transactions) {
+      const imported = importedData.transactions.find((t: any) => t.id === sourceTx.id);
+      expect(imported, `Transaction ${sourceTx.id} should exist after import`).toBeTruthy();
+      expect(imported.portfolioId).toBe(sourceTx.portfolioId);
+      expect(imported.type).toBe(sourceTx.type);
+      expect(imported.assetId).toBe(sourceTx.assetId);
+      expect(imported.date).toBe(sourceTx.date);
+      expect(imported.quantity).toBe(sourceTx.quantity);
+      expect(imported.price).toBe(sourceTx.price);
+      expect(imported.fee).toBe(sourceTx.fee);
+      expect(imported.amount).toBe(sourceTx.amount);
+      expect(imported.withholdingTax).toBe(sourceTx.withholdingTax);
     }
 
     // --- Settings ---

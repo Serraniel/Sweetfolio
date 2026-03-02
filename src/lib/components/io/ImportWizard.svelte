@@ -10,6 +10,7 @@
 	import * as strategiesDb from '$lib/storage/strategies';
 	import * as currenciesDb from '$lib/storage/currencies';
 	import * as simulationsDb from '$lib/storage/simulations';
+	import * as transactionsDb from '$lib/storage/transactions';
 	import * as settingsDb from '$lib/storage/settings';
 	import { loadAssets } from '$lib/stores/assets';
 	import { loadPortfolios } from '$lib/stores/portfolios';
@@ -36,6 +37,7 @@
 		assets: 'Assets',
 		portfolios: 'Portfolios',
 		strategies: 'Strategies',
+		transactions: 'Transactions',
 		settings: 'Settings',
 		currencies: 'Exchange Rates',
 		simulations: 'Simulations',
@@ -90,6 +92,7 @@
 				strategies: selectedScopes.has('strategies') ? await strategiesDb.getAll() : [],
 				currencies: selectedScopes.has('currencies') ? await currenciesDb.getAll() : [],
 				simulations: selectedScopes.has('simulations') ? await simulationsDb.getAll() : [],
+				transactions: selectedScopes.has('transactions') ? await transactionsDb.getAll() : [],
 				settings: selectedScopes.has('settings') ? await settingsDb.getAll() : {},
 			};
 
@@ -100,6 +103,7 @@
 			if (selectedScopes.has('settings')) filteredData.settings = importData.data.settings;
 			if (selectedScopes.has('currencies')) filteredData.currencies = importData.data.currencies;
 			if (selectedScopes.has('simulations')) filteredData.simulations = importData.data.simulations;
+			if (selectedScopes.has('transactions')) filteredData.transactions = importData.data.transactions;
 
 			conflictReport = detectConflicts(filteredData, existing);
 			step = 'resolve-conflicts';
@@ -162,6 +166,7 @@
 			conflictReport.strategies.newItems.length +
 			conflictReport.currencies.newItems.length +
 			conflictReport.simulations.newItems.length +
+			conflictReport.transactions.newItems.length +
 			conflictReport.settings.newItems.length
 		);
 	}
@@ -174,6 +179,7 @@
 			conflictReport.strategies.conflicts.length +
 			conflictReport.currencies.conflicts.length +
 			conflictReport.simulations.conflicts.length +
+			conflictReport.transactions.conflicts.length +
 			conflictReport.settings.conflicts.length
 		);
 	}
