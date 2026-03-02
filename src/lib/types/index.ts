@@ -29,11 +29,16 @@ export interface Asset {
   lastRefreshedAt: string | null;
 }
 
+export type PortfolioMode = 'model' | 'tracked' | 'both';
+
 export interface Portfolio {
   id: string;
   name: string;
+  mode: PortfolioMode;
   allocations: Array<{ assetId: string; weight: number }>;
   isBenchmark: boolean;
+  trackCash: boolean;
+  cashCurrency: string;
   sourceStrategyId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +70,62 @@ export interface Strategy {
   generatedPortfolioIds: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Transactions & Holdings ---
+
+export type TransactionType = 'buy' | 'sell' | 'dividend';
+
+export interface Transaction {
+  id: string;
+  portfolioId: string;
+  type: TransactionType;
+  assetId: string;
+  date: string;
+  quantity: number | null;
+  price: number | null;
+  fee: number;
+  amount: number | null;
+  withholdingTax: number;
+  currency: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Holding {
+  assetId: string;
+  quantity: number;
+  avgCostBasis: number;
+  totalCost: number;
+  currentPrice: number;
+  currentValue: number;
+  unrealizedGain: number;
+  unrealizedGainPercent: number;
+  weight: number;
+}
+
+export interface HoldingLot {
+  assetId: string;
+  quantity: number;
+  purchasePrice: number;
+  purchaseDate: string;
+}
+
+export interface RealizedGain {
+  assetId: string;
+  sellDate: string;
+  quantity: number;
+  costBasis: number;
+  proceeds: number;
+  gain: number;
+}
+
+export interface DriftItem {
+  assetId: string;
+  modelWeight: number;
+  actualWeight: number;
+  drift: number;
 }
 
 export interface CurrencyRate {
