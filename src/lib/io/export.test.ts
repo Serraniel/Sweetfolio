@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import { buildExport } from './export';
 import { CURRENT_VERSION } from './schema';
-import type { Asset } from '$lib/types';
+import type { Asset, Strategy } from '$lib/types';
 
 async function resetDB() {
   const req = indexedDB.deleteDatabase('sweetfolio');
@@ -44,6 +44,7 @@ describe('buildExport', () => {
     expect(result.scopes).toEqual(['assets']);
     expect(result.data.assets).toHaveLength(1);
     expect(result.data.portfolios).toBeUndefined();
+    expect(result.data.strategies).toBeUndefined();
     expect(result.data.settings).toBeUndefined();
     expect(result.data.currencies).toBeUndefined();
     expect(result.data.simulations).toBeUndefined();
@@ -53,11 +54,43 @@ describe('buildExport', () => {
     const { getDB } = await import('$lib/storage/db');
     await getDB();
 
-    const result = await buildExport(['assets', 'portfolios', 'settings']);
-    expect(result.scopes).toEqual(['assets', 'portfolios', 'settings']);
+    const result = await buildExport(['assets', 'portfolios', 'strategies', 'settings']);
+    expect(result.scopes).toEqual(['assets', 'portfolios', 'strategies', 'settings']);
     expect(result.data.assets).toBeDefined();
     expect(result.data.portfolios).toBeDefined();
+    expect(result.data.strategies).toBeDefined();
     expect(result.data.settings).toBeDefined();
+  });
+
+  it('exports strategies scope', async () => {
+    const { getDB } = await import('$lib/storage/db');
+    const strategiesDb = await import('$lib/storage/strategies');
+    await getDB();
+
+    const strategy: Strategy = {
+      id: 's1',
+      name: 'Test Strategy',
+      root: {
+        type: 'group',
+        id: 'root',
+        label: 'Root',
+        weight: 1,
+        children: [
+          { type: 'leaf', id: 'l1', assetId: 'a1', weight: 0.6 },
+          { type: 'leaf', id: 'l2', assetId: 'a2', weight: 0.4 },
+        ],
+      },
+      generatedPortfolioIds: [],
+      createdAt: '2024-01-01T00:00:00Z',
+      updatedAt: '2024-01-01T00:00:00Z',
+    };
+    await strategiesDb.put(strategy);
+
+    const result = await buildExport(['strategies']);
+    expect(result.scopes).toEqual(['strategies']);
+    expect(result.data.strategies).toHaveLength(1);
+    expect(result.data.strategies![0].name).toBe('Test Strategy');
+    expect(result.data.strategies![0].root.children).toHaveLength(2);
   });
 
   it('sets exportedAt to a valid ISO string', async () => {

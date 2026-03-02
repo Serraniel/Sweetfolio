@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import type { Portfolio } from '$lib/types';
 import * as db from '$lib/storage/portfolios';
+import { removePortfolioFromStrategies } from './strategies';
 
 export const portfolios = writable<Portfolio[]>([]);
 
@@ -21,6 +22,20 @@ export async function updatePortfolio(portfolio: Portfolio): Promise<void> {
 export async function removePortfolio(id: string): Promise<void> {
   await db.remove(id);
   portfolios.update((list) => list.filter((p) => p.id !== id));
+  // Unlink from any strategy's generatedPortfolioIds
+  await removePortfolioFromStrategies(id);
+}
+
+export async function unlinkPortfoliosFromStrategy(portfolioIds: string[]): Promise<void> {
+  const current = get(portfolios);
+  for (const pid of portfolioIds) {
+    const portfolio = current.find((p) => p.id === pid);
+    if (portfolio && portfolio.sourceStrategyId) {
+      const updated = { ...portfolio, sourceStrategyId: null, updatedAt: new Date().toISOString() };
+      await db.put(updated);
+      portfolios.update((list) => list.map((p) => (p.id === pid ? updated : p)));
+    }
+  }
 }
 
 /**

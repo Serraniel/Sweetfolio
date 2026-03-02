@@ -1,10 +1,11 @@
-import type { Asset, Portfolio, CurrencyRate, StoredSimulation } from '$lib/types';
+import type { Asset, Portfolio, CurrencyRate, StoredSimulation, Strategy } from '$lib/types';
 
-export const CURRENT_VERSION = 2;
+export const CURRENT_VERSION = 3;
 
 export const ALL_SCOPES = [
   'assets',
   'portfolios',
+  'strategies',
   'settings',
   'currencies',
   'simulations',
@@ -20,6 +21,7 @@ export interface SweetfolioExport {
   data: {
     assets?: Asset[];
     portfolios?: Portfolio[];
+    strategies?: Strategy[];
     settings?: Record<string, unknown>;
     currencies?: CurrencyRate[];
     simulations?: StoredSimulation[];

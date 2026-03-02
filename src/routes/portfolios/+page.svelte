@@ -4,6 +4,7 @@
 	import Modal from '$lib/components/shared/Modal.svelte';
 	import { assets } from '$lib/stores/assets';
 	import { portfolios, addPortfolio, removePortfolio } from '$lib/stores/portfolios';
+	import { strategies } from '$lib/stores/strategies';
 	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
 	import { slugify } from '$lib/utils/slug';
 
@@ -30,12 +31,20 @@
 	}
 
 	const portfolioList = $derived(
-		$portfolios.map((p) => ({
-			id: p.id,
-			name: p.name,
-			assetCount: p.allocations.length,
-			isBenchmark: isPortfolioBenchmark(p.id)
-		}))
+		$portfolios.map((p) => {
+			const strategy = p.sourceStrategyId
+				? $strategies.find((s) => s.id === p.sourceStrategyId)
+				: undefined;
+			const outOfSync = strategy ? strategy.updatedAt > p.updatedAt : false;
+			return {
+				id: p.id,
+				name: p.name,
+				assetCount: p.allocations.length,
+				isBenchmark: isPortfolioBenchmark(p.id),
+				strategyName: strategy?.name ?? null,
+				outOfSync
+			};
+		})
 	);
 
 	async function handleCreate() {
@@ -55,6 +64,7 @@
 			name: newPortfolioName.trim(),
 			allocations,
 			isBenchmark: false,
+			sourceStrategyId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};
@@ -131,6 +141,13 @@
 									<h3>{portfolio.name}</h3>
 									{#if portfolio.isBenchmark}
 										<span class="badge">Benchmark</span>
+									{/if}
+									{#if portfolio.strategyName}
+										{#if portfolio.outOfSync}
+											<span class="badge out-of-sync">Out of sync</span>
+										{:else}
+											<span class="badge from-strategy">From: {portfolio.strategyName}</span>
+										{/if}
 									{/if}
 								</div>
 								<p class="portfolio-meta">{portfolio.assetCount} asset{portfolio.assetCount !== 1 ? 's' : ''}</p>
@@ -325,6 +342,16 @@
 		color: var(--color-accent);
 		border-radius: 999px;
 		font-weight: 500;
+	}
+
+	.badge.from-strategy {
+		background: rgba(141, 208, 196, 0.15);
+		color: var(--color-accent);
+	}
+
+	.badge.out-of-sync {
+		background: rgba(255, 183, 77, 0.15);
+		color: #f0a030;
 	}
 
 	.portfolio-meta {

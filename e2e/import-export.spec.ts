@@ -15,7 +15,7 @@ async function seedTestData(page: import('@playwright/test').Page) {
       // Delete and recreate the database to start fresh
       const deleteReq = indexedDB.deleteDatabase('sweetfolio');
       deleteReq.onsuccess = () => {
-        const openReq = indexedDB.open('sweetfolio', 2);
+        const openReq = indexedDB.open('sweetfolio', 3);
 
         openReq.onupgradeneeded = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
@@ -28,6 +28,7 @@ async function seedTestData(page: import('@playwright/test').Page) {
           const portfolioStore = db.createObjectStore('portfolios', { keyPath: 'id' });
           portfolioStore.createIndex('by-name', 'name', { unique: false });
 
+          db.createObjectStore('strategies', { keyPath: 'id' });
           db.createObjectStore('currencies', { keyPath: 'pair' });
           db.createObjectStore('settings', { keyPath: 'key' });
           db.createObjectStore('simulations', { keyPath: 'id' });
@@ -36,7 +37,7 @@ async function seedTestData(page: import('@playwright/test').Page) {
         openReq.onsuccess = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
           const tx = db.transaction(
-            ['assets', 'portfolios', 'currencies', 'settings'],
+            ['assets', 'portfolios', 'strategies', 'currencies', 'settings'],
             'readwrite',
           );
 
@@ -109,6 +110,39 @@ async function seedTestData(page: import('@playwright/test').Page) {
             updatedAt: '2024-01-10T00:00:00.000Z',
           });
 
+          // --- Strategies ---
+          const strategyStore = tx.objectStore('strategies');
+          strategyStore.put({
+            id: 'strategy-1',
+            name: 'Core-Satellite',
+            root: {
+              type: 'group',
+              id: 'root-1',
+              label: 'Root',
+              weight: 1,
+              children: [
+                {
+                  type: 'group',
+                  id: 'g1',
+                  label: 'Core',
+                  weight: 0.7,
+                  children: [
+                    { type: 'leaf', id: 'l1', assetId: 'asset-1', weight: 1 },
+                  ],
+                },
+                {
+                  type: 'leaf',
+                  id: 'l2',
+                  assetId: 'asset-2',
+                  weight: 0.3,
+                },
+              ],
+            },
+            generatedPortfolioIds: [],
+            createdAt: '2024-01-02T00:00:00.000Z',
+            updatedAt: '2024-01-10T00:00:00.000Z',
+          });
+
           // --- Currencies ---
           const currencyStore = tx.objectStore('currencies');
           currencyStore.put({
@@ -152,19 +186,20 @@ async function readAllData(page: import('@playwright/test').Page) {
     return new Promise<{
       assets: any[];
       portfolios: any[];
+      strategies: any[];
       currencies: any[];
       settings: Record<string, any>;
     }>((resolve, reject) => {
-      const openReq = indexedDB.open('sweetfolio', 2);
+      const openReq = indexedDB.open('sweetfolio', 3);
       openReq.onsuccess = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         const tx = db.transaction(
-          ['assets', 'portfolios', 'currencies', 'settings'],
+          ['assets', 'portfolios', 'strategies', 'currencies', 'settings'],
           'readonly',
         );
 
         const results: any = {};
-        const stores = ['assets', 'portfolios', 'currencies', 'settings'];
+        const stores = ['assets', 'portfolios', 'strategies', 'currencies', 'settings'];
         let pending = stores.length;
 
         for (const storeName of stores) {
@@ -238,6 +273,7 @@ test.describe('Import / Export round-trip', () => {
     const sourceData = await readAllData(sourcePage);
     expect(sourceData.assets).toHaveLength(2);
     expect(sourceData.portfolios).toHaveLength(1);
+    expect(sourceData.strategies).toHaveLength(1);
     expect(sourceData.currencies).toHaveLength(1);
     expect(sourceData.settings.mainCurrency).toBe('EUR');
 
@@ -267,10 +303,12 @@ test.describe('Import / Export round-trip', () => {
     expect(exportJson.version).toBe(2);
     expect(exportJson.scopes).toContain('assets');
     expect(exportJson.scopes).toContain('portfolios');
+    expect(exportJson.scopes).toContain('strategies');
     expect(exportJson.scopes).toContain('settings');
     expect(exportJson.scopes).toContain('currencies');
     expect(exportJson.data.assets).toHaveLength(2);
     expect(exportJson.data.portfolios).toHaveLength(1);
+    expect(exportJson.data.strategies).toHaveLength(1);
     expect(exportJson.data.currencies).toHaveLength(1);
 
     // Verify bulky data was stripped from export
@@ -293,6 +331,7 @@ test.describe('Import / Export round-trip', () => {
     const freshDataBefore = await readAllData(freshPage);
     expect(freshDataBefore.assets).toHaveLength(0);
     expect(freshDataBefore.portfolios).toHaveLength(0);
+    expect(freshDataBefore.strategies).toHaveLength(0);
     expect(freshDataBefore.currencies).toHaveLength(0);
 
     // Click "Import Data" button
@@ -372,6 +411,17 @@ test.describe('Import / Export round-trip', () => {
       }
     }
 
+    // --- Strategies ---
+    expect(importedData.strategies).toHaveLength(sourceData.strategies.length);
+    for (const sourceStrategy of sourceData.strategies) {
+      const imported = importedData.strategies.find((s: any) => s.id === sourceStrategy.id);
+      expect(imported, `Strategy ${sourceStrategy.name} should exist after import`).toBeTruthy();
+      expect(imported.name).toBe(sourceStrategy.name);
+      expect(imported.root.type).toBe('group');
+      expect(imported.root.children).toHaveLength(sourceStrategy.root.children.length);
+      expect(imported.generatedPortfolioIds).toEqual(sourceStrategy.generatedPortfolioIds);
+    }
+
     // --- Settings ---
     expect(importedData.settings.mainCurrency).toBe(sourceData.settings.mainCurrency);
     expect(importedData.settings.riskFreeRate).toBe(sourceData.settings.riskFreeRate);
@@ -391,6 +441,11 @@ test.describe('Import / Export round-trip', () => {
     await freshPage.waitForLoadState('networkidle');
 
     await expect(freshPage.getByText('My Test Portfolio')).toBeVisible({ timeout: 5000 });
+
+    await freshPage.goto('/strategies');
+    await freshPage.waitForLoadState('networkidle');
+
+    await expect(freshPage.getByText('Core-Satellite')).toBeVisible({ timeout: 5000 });
 
     await freshContext.close();
   });

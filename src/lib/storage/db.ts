@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'sweetfolio';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPending: Promise<IDBDatabase> | null = null;
@@ -59,6 +59,12 @@ export function getDB(): Promise<IDBDatabase> {
       // simulations store
       if (!db.objectStoreNames.contains('simulations')) {
         db.createObjectStore('simulations', { keyPath: 'id' });
+      }
+
+      // strategies store
+      if (!db.objectStoreNames.contains('strategies')) {
+        const strategyStore = db.createObjectStore('strategies', { keyPath: 'id' });
+        strategyStore.createIndex('by-name', 'name', { unique: false });
       }
 
       // Migration v1 → v2: add classification to existing assets

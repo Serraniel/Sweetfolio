@@ -1,19 +1,22 @@
 /**
- * URL sharing codec for portfolios and asset lists.
+ * URL sharing codec for portfolios, asset lists, and strategies.
  *
  * Encoding format (before compression):
  *   Portfolio: "p:Name|ISIN:0.6,ISIN:0.4"
  *   Asset list: "a:ISIN1,ISIN2,ISIN3"
+ *   Strategy: "s:<JSON>" where JSON is { name, root }
  *
  * The payload is compressed with lz-string (URI-safe encoding)
  * and appended as a hash fragment: #share=<compressed>
  */
 
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
+import type { StrategyGroupNode } from '$lib/types';
 
 export type SharePayload =
   | { type: 'portfolio'; name: string; allocations: Array<{ isin: string; weight: number }> }
-  | { type: 'assets'; isins: string[] };
+  | { type: 'assets'; isins: string[] }
+  | { type: 'strategy'; name: string; root: StrategyGroupNode };
 
 const SHARE_PREFIX = 'share=';
 
@@ -34,6 +37,15 @@ export function encodePortfolio(
  */
 export function encodeAssetList(isins: string[]): string {
   const raw = `a:${isins.join(',')}`;
+  return `#${SHARE_PREFIX}${compressToEncodedURIComponent(raw)}`;
+}
+
+/**
+ * Encode a strategy into a shareable hash fragment.
+ * The tree structure is serialized as compact JSON.
+ */
+export function encodeStrategy(name: string, root: StrategyGroupNode): string {
+  const raw = `s:${JSON.stringify({ name, root })}`;
   return `#${SHARE_PREFIX}${compressToEncodedURIComponent(raw)}`;
 }
 
@@ -67,6 +79,9 @@ function parseRaw(raw: string): SharePayload | null {
   if (raw.startsWith('a:')) {
     return parseAssetList(raw.slice(2));
   }
+  if (raw.startsWith('s:')) {
+    return parseStrategy(raw.slice(2));
+  }
   return null;
 }
 
@@ -97,4 +112,16 @@ function parseAssetList(body: string): SharePayload | null {
   const isins = body.split(',').filter(Boolean);
   if (isins.length === 0) return null;
   return { type: 'assets', isins };
+}
+
+function parseStrategy(body: string): SharePayload | null {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed.name !== 'string' || !parsed.name) return null;
+    if (!parsed.root || parsed.root.type !== 'group') return null;
+    return { type: 'strategy', name: parsed.name, root: parsed.root };
+  } catch {
+    return null;
+  }
 }

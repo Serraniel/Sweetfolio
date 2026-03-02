@@ -263,6 +263,7 @@
 			name: portfolioName,
 			allocations,
 			isBenchmark: false,
+			sourceStrategyId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
 		};

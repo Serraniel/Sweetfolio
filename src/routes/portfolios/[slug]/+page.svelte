@@ -10,6 +10,7 @@
 	import PriceChart from '$lib/charts/PriceChart.svelte';
 	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
+	import { strategies } from '$lib/stores/strategies';
 	import { assets } from '$lib/stores/assets';
 	import { encodePortfolio } from '$lib/sharing/codec';
 	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
@@ -25,6 +26,15 @@
 	const portfolioId = $derived(portfolio?.id ?? '');
 	const isCurrentBenchmark = $derived(
 		$benchmarkRef !== null && $benchmarkRef.type === 'portfolio' && $benchmarkRef.id === portfolioId
+	);
+
+	const sourceStrategy = $derived(
+		portfolio?.sourceStrategyId
+			? $strategies.find((s) => s.id === portfolio.sourceStrategyId) ?? null
+			: null
+	);
+	const isOutOfSync = $derived(
+		sourceStrategy && portfolio ? sourceStrategy.updatedAt > portfolio.updatedAt : false
 	);
 
 	// Edit modal state
@@ -272,6 +282,12 @@
 						{#if isCurrentBenchmark}
 							<span class="badge">Benchmark</span>
 						{/if}
+						{#if sourceStrategy}
+							<a href="/strategies/{slugify(sourceStrategy.name)}" class="badge from-strategy">From: {sourceStrategy.name}</a>
+							{#if isOutOfSync}
+								<span class="badge out-of-sync">Out of sync</span>
+							{/if}
+						{/if}
 					</div>
 				</div>
 				<div class="header-actions">
@@ -461,6 +477,21 @@
 		color: var(--color-accent);
 		border-radius: 999px;
 		font-weight: 500;
+	}
+
+	.badge.from-strategy {
+		background: rgba(141, 208, 196, 0.15);
+		color: var(--color-accent);
+		text-decoration: none;
+	}
+
+	.badge.from-strategy:hover {
+		background: rgba(141, 208, 196, 0.25);
+	}
+
+	.badge.out-of-sync {
+		background: rgba(255, 183, 77, 0.15);
+		color: #f0a030;
 	}
 
 	.header-actions {

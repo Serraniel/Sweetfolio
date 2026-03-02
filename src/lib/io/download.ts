@@ -252,6 +252,14 @@ export async function streamExport(
     await writer.write('"portfolios":' + JSON.stringify(portfolios));
   }
 
+  if (scopes.includes('strategies')) {
+    onPhase?.('Exporting strategies...');
+    if (!firstScope) await writer.write(',');
+    firstScope = false;
+    const strategies = await getAllSmall(db, 'strategies');
+    await writer.write('"strategies":' + JSON.stringify(strategies));
+  }
+
   if (scopes.includes('settings')) {
     onPhase?.('Exporting settings...');
     if (!firstScope) await writer.write(',');

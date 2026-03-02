@@ -1,4 +1,4 @@
-import type { Asset, Portfolio, CurrencyRate, StoredSimulation } from '$lib/types';
+import type { Asset, Portfolio, Strategy, CurrencyRate, StoredSimulation } from '$lib/types';
 import type { SweetfolioExport } from './schema';
 
 export interface ConflictItem<T> {
@@ -27,6 +27,7 @@ export interface SettingScopeReport {
 export interface ConflictReport {
   assets: ScopeReport<Asset>;
   portfolios: ScopeReport<Portfolio>;
+  strategies: ScopeReport<Strategy>;
   currencies: ScopeReport<CurrencyRate>;
   simulations: ScopeReport<StoredSimulation>;
   settings: SettingScopeReport;
@@ -35,6 +36,7 @@ export interface ConflictReport {
 interface ExistingData {
   assets: Asset[];
   portfolios: Portfolio[];
+  strategies: Strategy[];
   currencies: CurrencyRate[];
   simulations: StoredSimulation[];
   settings: Record<string, unknown>;
@@ -105,6 +107,7 @@ export function detectConflicts(
   return {
     assets: detectIdConflicts(imported.assets, existing.assets),
     portfolios: detectIdConflicts(imported.portfolios, existing.portfolios),
+    strategies: detectIdConflicts(imported.strategies, existing.strategies),
     currencies: currencyReport,
     simulations: detectIdConflicts(imported.simulations, existing.simulations),
     settings: settingsReport,

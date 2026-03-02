@@ -15,6 +15,14 @@ The application will be available at `http://localhost:8080`.
 
 ### Docker Compose
 
+A ready-to-use [`docker-compose.yml`](../docker-compose.yml) is included in the repository root:
+
+```bash
+docker compose up -d
+```
+
+Or create your own with a custom port:
+
 ```yaml
 services:
   sweetfolio:

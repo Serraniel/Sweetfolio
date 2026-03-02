@@ -1,5 +1,6 @@
 import { loadAssets } from './assets';
 import { loadPortfolios, portfolios } from './portfolios';
+import { loadStrategies } from './strategies';
 import { loadSettings, settings } from './settings';
 import { loadCurrencies } from './currencies';
 import { setBenchmark } from './benchmark';
@@ -18,7 +19,7 @@ export async function initStores(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  await Promise.all([loadAssets(), loadPortfolios(), loadSettings(), loadCurrencies()]);
+  await Promise.all([loadAssets(), loadPortfolios(), loadStrategies(), loadSettings(), loadCurrencies()]);
 
   // Migrate: if no benchmark setting exists but a portfolio has isBenchmark, adopt it
   const s = get(settings);
