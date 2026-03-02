@@ -204,13 +204,15 @@
 	let editingTx: Transaction | null = $state(null);
 
 	$effect(() => {
-		if (portfolioId && isTracked) {
-			loadTransactionsByPortfolio(portfolioId).then((txs) => {
-				portfolioTransactions = txs;
-			});
-		} else {
+		if (!portfolioId || !isTracked) {
 			portfolioTransactions = [];
+			return;
 		}
+		let cancelled = false;
+		loadTransactionsByPortfolio(portfolioId).then((txs) => {
+			if (!cancelled) portfolioTransactions = txs;
+		});
+		return () => { cancelled = true; };
 	});
 
 	function handleAddTx() {
@@ -230,13 +232,14 @@
 	}
 
 	async function handleSaveTx(tx: Transaction) {
+		const plain = JSON.parse(JSON.stringify(tx)) as Transaction;
 		const isEdit = editingTx !== null;
 		if (isEdit) {
-			await updateTransaction(tx);
-			portfolioTransactions = portfolioTransactions.map((t) => (t.id === tx.id ? tx : t));
+			await updateTransaction(plain);
+			portfolioTransactions = portfolioTransactions.map((t) => (t.id === plain.id ? plain : t));
 		} else {
-			await addTransaction(tx);
-			portfolioTransactions = [...portfolioTransactions, tx];
+			await addTransaction(plain);
+			portfolioTransactions = [...portfolioTransactions, plain];
 		}
 	}
 

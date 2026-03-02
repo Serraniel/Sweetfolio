@@ -36,13 +36,13 @@
 		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
-	function formatNumber(value: number | null): string {
-		if (value === null) return '—';
+	function formatNumber(value: number | null | undefined): string {
+		if (value == null || isNaN(value)) return '—';
 		return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	}
 
 	function computeTotal(tx: Transaction): string {
-		if (tx.amount !== null) return formatNumber(tx.amount);
+		if (tx.type === 'dividend') return formatNumber(tx.amount);
 		if (tx.quantity !== null && tx.price !== null) {
 			const subtotal = tx.quantity * tx.price;
 			const total = tx.type === 'sell' ? subtotal - tx.fee : subtotal + tx.fee;
