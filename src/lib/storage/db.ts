@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'sweetfolio';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbInstance: IDBDatabase | null = null;
 let dbPending: Promise<IDBDatabase> | null = null;
@@ -67,6 +67,14 @@ export function getDB(): Promise<IDBDatabase> {
         strategyStore.createIndex('by-name', 'name', { unique: false });
       }
 
+      // transactions store
+      if (!db.objectStoreNames.contains('transactions')) {
+        const txStore = db.createObjectStore('transactions', { keyPath: 'id' });
+        txStore.createIndex('by-portfolioId', 'portfolioId', { unique: false });
+        txStore.createIndex('by-date', 'date', { unique: false });
+        txStore.createIndex('by-assetId', 'assetId', { unique: false });
+      }
+
       // Migration v1 → v2: add classification to existing assets
       if (event.oldVersion === 1) {
         const tx = (event.target as IDBOpenDBRequest).transaction!;
@@ -88,6 +96,27 @@ export function getDB(): Promise<IDBDatabase> {
         };
         cursorReq.onerror = () => {
           console.error('Failed to backfill asset classification during migration', cursorReq.error);
+        };
+      }
+
+      // Migration v3 → v4: add mode/trackCash/cashCurrency to portfolios
+      if (event.oldVersion < 4) {
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        const pStore = tx.objectStore('portfolios');
+        const cursorReq = pStore.openCursor();
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (cursor) {
+            const p = cursor.value;
+            if (!p.mode) {
+              p.mode = 'model';
+              p.trackCash = false;
+              p.cashCurrency = 'EUR';
+              p.sourceStrategyId = p.sourceStrategyId ?? null;
+              cursor.update(p);
+            }
+            cursor.continue();
+          }
         };
       }
     };
