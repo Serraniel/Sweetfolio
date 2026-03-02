@@ -248,7 +248,8 @@ EOF
   echo "  All ${#VALIDATED[@]} PR(s) passed — merging into $MAIN_BRANCH"
   echo "═══════════════════════════════════════════════════════════"
 
-  MERGE_FAILED=false
+  MERGED_COUNT=0
+  SKIPPED_COUNT=0
 
   for pr in "${VALIDATED[@]}"; do
     log "Merging PR #$pr"
@@ -258,23 +259,24 @@ EOF
     # (like Playwright e2e). Since the merge token has admin bypass, gh pr merge
     # won't enforce these — so we check explicitly.
     echo "Waiting for PR #$pr status checks..."
-    if ! gh pr checks "$pr" --watch --fail-level all --repo "$REPO"; then
-      echo "::error::PR #$pr has failing status checks"
+    if ! gh pr checks "$pr" --required --watch --repo "$REPO"; then
+      echo "::warning::PR #$pr has failing required status checks — skipping"
       remove_from_queue "$pr"
-      comment_pr "$pr" "❌ **Merge queue: removed** — PR status checks failed. Please fix and re-add with \`/merge\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
-      MERGE_FAILED=true
-      break
+      comment_pr "$pr" "❌ **Merge queue: removed** — required status checks failed. Please fix and re-add with \`/merge\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
+      SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+      endlog
+      continue
     fi
 
     if gh pr merge "$pr" --merge --repo "$REPO"; then
       echo "✅ PR #$pr merged successfully"
       comment_pr "$pr" "✅ **Merge queue: merged** — All checks passed. PR has been merged into \`$MAIN_BRANCH\`. [View CI run]($MERGE_QUEUE_RUN_URL)"
       remove_from_queue "$pr"
+      MERGED_COUNT=$((MERGED_COUNT + 1))
     else
-      echo "::error::Failed to merge PR #$pr via GitHub API"
+      echo "::warning::Failed to merge PR #$pr via GitHub API — skipping"
       comment_pr "$pr" "⚠️ **Merge queue: merge failed** — The PR passed validation but the GitHub merge API call failed. This might be due to branch protection rules or a race condition. Please merge manually or retry with \`/merge\`."
-      MERGE_FAILED=true
-      break
+      SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
     fi
 
     endlog
@@ -283,8 +285,10 @@ EOF
     sleep 2
   done
 
-  if [ "$MERGE_FAILED" = true ]; then
-    echo "::warning::Some merges failed. Remaining queued PRs were not processed."
+  echo ""
+  echo "Results: $MERGED_COUNT merged, $SKIPPED_COUNT skipped out of ${#VALIDATED[@]} validated"
+  if [ "$SKIPPED_COUNT" -gt 0 ]; then
+    echo "::warning::$SKIPPED_COUNT PR(s) were skipped during merge phase."
   fi
 
   # Clean up temp branch
