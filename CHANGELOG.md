@@ -1,3 +1,15 @@
+## [0.5.1](https://github.com/Serraniel/Sweetfolio/compare/v0.5.0...v0.5.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* **charts:** prevent range init effect from overriding user selection ([b51e204](https://github.com/Serraniel/Sweetfolio/commit/b51e204fb2d720496df5380ba8753f9f94416229))
+* **charts:** prevent range init from overriding user 'all' selection ([#36](https://github.com/Serraniel/Sweetfolio/issues/36)) ([f6a6c2a](https://github.com/Serraniel/Sweetfolio/commit/f6a6c2aee37c90dd7fa0ead8453446c440d65050))
+* **compare:** use asset slugs instead of GUIDs in compare URLs ([ffd11db](https://github.com/Serraniel/Sweetfolio/commit/ffd11dbc1a3bfe212ccc29142ed1c77792bcf1e1))
+* **compare:** use asset slugs instead of GUIDs in compare URLs ([#37](https://github.com/Serraniel/Sweetfolio/issues/37)) ([c63d074](https://github.com/Serraniel/Sweetfolio/commit/c63d074275e875ed347de21f995eb219300d446a))
+* resolve version 0.0.0 in npm dev by reading git tags ([#35](https://github.com/Serraniel/Sweetfolio/issues/35)) ([4ca46d8](https://github.com/Serraniel/Sweetfolio/commit/4ca46d878e9438444c25aeb8f8cbb6f2f75686f0))
+* resolve version 0.0.0 in npm dev by reading git tags at build time ([d5aa344](https://github.com/Serraniel/Sweetfolio/commit/d5aa344533593048cf6fb7bc127c54945a1ecd51))
+
 # [0.5.0](https://github.com/Serraniel/Sweetfolio/compare/v0.4.0...v0.5.0) (2026-03-01)
 
 
