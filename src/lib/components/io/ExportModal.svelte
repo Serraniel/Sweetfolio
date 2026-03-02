@@ -14,6 +14,7 @@
 		assets: 'Assets',
 		portfolios: 'Portfolios',
 		strategies: 'Strategies',
+		transactions: 'Transactions',
 		settings: 'Settings',
 		currencies: 'Exchange Rates',
 		simulations: 'Simulations',

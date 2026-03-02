@@ -7,6 +7,7 @@ import * as strategiesDb from '$lib/storage/strategies';
 import * as settingsDb from '$lib/storage/settings';
 import * as currenciesDb from '$lib/storage/currencies';
 import * as simulationsDb from '$lib/storage/simulations';
+import * as transactionsDb from '$lib/storage/transactions';
 
 /**
  * Strip bulky regenerable fields from assets to keep export lean.
@@ -48,6 +49,7 @@ export async function buildExport(scopes: SweetfolioScope[]): Promise<Sweetfolio
     const sims = await simulationsDb.getAll();
     data.simulations = sims.map(stripSimulationBulk);
   }
+  if (scopes.includes('transactions')) data.transactions = await transactionsDb.getAll();
 
   return {
     format: 'sweetfolio',

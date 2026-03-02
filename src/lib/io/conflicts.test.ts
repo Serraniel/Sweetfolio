@@ -8,6 +8,7 @@ const emptyExisting = {
   strategies: [],
   currencies: [],
   simulations: [],
+  transactions: [],
   settings: {},
 };
 

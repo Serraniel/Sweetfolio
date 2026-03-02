@@ -20,6 +20,24 @@ const migrations: Record<number, Migration> = {
     // v2→v3: strategies scope added (no data transformation needed)
     return { ...(data as Record<string, unknown>), version: 3 };
   },
+  3: (data) => {
+    const d = data as Record<string, unknown>;
+    const inner = d.data as Record<string, unknown>;
+    // Add default mode fields to portfolios
+    if (Array.isArray(inner.portfolios)) {
+      for (const p of inner.portfolios) {
+        const portfolio = p as Record<string, unknown>;
+        if (!portfolio.mode) {
+          portfolio.mode = 'model';
+          portfolio.trackCash = false;
+          portfolio.cashCurrency = 'EUR';
+          portfolio.sourceStrategyId = portfolio.sourceStrategyId ?? null;
+        }
+      }
+    }
+    // Transactions scope didn't exist before v4, nothing to migrate
+    return { ...d, version: 4 };
+  },
 };
 
 export function migrateToLatest(data: SweetfolioExport): SweetfolioExport {
