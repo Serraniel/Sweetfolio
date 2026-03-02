@@ -39,7 +39,7 @@ jobs:
 
       - name: Checkout repository
         if: steps.check.outputs.queued != '0'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
