@@ -8,7 +8,7 @@ beforeEach(() => {
 	uuidCounter = 0;
 	vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
 		uuidCounter++;
-		return `mock-uuid-${uuidCounter}`;
+		return `mock-uuid-${uuidCounter}` as ReturnType<typeof crypto.randomUUID>;
 	});
 });
 
