@@ -15,6 +15,7 @@
 	import TransactionsSection from '$lib/components/TransactionsSection.svelte';
 	import TransactionFormModal from '$lib/components/TransactionFormModal.svelte';
 	import HoldingsSection from '$lib/components/HoldingsSection.svelte';
+	import DriftSection from '$lib/components/DriftSection.svelte';
 	import {
 		loadTransactionsByPortfolio,
 		addTransaction,
@@ -23,6 +24,7 @@
 	} from '$lib/stores/transactions';
 	import { computeHoldings, computeCashBalance } from '$lib/engine/holdings';
 	import { FifoCostBasis } from '$lib/engine/cost-basis/fifo';
+	import { computeDrift, computeRebalanceTrades } from '$lib/engine/drift';
 	import type { Transaction, Holding, RealizedGain } from '$lib/types';
 	import { encodePortfolio } from '$lib/sharing/codec';
 	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
@@ -270,6 +272,20 @@
 		return fifo.computeRealizedGains(portfolioTransactions);
 	});
 
+	// --- Drift & Rebalancing (mode 'both' only) ---
+	const isBothMode = $derived(portfolio?.mode === 'both');
+
+	const driftItems = $derived.by(() => {
+		if (!isBothMode || !portfolio || currentHoldings.length === 0) return [];
+		return computeDrift(portfolio.allocations, currentHoldings);
+	});
+
+	const rebalanceTrades = $derived.by(() => {
+		if (!isBothMode || !portfolio || currentHoldings.length === 0) return [];
+		const totalValue = currentHoldings.reduce((sum, h) => sum + h.currentValue, 0);
+		return computeRebalanceTrades(portfolio.allocations, currentHoldings, totalValue);
+	});
+
 	// --- Cash balance ---
 	const cashBalance = $derived.by((): number => {
 		if (!isTracked || !portfolio?.trackCash || portfolioTransactions.length === 0) return 0;
@@ -436,6 +452,14 @@
 						</div>
 					</Card>
 				</section>
+			{/if}
+
+			{#if isBothMode && driftItems.length > 0}
+				<DriftSection
+					{driftItems}
+					{rebalanceTrades}
+					assets={$assets}
+				/>
 			{/if}
 		{/if}
 
