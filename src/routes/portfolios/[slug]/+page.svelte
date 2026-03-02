@@ -14,13 +14,16 @@
 	import { assets } from '$lib/stores/assets';
 	import TransactionsSection from '$lib/components/TransactionsSection.svelte';
 	import TransactionFormModal from '$lib/components/TransactionFormModal.svelte';
+	import HoldingsSection from '$lib/components/HoldingsSection.svelte';
 	import {
 		loadTransactionsByPortfolio,
 		addTransaction,
 		updateTransaction,
 		removeTransaction
 	} from '$lib/stores/transactions';
-	import type { Transaction } from '$lib/types';
+	import { computeHoldings } from '$lib/engine/holdings';
+	import { FifoCostBasis } from '$lib/engine/cost-basis/fifo';
+	import type { Transaction, Holding, RealizedGain } from '$lib/types';
 	import { encodePortfolio } from '$lib/sharing/codec';
 	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { settings } from '$lib/stores/settings';
@@ -243,6 +246,24 @@
 		}
 	}
 
+	// --- Holdings (computed from transactions) ---
+	const currentHoldings = $derived.by((): Holding[] => {
+		if (!isTracked || portfolioTransactions.length === 0) return [];
+		const currentPrices = new Map<string, number>();
+		for (const a of $assets) {
+			if (a.prices.length > 0) {
+				currentPrices.set(a.id, a.prices[a.prices.length - 1].close);
+			}
+		}
+		return computeHoldings(portfolioTransactions, currentPrices);
+	});
+
+	const realizedGains = $derived.by((): RealizedGain[] => {
+		if (!isTracked || portfolioTransactions.length === 0) return [];
+		const fifo = new FifoCostBasis();
+		return fifo.computeRealizedGains(portfolioTransactions);
+	});
+
 	// Toast notifications
 	let toasts: Array<{ id: number; message: string }> = $state([]);
 	let toastCounter = 0;
@@ -382,6 +403,12 @@
 				onadd={handleAddTx}
 				onedit={handleEditTx}
 				ondelete={handleDeleteTx}
+			/>
+
+			<HoldingsSection
+				holdings={currentHoldings}
+				assets={$assets}
+				{realizedGains}
 			/>
 		{/if}
 
