@@ -4,6 +4,9 @@
 	import { ALL_SCOPES, type SweetfolioScope, type SweetfolioExport } from '$lib/io/schema';
 	import { parseImportFile } from '$lib/io/import';
 	import { detectConflicts, type ConflictReport, type ConflictItem, type SettingConflict } from '$lib/io/conflicts';
+	import { parsePortfolioPerformanceXML, ppToSweetfolioExport } from '$lib/parsers/portfolio-performance';
+	import { parseParqetCSV, parqetToSweetfolioExport } from '$lib/parsers/parqet';
+	import { parseBrokerCSV, brokerCSVToSweetfolioExport } from '$lib/parsers/broker-csv';
 	import { applyImport } from '$lib/io/apply';
 	import * as assetsDb from '$lib/storage/assets';
 	import * as portfoliosDb from '$lib/storage/portfolios';
@@ -24,11 +27,21 @@
 		open?: boolean;
 	} = $props();
 
-	type Step = 'select-file' | 'select-scopes' | 'resolve-conflicts' | 'applying' | 'done';
+	type ImportSource = 'sweetfolio' | 'portfolio-performance' | 'parqet' | 'broker-csv';
+	type Step = 'select-source' | 'select-file' | 'select-scopes' | 'resolve-conflicts' | 'applying' | 'done';
 
-	let step: Step = $state('select-file');
+	let step: Step = $state('select-source');
+	let importSource: ImportSource = $state('sweetfolio');
+	let importWarnings: string[] = $state([]);
 	let error: string | null = $state(null);
 	let importData: SweetfolioExport | null = $state(null);
+
+	const sourceLabels: Record<ImportSource, { label: string; description: string; accept: string }> = {
+		sweetfolio: { label: 'Sweetfolio Export', description: 'Import a .json file exported from Sweetfolio', accept: '.json' },
+		'portfolio-performance': { label: 'Portfolio Performance', description: 'Import an XML export from Portfolio Performance', accept: '.xml' },
+		parqet: { label: 'Parqet', description: 'Import a CSV export from Parqet', accept: '.csv' },
+		'broker-csv': { label: 'Broker CSV', description: 'Import transaction CSV from Trade Republic, Scalable Capital, ING, etc.', accept: '.csv' },
+	};
 	let selectedScopes: Set<SweetfolioScope> = $state(new Set());
 	let conflictReport: ConflictReport | null = $state(null);
 	let applyProgress: string = $state('');
@@ -44,7 +57,9 @@
 	};
 
 	function reset() {
-		step = 'select-file';
+		step = 'select-source';
+		importSource = 'sweetfolio';
+		importWarnings = [];
 		error = null;
 		importData = null;
 		selectedScopes = new Set();
@@ -57,13 +72,43 @@
 		reset();
 	}
 
+	function selectSource(source: ImportSource) {
+		importSource = source;
+		step = 'select-file';
+	}
+
 	async function handleFileSelect(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!input.files || input.files.length === 0) return;
 		error = null;
+		importWarnings = [];
 
 		try {
-			importData = await parseImportFile(input.files[0]);
+			const file = input.files[0];
+
+			if (importSource === 'sweetfolio') {
+				importData = await parseImportFile(file);
+			} else {
+				const text = await file.text();
+				let result: SweetfolioExport;
+
+				if (importSource === 'portfolio-performance') {
+					const parsed = parsePortfolioPerformanceXML(text);
+					importWarnings = parsed.warnings;
+					result = ppToSweetfolioExport(parsed);
+				} else if (importSource === 'parqet') {
+					const parsed = parseParqetCSV(text);
+					importWarnings = parsed.warnings;
+					result = parqetToSweetfolioExport(parsed);
+				} else {
+					const parsed = parseBrokerCSV(text);
+					importWarnings = parsed.warnings;
+					result = brokerCSVToSweetfolioExport(parsed);
+				}
+
+				importData = result;
+			}
+
 			selectedScopes = new Set(importData.scopes);
 			step = 'select-scopes';
 		} catch (err) {
@@ -186,9 +231,22 @@
 </script>
 
 <Modal bind:open title="Import Data">
-	{#if step === 'select-file'}
-		<p class="wizard-description">Select a Sweetfolio export file (.json) to import.</p>
-		<input type="file" accept=".json" onchange={handleFileSelect} class="file-input" />
+	{#if step === 'select-source'}
+		<p class="wizard-description">Choose the import source:</p>
+		<div class="source-list">
+			{#each Object.entries(sourceLabels) as [key, info]}
+				<button class="source-option" onclick={() => selectSource(key as ImportSource)}>
+					<span class="source-label">{info.label}</span>
+					<span class="source-desc">{info.description}</span>
+				</button>
+			{/each}
+		</div>
+
+	{:else if step === 'select-file'}
+		<p class="wizard-description">
+			Select a {sourceLabels[importSource].label} file ({sourceLabels[importSource].accept}) to import.
+		</p>
+		<input type="file" accept={sourceLabels[importSource].accept} onchange={handleFileSelect} class="file-input" />
 
 		{#if error}
 			<div class="wizard-error">{error}</div>
@@ -196,9 +254,21 @@
 
 	{:else if step === 'select-scopes'}
 		<p class="wizard-description">
-			File exported on {importData?.exportedAt ? new Date(importData.exportedAt).toLocaleDateString() : 'unknown'}.
+			{#if importSource === 'sweetfolio'}
+				File exported on {importData?.exportedAt ? new Date(importData.exportedAt).toLocaleDateString() : 'unknown'}.
+			{:else}
+				Parsed from {sourceLabels[importSource].label}.
+			{/if}
 			Select which data to import:
 		</p>
+
+		{#if importWarnings.length > 0}
+			<div class="wizard-warnings">
+				{#each importWarnings as warning}
+					<p>{warning}</p>
+				{/each}
+			</div>
+		{/if}
 
 		<div class="scope-list">
 			{#each ALL_SCOPES as scope}
@@ -316,7 +386,10 @@
 	{/if}
 
 	{#snippet footer()}
-		{#if step === 'select-file'}
+		{#if step === 'select-source'}
+			<Button variant="default" onclick={handleClose}>Cancel</Button>
+		{:else if step === 'select-file'}
+			<Button variant="default" onclick={() => step = 'select-source'}>Back</Button>
 			<Button variant="default" onclick={handleClose}>Cancel</Button>
 		{:else if step === 'select-scopes'}
 			<Button variant="default" onclick={handleClose}>Cancel</Button>
@@ -381,6 +454,55 @@
 	.scope-unavailable {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-muted);
+	}
+
+	.source-list {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+	}
+
+	.source-option {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: var(--spacing-md);
+		background: var(--color-bg-tertiary);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		text-align: left;
+		cursor: pointer;
+		transition: border-color var(--transition-fast), background var(--transition-fast);
+	}
+
+	.source-option:hover {
+		border-color: var(--color-accent);
+		background: rgba(141, 208, 196, 0.05);
+	}
+
+	.source-label {
+		font-size: var(--font-size-sm);
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.source-desc {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+	}
+
+	.wizard-warnings {
+		margin-bottom: var(--spacing-md);
+		font-size: var(--font-size-xs);
+		color: var(--color-warning, #e6a817);
+		padding: var(--spacing-xs) var(--spacing-sm);
+		background: rgba(230, 168, 23, 0.08);
+		border: 1px solid rgba(230, 168, 23, 0.2);
+		border-radius: var(--radius-sm);
+	}
+
+	.wizard-warnings p {
+		margin: 2px 0;
 	}
 
 	.wizard-error {
