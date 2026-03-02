@@ -12,6 +12,15 @@
 	import { portfolios, updatePortfolio, removePortfolio } from '$lib/stores/portfolios';
 	import { strategies } from '$lib/stores/strategies';
 	import { assets } from '$lib/stores/assets';
+	import TransactionsSection from '$lib/components/TransactionsSection.svelte';
+	import TransactionFormModal from '$lib/components/TransactionFormModal.svelte';
+	import {
+		loadTransactionsByPortfolio,
+		addTransaction,
+		updateTransaction,
+		removeTransaction
+	} from '$lib/stores/transactions';
+	import type { Transaction } from '$lib/types';
 	import { encodePortfolio } from '$lib/sharing/codec';
 	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
 	import { settings } from '$lib/stores/settings';
@@ -188,6 +197,52 @@
 		}
 	}
 
+	// --- Transactions ---
+	const isTracked = $derived(portfolio?.mode === 'tracked' || portfolio?.mode === 'both');
+	let portfolioTransactions: Transaction[] = $state([]);
+	let showTxModal = $state(false);
+	let editingTx: Transaction | null = $state(null);
+
+	$effect(() => {
+		if (!portfolioId || !isTracked) {
+			portfolioTransactions = [];
+			return;
+		}
+		let cancelled = false;
+		loadTransactionsByPortfolio(portfolioId).then((txs) => {
+			if (!cancelled) portfolioTransactions = txs;
+		});
+		return () => { cancelled = true; };
+	});
+
+	function handleAddTx() {
+		editingTx = null;
+		showTxModal = true;
+	}
+
+	function handleEditTx(tx: Transaction) {
+		editingTx = tx;
+		showTxModal = true;
+	}
+
+	async function handleDeleteTx(tx: Transaction) {
+		if (!confirm(`Delete this ${tx.type} transaction?`)) return;
+		await removeTransaction(tx.id);
+		portfolioTransactions = portfolioTransactions.filter((t) => t.id !== tx.id);
+	}
+
+	async function handleSaveTx(tx: Transaction) {
+		const plain = JSON.parse(JSON.stringify(tx)) as Transaction;
+		const isEdit = editingTx !== null;
+		if (isEdit) {
+			await updateTransaction(plain);
+			portfolioTransactions = portfolioTransactions.map((t) => (t.id === plain.id ? plain : t));
+		} else {
+			await addTransaction(plain);
+			portfolioTransactions = [...portfolioTransactions, plain];
+		}
+	}
+
 	// Toast notifications
 	let toasts: Array<{ id: number; message: string }> = $state([]);
 	let toastCounter = 0;
@@ -319,6 +374,17 @@
 			</Card>
 		</section>
 
+		{#if isTracked}
+			<TransactionsSection
+				transactions={portfolioTransactions}
+				assets={$assets}
+				portfolioId={portfolioId}
+				onadd={handleAddTx}
+				onedit={handleEditTx}
+				ondelete={handleDeleteTx}
+			/>
+		{/if}
+
 		<section class="metrics-section">
 			<h2>Financial Metrics</h2>
 			<Card>
@@ -357,6 +423,16 @@
 				</Card>
 			{/if}
 		</section>
+
+		{#if isTracked}
+			<TransactionFormModal
+				bind:open={showTxModal}
+				transaction={editingTx}
+				assets={$assets}
+				{portfolioId}
+				onsave={handleSaveTx}
+			/>
+		{/if}
 
 		<Modal bind:open={showEditModal} title="Edit Portfolio">
 			<div class="edit-form">
