@@ -90,11 +90,14 @@ describe('Storage: portfolios', () => {
     const portfolio: Portfolio = {
       id: 'port-1',
       name: 'My Portfolio',
+      mode: 'model',
       allocations: [
         { assetId: 'a1', weight: 0.6 },
         { assetId: 'a2', weight: 0.4 },
       ],
       isBenchmark: false,
+      trackCash: false,
+      cashCurrency: 'EUR',
       sourceStrategyId: null,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-01T00:00:00Z',

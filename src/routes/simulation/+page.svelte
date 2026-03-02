@@ -261,8 +261,11 @@
 		const portfolio = {
 			id: crypto.randomUUID(),
 			name: portfolioName,
+			mode: 'model' as const,
 			allocations,
 			isBenchmark: false,
+			trackCash: false,
+			cashCurrency: 'EUR',
 			sourceStrategyId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()

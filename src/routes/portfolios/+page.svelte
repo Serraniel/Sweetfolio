@@ -62,8 +62,11 @@
 		const portfolio = {
 			id: portfolioId,
 			name: newPortfolioName.trim(),
+			mode: 'model' as const,
 			allocations,
 			isBenchmark: false,
+			trackCash: false,
+			cashCurrency: 'EUR',
 			sourceStrategyId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString()
