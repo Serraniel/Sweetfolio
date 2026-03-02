@@ -1,0 +1,60 @@
+name: Merge Queue Retry
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: merge-queue-process
+      cancel-in-progress: false
+    steps:
+      - name: Check for queued PRs
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          QUEUED=$(gh pr list \
+            --label merge-queue \
+            --state open \
+            --json number \
+            --jq 'length' \
+            --repo "$REPO")
+          echo "queued=$QUEUED" >> $GITHUB_OUTPUT
+          if [ "$QUEUED" -eq 0 ]; then
+            echo "No PRs in merge queue. Nothing to do."
+          else
+            echo "$QUEUED PR(s) in merge queue — processing."
+          fi
+
+      - name: Checkout repository
+        if: steps.check.outputs.queued != '0'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Setup Node.js
+        if: steps.check.outputs.queued != '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Process merge queue
+        if: steps.check.outputs.queued != '0'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MERGE_QUEUE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/merge-queue.sh
