@@ -21,7 +21,7 @@
 		updateTransaction,
 		removeTransaction
 	} from '$lib/stores/transactions';
-	import { computeHoldings } from '$lib/engine/holdings';
+	import { computeHoldings, computeCashBalance } from '$lib/engine/holdings';
 	import { FifoCostBasis } from '$lib/engine/cost-basis/fifo';
 	import type { Transaction, Holding, RealizedGain } from '$lib/types';
 	import { encodePortfolio } from '$lib/sharing/codec';
@@ -52,11 +52,15 @@
 	// Edit modal state
 	let showEditModal = $state(false);
 	let editName = $state('');
+	let editTrackCash = $state(false);
+	let editCashCurrency = $state('EUR');
 	let editAllocations: Array<{ id: string; name: string; weight: number; selected: boolean }> = $state([]);
 
 	function openEditModal() {
 		if (!portfolio) return;
 		editName = portfolio.name;
+		editTrackCash = portfolio.trackCash;
+		editCashCurrency = portfolio.cashCurrency;
 		editAllocations = $assets.map((a) => {
 			const alloc = portfolio.allocations.find((al) => al.assetId === a.id);
 			return {
@@ -85,6 +89,8 @@
 			...portfolio,
 			name: newName,
 			allocations,
+			trackCash: editTrackCash,
+			cashCurrency: editCashCurrency,
 			updatedAt: new Date().toISOString()
 		});
 		showEditModal = false;
@@ -264,6 +270,12 @@
 		return fifo.computeRealizedGains(portfolioTransactions);
 	});
 
+	// --- Cash balance ---
+	const cashBalance = $derived.by((): number => {
+		if (!isTracked || !portfolio?.trackCash || portfolioTransactions.length === 0) return 0;
+		return computeCashBalance(portfolioTransactions, 0);
+	});
+
 	// Toast notifications
 	let toasts: Array<{ id: number; message: string }> = $state([]);
 	let toastCounter = 0;
@@ -410,6 +422,21 @@
 				assets={$assets}
 				{realizedGains}
 			/>
+
+			{#if portfolio.trackCash}
+				<section class="cash-section">
+					<h2>Cash Position</h2>
+					<Card>
+						<div class="cash-display">
+							<span class="cash-label">Available Cash</span>
+							<span class="cash-value" class:negative={cashBalance < 0}>
+								{cashBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+								{portfolio.cashCurrency}
+							</span>
+						</div>
+					</Card>
+				</section>
+			{/if}
 		{/if}
 
 		<section class="metrics-section">
@@ -467,6 +494,21 @@
 					<label for="edit-portfolio-name">Portfolio Name</label>
 					<input id="edit-portfolio-name" type="text" bind:value={editName} />
 				</div>
+
+				{#if isTracked}
+					<div class="form-field inline">
+						<label>
+							<input type="checkbox" bind:checked={editTrackCash} />
+							Track cash position
+						</label>
+					</div>
+					{#if editTrackCash}
+						<div class="form-field">
+							<label for="edit-cash-currency">Cash Currency</label>
+							<input id="edit-cash-currency" type="text" bind:value={editCashCurrency} placeholder="EUR" />
+						</div>
+					{/if}
+				{/if}
 
 				{#if editAllocations.length === 0}
 					<div class="form-notice">
@@ -726,5 +768,38 @@
 	.edit-allocation-percent {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-xs);
+	}
+
+	.form-field.inline label {
+		flex-direction: row;
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		cursor: pointer;
+	}
+
+	/* Cash section */
+	.cash-display {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: var(--spacing-md);
+	}
+
+	.cash-label {
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		font-weight: 500;
+	}
+
+	.cash-value {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-lg);
+		font-weight: 600;
+		color: var(--color-text-primary);
+	}
+
+	.cash-value.negative {
+		color: var(--color-negative);
 	}
 </style>
