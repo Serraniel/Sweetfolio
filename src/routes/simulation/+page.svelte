@@ -12,9 +12,11 @@
 	import { annualizedLogReturn } from '$lib/engine/returns';
 	import { annualizedVolatility } from '$lib/engine/volatility';
 	import { convertPrices } from '$lib/engine/currency';
+	import { alignPriceSeries } from '$lib/utils/dates';
+	import { logReturns, stddev } from '$lib/utils/math';
 	import { generateAssetColors } from '$lib/charts/utils';
 	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
-	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint } from '$lib/types';
+	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint, WeightConstraint } from '$lib/types';
 	import { slugify } from '$lib/utils/slug';
 
 	let simulationCount = $state(10000);
@@ -26,6 +28,9 @@
 
 	// Derive available assets with selection state
 	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
+	let showConstraints = $state(false);
+	// Per-asset weight constraints: min/max as percentages (0-100), null = unconstrained
+	let assetConstraints: Array<{ id: string; minPct: number | null; maxPct: number | null }> = $state([]);
 
 	$effect(() => {
 		assetSelections = $assets.map((a) => ({
@@ -33,6 +38,45 @@
 			name: a.name,
 			selected: false
 		}));
+		assetConstraints = $assets.map((a) => ({
+			id: a.id,
+			minPct: null,
+			maxPct: null
+		}));
+	});
+
+	// Build WeightConstraint[] from UI state for the worker
+	const activeConstraints = $derived.by((): WeightConstraint[] => {
+		if (!showConstraints) return [];
+		const result: WeightConstraint[] = [];
+		for (const c of assetConstraints) {
+			const sel = assetSelections.find((a) => a.id === c.id);
+			if (!sel?.selected) continue;
+			if (c.minPct !== null || c.maxPct !== null) {
+				result.push({
+					assetId: c.id,
+					min: c.minPct !== null ? c.minPct / 100 : 0,
+					max: c.maxPct !== null ? c.maxPct / 100 : 1,
+				});
+			}
+		}
+		return result;
+	});
+
+	// Validate constraints: sum of mins must be <= 100%
+	const constraintError = $derived.by((): string | null => {
+		if (!showConstraints) return null;
+		let sumMin = 0;
+		for (const c of assetConstraints) {
+			const sel = assetSelections.find((a) => a.id === c.id);
+			if (!sel?.selected) continue;
+			if (c.minPct !== null) sumMin += c.minPct;
+			if (c.minPct !== null && c.maxPct !== null && c.minPct > c.maxPct) {
+				return `Min exceeds max for an asset`;
+			}
+		}
+		if (sumMin > 100) return `Minimum allocations sum to ${sumMin}%, must be \u2264 100%`;
+		return null;
 	});
 
 	const mainCurrency = $derived(($settings.mainCurrency as string) ?? 'EUR');
@@ -103,12 +147,15 @@
 		};
 	});
 
-	// Compute per-asset markers using the same log-return-based metrics as the MC worker.
-	// Colors match the sidebar dots by using each asset's index in the full assetSelections list.
-	// Prices are converted to main currency for consistent comparison.
+	// Compute per-asset markers matching the MC worker's hybrid approach:
+	// - Expected return: full individual history (better estimate, more data)
+	// - Volatility: aligned (intersection) window (consistent with portfolio covariance)
+	const TRADING_DAYS_PER_YEAR = 252;
 	const assetMarkerList = $derived.by((): AssetMarker[] => {
 		if (!result) return [];
-		const markers: AssetMarker[] = [];
+
+		// Collect selected assets with converted prices (same as handleRun sends to worker)
+		const selected: Array<{ idx: number; name: string; prices: PricePoint[] }> = [];
 		for (let i = 0; i < assetSelections.length; i++) {
 			const sel = assetSelections[i];
 			if (!sel.selected) continue;
@@ -116,11 +163,34 @@
 			if (!asset || asset.prices.length < 2) continue;
 			const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
 			if (prices.length < 2) continue;
+			selected.push({ idx: i, name: asset.name, prices });
+		}
+
+		if (selected.length < 2) {
+			return selected.map((s) => ({
+				name: s.name,
+				annualizedReturn: annualizedLogReturn(s.prices),
+				volatility: annualizedVolatility(s.prices),
+				color: assetColors[s.idx],
+			}));
+		}
+
+		// Volatility uses the aligned intersection (same as MC covariance matrix)
+		const { alignedSeries } = alignPriceSeries(selected.map((s) => s.prices));
+
+		const markers: AssetMarker[] = [];
+		for (let i = 0; i < selected.length; i++) {
+			// Return from full individual history (same as MC worker)
+			const annReturn = annualizedLogReturn(selected[i].prices);
+			// Volatility from aligned window (consistent with MC covariance)
+			const alignedRet = logReturns(alignedSeries[i]);
+			if (alignedRet.length < 2) continue;
+			const annVol = stddev(alignedRet) * Math.sqrt(TRADING_DAYS_PER_YEAR);
 			markers.push({
-				name: asset.name,
-				annualizedReturn: annualizedLogReturn(prices),
-				volatility: annualizedVolatility(prices),
-				color: assetColors[i],
+				name: selected[i].name,
+				annualizedReturn: annReturn,
+				volatility: annVol,
+				color: assetColors[selected[i].idx],
 			});
 		}
 		return markers;
@@ -146,7 +216,8 @@
 		updateConfig({
 			simulationCount,
 			assetIds: assetData.map((a) => a.id),
-			riskFreeRate
+			riskFreeRate,
+			constraints: activeConstraints.length > 0 ? activeConstraints : undefined
 		});
 		setRunning(true);
 		selectedPortfolio = null;
@@ -180,7 +251,8 @@
 							simulationCount,
 							assetIds: assetData.map((a) => a.id),
 							riskFreeRate,
-							benchmarkPortfolioId: null
+							benchmarkPortfolioId: null,
+							constraints: activeConstraints.length > 0 ? activeConstraints : undefined
 						},
 						results: payload,
 						createdAt: new Date().toISOString()
@@ -215,7 +287,8 @@
 					simulationCount,
 					assetIds: assetData.map((a) => a.id),
 					riskFreeRate,
-					benchmarkPortfolioId: null
+					benchmarkPortfolioId: null,
+					constraints: activeConstraints.length > 0 ? activeConstraints : undefined
 				},
 				assets: assetData
 			}
@@ -347,7 +420,79 @@
 						{/if}
 					</div>
 
-					{#if isRunning}
+					{#if selectedAssets.length >= 2}
+					<div class="form-field">
+						<button
+							class="constraints-toggle"
+							onclick={() => (showConstraints = !showConstraints)}
+							disabled={isRunning}
+						>
+							<svg
+								width="12" height="12" viewBox="0 0 24 24" fill="none"
+								stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+								class="toggle-chevron"
+								class:open={showConstraints}
+							>
+								<polyline points="6 9 12 15 18 9"/>
+							</svg>
+							Weight Constraints
+							{#if activeConstraints.length > 0}
+								<span class="constraint-badge">{activeConstraints.length}</span>
+							{/if}
+						</button>
+
+						{#if showConstraints}
+							<div class="constraints-panel">
+								<div class="constraints-header">
+									<span class="constraints-col">Asset</span>
+									<span class="constraints-col num">Min %</span>
+									<span class="constraints-col num">Max %</span>
+								</div>
+								{#each assetSelections as asset, idx}
+									{#if asset.selected}
+										{@const constraint = assetConstraints.find((c) => c.id === asset.id)}
+										{#if constraint}
+											<div class="constraint-row">
+												<span class="constraint-name">
+													<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
+													{asset.name}
+												</span>
+												<input
+													class="constraint-input"
+													type="number"
+													min="0"
+													max="100"
+													step="1"
+													placeholder="0"
+													value={constraint.minPct ?? ''}
+													oninput={(e) => { constraint.minPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
+													disabled={isRunning}
+												/>
+												<input
+													class="constraint-input"
+													type="number"
+													min="0"
+													max="100"
+													step="1"
+													placeholder="100"
+													value={constraint.maxPct ?? ''}
+													oninput={(e) => { constraint.maxPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
+													disabled={isRunning}
+												/>
+											</div>
+										{/if}
+									{/if}
+								{/each}
+								{#if constraintError}
+									<p class="constraint-error">{constraintError}</p>
+								{/if}
+								<p class="field-hint">Leave empty for no constraint. Min = minimum allocation, Max = maximum allocation.</p>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if isRunning}
 						<div class="progress-section">
 							<div class="progress-bar-track">
 								<div class="progress-bar" style="width: {progress}%"></div>
@@ -360,7 +505,7 @@
 							<span class="rendering-text">Rendering chart...</span>
 						</div>
 					{:else}
-						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2}>
+						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2 || constraintError !== null}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 								<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
 							</svg>
@@ -742,5 +887,111 @@
 
 	.open-portfolio-link:hover {
 		text-decoration: underline;
+	}
+
+	/* Constraints UI */
+
+	.constraints-toggle {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+		padding: 6px 10px;
+		cursor: pointer;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		width: 100%;
+		text-align: left;
+	}
+
+	.constraints-toggle:hover {
+		background: var(--color-bg-tertiary);
+	}
+
+	.toggle-chevron {
+		transition: transform 0.15s;
+		flex-shrink: 0;
+	}
+
+	.toggle-chevron.open {
+		transform: rotate(180deg);
+	}
+
+	.constraint-badge {
+		margin-left: auto;
+		background: var(--color-accent-deep, #1a8a8a);
+		color: #fff;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 1px 6px;
+		border-radius: 8px;
+		min-width: 18px;
+		text-align: center;
+	}
+
+	.constraints-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding-top: var(--spacing-sm);
+	}
+
+	.constraints-header {
+		display: grid;
+		grid-template-columns: 1fr 56px 56px;
+		gap: 6px;
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--color-text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		padding: 0 0 4px;
+	}
+
+	.constraints-col.num {
+		text-align: center;
+	}
+
+	.constraint-row {
+		display: grid;
+		grid-template-columns: 1fr 56px 56px;
+		gap: 6px;
+		align-items: center;
+	}
+
+	.constraint-name {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: var(--font-size-xs);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.constraint-input {
+		width: 56px;
+		padding: 3px 4px;
+		border: 1px solid var(--color-border);
+		border-radius: 3px;
+		background: var(--color-bg-primary);
+		color: var(--color-text-primary);
+		font-family: var(--font-mono);
+		font-size: var(--font-size-xs);
+		text-align: center;
+	}
+
+	.constraint-input::placeholder {
+		color: var(--color-text-muted);
+		opacity: 0.6;
+	}
+
+	.constraint-error {
+		font-size: var(--font-size-xs);
+		color: var(--color-danger, #e74c3c);
+		margin-top: 4px;
 	}
 </style>
