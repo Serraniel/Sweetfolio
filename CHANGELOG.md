@@ -1,3 +1,27 @@
+## [0.5.2](https://github.com/Serraniel/Sweetfolio/compare/v0.5.1...v0.5.2) (2026-03-03)
+
+
+### Bug Fixes
+
+* **changelog:** parse patch version headings in changelog page ([a6acafd](https://github.com/Serraniel/Sweetfolio/commit/a6acafd689460201f5d4a425d3b1d63a152fddf4))
+* **ci:** allow self-approved PRs from collaborators in merge queue ([fa6f920](https://github.com/Serraniel/Sweetfolio/commit/fa6f9204898954788be0e7fcf5622205079658a0))
+* **ci:** check reviews array directly in merge queue approval check ([0d6d2d5](https://github.com/Serraniel/Sweetfolio/commit/0d6d2d5108ad3f54e5bbb161cfcae5a6f02c13d9))
+* **ci:** continue merging remaining PRs when one fails in merge queue ([3eff26e](https://github.com/Serraniel/Sweetfolio/commit/3eff26eafb35fd96b54427afd879f6ce4452f890))
+* **ci:** handle bot authors in merge queue review check ([486dcb7](https://github.com/Serraniel/Sweetfolio/commit/486dcb747cc6fd64e3e46d54ed30b5f02eda6bc8))
+* **ci:** use GITHUB_TOKEN for dependabot auto-approve workflow ([e1b9cc7](https://github.com/Serraniel/Sweetfolio/commit/e1b9cc7d44bb50cb8f03818220b0602ce4bdf021))
+* **deps:** override cookie to 0.7.0 to resolve security advisory ([e05ce75](https://github.com/Serraniel/Sweetfolio/commit/e05ce75599771cde94a8c8b57b770ba87adaa784))
+* **release:** deduplicate changelog entries from merge queue commits ([dd5ac67](https://github.com/Serraniel/Sweetfolio/commit/dd5ac678fc9ae1a3d881b72293d0288888bc5e2d)), closes [#N](https://github.com/Serraniel/Sweetfolio/issues/N)
+
+
+### Chores
+
+* add conventional commit prefixes to dependabot config ([6957237](https://github.com/Serraniel/Sweetfolio/commit/69572377e5a386945ea084cadcace4c6beb24a15))
+
+
+### Continuous Integration
+
+* add scheduled merge queue retry every 6 hours ([4bcf508](https://github.com/Serraniel/Sweetfolio/commit/4bcf508d11d3a740ecf03c4b230da5a4a2599948))
+
 ## [0.5.1](https://github.com/Serraniel/Sweetfolio/compare/v0.5.0...v0.5.1) (2026-03-02)
 
 
