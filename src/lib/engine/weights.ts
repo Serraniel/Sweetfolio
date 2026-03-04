@@ -7,7 +7,7 @@
  * - Respect per-asset min/max constraints
  */
 
-const STEP = 0.005; // 0.5%
+const DEFAULT_STEP = 0.005; // 0.5%
 
 /**
  * Generate a random weight vector with discrete allocation steps and
@@ -17,13 +17,16 @@ const STEP = 0.005; // 0.5%
  * @param mins - Per-asset minimum weight (0..1), defaults to 0
  * @param maxs - Per-asset maximum weight (0..1), defaults to 1
  * @param rng - Random number generator (0..1), defaults to Math.random
+ * @param step - Allocation step size (0..1), defaults to 0.005 (0.5%)
  */
 export function generateRandomWeights(
   n: number,
   mins: number[] = [],
   maxs: number[] = [],
   rng: () => number = Math.random,
+  step: number = DEFAULT_STEP,
 ): number[] {
+  const STEP = step;
   const minW = new Array(n);
   const maxW = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -50,10 +53,10 @@ export function generateRandomWeights(
       weights[i] = minW[i] / total;
       relaxedMin[i] = 0; // relax mins since they're infeasible
     }
-    return snapToGrid(weights, relaxedMin, maxW);
+    return snapToGrid(weights, relaxedMin, maxW, STEP);
   }
   if (remaining < STEP) {
-    return snapToGrid(weights, minW, maxW);
+    return snapToGrid(weights, minW, maxW, STEP);
   }
 
   // Generate Dirichlet random shares for the remaining budget
@@ -103,11 +106,12 @@ export function generateRandomWeights(
     }
   }
 
-  return snapToGrid(weights, minW, maxW);
+  return snapToGrid(weights, minW, maxW, STEP);
 }
 
-/** Snap weights to STEP grid, enforce min/max, and fix rounding residual. */
-function snapToGrid(weights: number[], mins: number[], maxs: number[]): number[] {
+/** Snap weights to step grid, enforce min/max, and fix rounding residual. */
+function snapToGrid(weights: number[], mins: number[], maxs: number[], step: number = DEFAULT_STEP): number[] {
+  const STEP = step;
   const n = weights.length;
   const snapped = new Array(n);
 

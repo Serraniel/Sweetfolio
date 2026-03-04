@@ -80,6 +80,10 @@ export interface MonteCarloConfig {
   riskFreeRate: number;
   benchmarkPortfolioId: string | null;
   constraints?: WeightConstraint[];
+  /** Default minimum weight per asset (0..1) when no per-asset constraint is set. Default: 0 */
+  defaultMinWeight?: number;
+  /** Allocation step size (0..1) for weight snapping. Default: 0.005 (0.5%) */
+  stepSize?: number;
 }
 
 export interface SimulatedPortfolio {

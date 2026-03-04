@@ -27,6 +27,7 @@
 		portfolioCount: number;
 		efficientFrontier: SimulatedPortfolio[];
 		benchmark?: SimulatedPortfolio | null;
+		benchmarkLabel?: string;
 		assetMarkers?: AssetMarker[];
 		highlightedAsset?: string | null;
 		height?: number;
@@ -39,6 +40,7 @@
 		portfolioCount,
 		efficientFrontier,
 		benchmark = null,
+		benchmarkLabel = 'Benchmark',
 		assetMarkers = [],
 		highlightedAsset = null,
 		height = 400,
@@ -342,7 +344,6 @@
 		void efficientFrontier;
 		void benchmark;
 		void assetMarkers;
-		void highlightedAsset;
 		void viewMode;
 		void showSubOptimal;
 
@@ -363,6 +364,12 @@
 			resizeObs?.disconnect();
 			themeObs?.disconnect();
 		};
+	});
+
+	// Redraw (not recreate) chart when highlight changes
+	$effect(() => {
+		void highlightedAsset;
+		chart?.redraw(false);
 	});
 </script>
 
@@ -412,7 +419,7 @@
 			<div class="chart-legend">
 				<span class="legend-item">
 					<span class="legend-dot benchmark-dot"></span>
-					Benchmark
+					{benchmarkLabel}
 				</span>
 			</div>
 		{/if}

@@ -20,11 +20,16 @@
 	import { slugify } from '$lib/utils/slug';
 
 	let simulationCount = $state(10000);
+	let defaultMinPct = $state(3);
+	let stepPct = $state(0.5);
 	let worker: Worker | null = $state(null);
 	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
 	let savedPortfolioSlug: string | null = $state(null);
 	let rendering = $state(false);
 	let hoveredAssetName: string | null = $state(null);
+
+	// Snapshot of selection state at the time simulation was run — used for rendering results
+	let runSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
 
 	// Derive available assets with selection state
 	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
@@ -33,11 +38,13 @@
 	let assetConstraints: Array<{ id: string; minPct: number | null; maxPct: number | null }> = $state([]);
 
 	$effect(() => {
-		assetSelections = $assets.map((a) => ({
-			id: a.id,
-			name: a.name,
-			selected: false
-		}));
+		assetSelections = $assets
+			.map((a) => ({
+				id: a.id,
+				name: a.name,
+				selected: false
+			}))
+			.sort((a, b) => a.name.localeCompare(b.name));
 		assetConstraints = $assets.map((a) => ({
 			id: a.id,
 			minPct: null,
@@ -65,17 +72,25 @@
 
 	// Validate constraints: sum of mins must be <= 100%
 	const constraintError = $derived.by((): string | null => {
-		if (!showConstraints) return null;
+		const numSelected = selectedAssets.length;
+		if (numSelected < 2) return null;
+
+		// Calculate effective min for each selected asset
 		let sumMin = 0;
-		for (const c of assetConstraints) {
-			const sel = assetSelections.find((a) => a.id === c.id);
-			if (!sel?.selected) continue;
-			if (c.minPct !== null) sumMin += c.minPct;
-			if (c.minPct !== null && c.maxPct !== null && c.minPct > c.maxPct) {
-				return `Min exceeds max for an asset`;
+		for (const sel of assetSelections) {
+			if (!sel.selected) continue;
+			const c = assetConstraints.find((ac) => ac.id === sel.id);
+			const explicitMin = showConstraints && c?.minPct !== null ? c.minPct : null;
+			const effectiveMin = explicitMin ?? defaultMinPct;
+			sumMin += effectiveMin;
+
+			if (showConstraints && c) {
+				if (c.minPct !== null && c.maxPct !== null && c.minPct > c.maxPct) {
+					return `Min exceeds max for an asset`;
+				}
 			}
 		}
-		if (sumMin > 100) return `Minimum allocations sum to ${sumMin}%, must be \u2264 100%`;
+		if (sumMin > 100) return `Minimum allocations sum to ${sumMin.toFixed(1)}%, must be \u2264 100%`;
 		return null;
 	});
 
@@ -113,7 +128,15 @@
 		return warnings;
 	});
 
+	const benchmarkName = $derived.by(() => {
+		const bm = $benchmarkStore;
+		if (!bm) return 'Benchmark';
+		const asset = $assets.find((a) => a.id === bm.ref.id);
+		return asset ? `Benchmark: ${asset.name}` : 'Benchmark';
+	});
+
 	const assetColors = $derived(generateAssetColors(assetSelections.length));
+	const runColors = $derived(generateAssetColors(runSelections.length));
 	const isRunning = $derived($simulation.running);
 	const progress = $derived(
 		$simulation.progress
@@ -154,10 +177,13 @@
 	const assetMarkerList = $derived.by((): AssetMarker[] => {
 		if (!result) return [];
 
-		// Collect selected assets with converted prices (same as handleRun sends to worker)
+		// Use the snapshot from the last run, not current selections
+		const selections = runSelections;
+		const colors = runColors;
+
 		const selected: Array<{ idx: number; name: string; prices: PricePoint[] }> = [];
-		for (let i = 0; i < assetSelections.length; i++) {
-			const sel = assetSelections[i];
+		for (let i = 0; i < selections.length; i++) {
+			const sel = selections[i];
 			if (!sel.selected) continue;
 			const asset = $assets.find((a) => a.id === sel.id);
 			if (!asset || asset.prices.length < 2) continue;
@@ -171,7 +197,7 @@
 				name: s.name,
 				annualizedReturn: annualizedLogReturn(s.prices),
 				volatility: annualizedVolatility(s.prices),
-				color: assetColors[s.idx],
+				color: colors[s.idx],
 			}));
 		}
 
@@ -190,7 +216,7 @@
 				name: selected[i].name,
 				annualizedReturn: annReturn,
 				volatility: annVol,
-				color: assetColors[selected[i].idx],
+				color: colors[selected[i].idx],
 			});
 		}
 		return markers;
@@ -198,6 +224,9 @@
 
 	function handleRun() {
 		if (selectedAssets.length < 2) return;
+
+		// Snapshot current selections so chart doesn't react to config changes
+		runSelections = assetSelections.map((a) => ({ ...a }));
 
 		const assetData = selectedAssets
 			.map((sel) => {
@@ -217,7 +246,9 @@
 			simulationCount,
 			assetIds: assetData.map((a) => a.id),
 			riskFreeRate,
-			constraints: activeConstraints.length > 0 ? activeConstraints : undefined
+			constraints: activeConstraints.length > 0 ? activeConstraints : undefined,
+			defaultMinWeight: defaultMinPct / 100,
+			stepSize: stepPct / 100
 		});
 		setRunning(true);
 		selectedPortfolio = null;
@@ -252,7 +283,9 @@
 							assetIds: assetData.map((a) => a.id),
 							riskFreeRate,
 							benchmarkPortfolioId: null,
-							constraints: activeConstraints.length > 0 ? activeConstraints : undefined
+							constraints: activeConstraints.length > 0 ? activeConstraints : undefined,
+			defaultMinWeight: defaultMinPct / 100,
+			stepSize: stepPct / 100
 						},
 						results: payload,
 						createdAt: new Date().toISOString()
@@ -288,7 +321,9 @@
 					assetIds: assetData.map((a) => a.id),
 					riskFreeRate,
 					benchmarkPortfolioId: null,
-					constraints: activeConstraints.length > 0 ? activeConstraints : undefined
+					constraints: activeConstraints.length > 0 ? activeConstraints : undefined,
+			defaultMinWeight: defaultMinPct / 100,
+			stepSize: stepPct / 100
 				},
 				assets: assetData
 			}
@@ -355,29 +390,51 @@
 		<p class="page-subtitle">Explore the efficient frontier with random portfolio simulations</p>
 	</header>
 
-	<div class="simulation-layout">
-		<aside class="config-panel">
-			<Card>
-				<h2>Configuration</h2>
+	<Card>
+		<h2>Configuration</h2>
+		<div class="config-top">
+			<div class="config-params">
+				<div class="form-field">
+					<label for="sim-count">Simulations</label>
+					<input
+						id="sim-count"
+						type="number"
+						min="100"
+						max="100000"
+						step="100"
+						bind:value={simulationCount}
+						disabled={isRunning}
+					/>
+				</div>
+				<div class="form-field">
+					<label for="default-min">Default Min %</label>
+					<input
+						id="default-min"
+						type="number"
+						min="0"
+						max="50"
+						step="0.5"
+						bind:value={defaultMinPct}
+						disabled={isRunning}
+					/>
+				</div>
+				<div class="form-field">
+					<label for="step-size">Step %</label>
+					<input
+						id="step-size"
+						type="number"
+						min="0.1"
+						max="10"
+						step="0.1"
+						bind:value={stepPct}
+						disabled={isRunning}
+					/>
+				</div>
+			</div>
 
-				<div class="config-form">
-					<div class="form-field">
-						<label for="sim-count">Number of Simulations</label>
-						<input
-							id="sim-count"
-							type="number"
-							min="100"
-							max="100000"
-							step="100"
-							bind:value={simulationCount}
-							disabled={isRunning}
-						/>
-						<span class="field-hint">{simulationCount.toLocaleString()} portfolios</span>
-					</div>
-
-					<div class="form-field">
+			<div class="form-field">
 						<!-- svelte-ignore a11y_label_has_associated_control -->
-					<label>Assets to Include</label>
+						<label>Assets to Include</label>
 						{#if assetSelections.length === 0}
 							<p class="muted">No assets available. Upload asset data first.</p>
 						{:else}
@@ -418,108 +475,114 @@
 								{/each}
 							</div>
 						{/if}
-					</div>
+			</div>
 
-					{#if selectedAssets.length >= 2}
-					<div class="form-field">
-						<button
-							class="constraints-toggle"
-							onclick={() => (showConstraints = !showConstraints)}
-							disabled={isRunning}
+			{#if selectedAssets.length >= 2}
+				<div class="constraints-section">
+					<button
+						class="constraints-toggle"
+						onclick={() => (showConstraints = !showConstraints)}
+						disabled={isRunning}
+					>
+						<svg
+							width="12" height="12" viewBox="0 0 24 24" fill="none"
+							stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+							class="toggle-chevron"
+							class:open={showConstraints}
 						>
-							<svg
-								width="12" height="12" viewBox="0 0 24 24" fill="none"
-								stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-								class="toggle-chevron"
-								class:open={showConstraints}
-							>
-								<polyline points="6 9 12 15 18 9"/>
-							</svg>
-							Weight Constraints
-							{#if activeConstraints.length > 0}
-								<span class="constraint-badge">{activeConstraints.length}</span>
-							{/if}
-						</button>
+							<polyline points="6 9 12 15 18 9"/>
+						</svg>
+						Weight Constraints
+						{#if activeConstraints.length > 0}
+							<span class="constraint-badge">{activeConstraints.length}</span>
+						{/if}
+					</button>
 
-						{#if showConstraints}
-							<div class="constraints-panel">
-								<div class="constraints-header">
-									<span class="constraints-col">Asset</span>
-									<span class="constraints-col num">Min %</span>
-									<span class="constraints-col num">Max %</span>
-								</div>
-								{#each assetSelections as asset, idx}
-									{#if asset.selected}
-										{@const constraint = assetConstraints.find((c) => c.id === asset.id)}
-										{#if constraint}
-											<div class="constraint-row">
-												<span class="constraint-name">
-													<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
-													{asset.name}
-												</span>
-												<input
-													class="constraint-input"
-													type="number"
-													min="0"
-													max="100"
-													step="1"
-													placeholder="0"
-													value={constraint.minPct ?? ''}
-													oninput={(e) => { constraint.minPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
-													disabled={isRunning}
-												/>
-												<input
-													class="constraint-input"
-													type="number"
-													min="0"
-													max="100"
-													step="1"
-													placeholder="100"
-													value={constraint.maxPct ?? ''}
-													oninput={(e) => { constraint.maxPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
-													disabled={isRunning}
-												/>
+					{#if showConstraints}
+						<div class="constraints-grid">
+							{#each assetSelections as asset, idx}
+								{#if asset.selected}
+									{@const constraint = assetConstraints.find((c) => c.id === asset.id)}
+									{#if constraint}
+										<div class="constraint-card">
+											<span class="constraint-card-name">
+												<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
+												{asset.name}
+											</span>
+											<div class="constraint-card-inputs">
+												<label class="constraint-card-label">
+													<span>Min %</span>
+													<input
+														class="constraint-input"
+														type="number"
+														min="0"
+														max="100"
+														step="1"
+														placeholder="0"
+														value={constraint.minPct ?? ''}
+														oninput={(e) => { constraint.minPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
+														disabled={isRunning}
+													/>
+												</label>
+												<label class="constraint-card-label">
+													<span>Max %</span>
+													<input
+														class="constraint-input"
+														type="number"
+														min="0"
+														max="100"
+														step="1"
+														placeholder="100"
+														value={constraint.maxPct ?? ''}
+														oninput={(e) => { constraint.maxPct = e.currentTarget.value === '' ? null : Number(e.currentTarget.value); }}
+														disabled={isRunning}
+													/>
+												</label>
 											</div>
-										{/if}
+										</div>
 									{/if}
-								{/each}
-								{#if constraintError}
-									<p class="constraint-error">{constraintError}</p>
 								{/if}
-								<p class="field-hint">Leave empty for no constraint. Min = minimum allocation, Max = maximum allocation.</p>
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				{#if isRunning}
-						<div class="progress-section">
-							<div class="progress-bar-track">
-								<div class="progress-bar" style="width: {progress}%"></div>
-							</div>
-							<span class="progress-text">{progress.toFixed(0)}%</span>
+							{/each}
 						</div>
-						<Button variant="danger" onclick={handleCancel}>Cancel</Button>
-					{:else if rendering}
-						<div class="progress-section">
-							<span class="rendering-text">Rendering chart...</span>
-						</div>
-					{:else}
-						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2 || constraintError !== null}>
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-							</svg>
-							Run Simulation
-						</Button>
-						{#if selectedAssets.length < 2 && assetSelections.length > 0}
-							<p class="field-hint">Select at least 2 assets to run a simulation.</p>
+						{#if constraintError}
+							<p class="constraint-error">{constraintError}</p>
 						{/if}
+						<p class="field-hint">Leave empty for no constraint. Min = minimum allocation, Max = maximum allocation.</p>
 					{/if}
 				</div>
-			</Card>
-		</aside>
+			{/if}
 
-		<div class="results-area">
+			<div class="config-actions">
+				{#if isRunning}
+					<div class="progress-section">
+						<div class="progress-bar-track">
+							<div class="progress-bar" style="width: {progress}%"></div>
+						</div>
+						<span class="progress-text">{progress.toFixed(0)}%</span>
+					</div>
+					<Button variant="danger" onclick={handleCancel}>Cancel</Button>
+				{:else if rendering}
+					<div class="progress-section">
+						<span class="rendering-text">Rendering chart...</span>
+					</div>
+				{:else}
+					<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2 || constraintError !== null}>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+						</svg>
+						Run Simulation
+					</Button>
+					{#if constraintError}
+						<p class="constraint-error">{constraintError}</p>
+					{:else if selectedAssets.length < 2 && assetSelections.length > 0}
+						<p class="field-hint">Select at least 2 assets.</p>
+					{/if}
+				{/if}
+			</div>
+		</div>
+	</Card>
+
+	<div class="results-area">
 			{#if rendering}
 				<Card padding="lg">
 					<div class="chart-placeholder">
@@ -536,6 +599,7 @@
 						portfolioCount={result.portfolioCount}
 						efficientFrontier={result.efficientFrontier}
 						benchmark={benchmarkPortfolio}
+						benchmarkLabel={benchmarkName}
 						assetMarkers={assetMarkerList}
 						highlightedAsset={hoveredAssetName}
 						onselect={handleSelect}
@@ -615,16 +679,18 @@
 				</Card>
 			{/if}
 		</div>
-	</div>
 </div>
 
 <style>
 	.simulation-page {
 		max-width: 1200px;
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-lg);
 	}
 
 	.page-header {
-		margin-bottom: var(--spacing-xl);
+		margin-bottom: 0;
 	}
 
 	.page-header h1 {
@@ -636,25 +702,9 @@
 		font-size: var(--font-size-base);
 	}
 
-	.simulation-layout {
-		display: grid;
-		grid-template-columns: 320px 1fr;
-		gap: var(--spacing-lg);
-		align-items: start;
-	}
+	/* Config panel — full width on top */
 
-	@media (max-width: 900px) {
-		.simulation-layout {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	.config-panel h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-lg);
-	}
-
-	.config-form {
+	.config-top {
 		display: flex;
 		flex-direction: column;
 		gap: var(--spacing-lg);
@@ -672,6 +722,23 @@
 		color: var(--color-text-secondary);
 	}
 
+	.config-params {
+		display: flex;
+		gap: var(--spacing-md);
+	}
+
+	.config-params .form-field {
+		width: 120px;
+	}
+
+	.config-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+		border-top: 1px solid var(--color-border);
+		padding-top: var(--spacing-md);
+	}
+
 	.field-hint {
 		font-size: var(--font-size-xs);
 		color: var(--color-text-muted);
@@ -683,9 +750,9 @@
 	}
 
 	.asset-checkboxes {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: var(--spacing-xs) var(--spacing-lg);
 	}
 
 	.checkbox-item {
@@ -694,6 +761,13 @@
 		gap: var(--spacing-sm);
 		cursor: pointer;
 		font-size: var(--font-size-sm);
+		min-width: 0;
+	}
+
+	.checkbox-item > span:not(.asset-color-dot):not(.currency-warning) {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.asset-color-dot {
@@ -706,7 +780,7 @@
 	.currency-warning {
 		display: inline-flex;
 		align-items: center;
-		margin-left: auto;
+		margin-left: 2px;
 		color: var(--color-warning, #e6a700);
 		flex-shrink: 0;
 		cursor: help;
@@ -714,15 +788,128 @@
 
 	.checkbox-item.select-all {
 		font-weight: 600;
+		grid-column: 1 / -1;
 		padding-bottom: var(--spacing-xs);
-		margin-bottom: var(--spacing-xs);
 		border-bottom: 1px solid var(--color-border);
 	}
+
+	/* Constraints section */
+
+	.constraints-section {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-md);
+		border-top: 1px solid var(--color-border);
+		padding-top: var(--spacing-md);
+	}
+
+	.constraints-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--spacing-sm);
+		background: none;
+		border: 1px solid var(--color-border);
+		border-radius: 4px;
+		padding: 6px 12px;
+		cursor: pointer;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-text-secondary);
+		width: auto;
+		align-self: flex-start;
+	}
+
+	.constraints-toggle:hover {
+		background: var(--color-bg-tertiary);
+	}
+
+	.toggle-chevron {
+		transition: transform 0.15s;
+		flex-shrink: 0;
+	}
+
+	.toggle-chevron.open {
+		transform: rotate(180deg);
+	}
+
+	.constraint-badge {
+		background: var(--color-accent-deep, #1a8a8a);
+		color: #fff;
+		font-size: 10px;
+		font-weight: 600;
+		padding: 1px 6px;
+		border-radius: 8px;
+		min-width: 18px;
+		text-align: center;
+	}
+
+	.constraints-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		gap: var(--spacing-md);
+	}
+
+	.constraint-card {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg-secondary);
+	}
+
+	.constraint-card-name {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.constraint-card-inputs {
+		display: flex;
+		gap: var(--spacing-md);
+	}
+
+	.constraint-card-label {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
+		flex: 1;
+	}
+
+	.constraint-input {
+		width: 100%;
+		padding: 4px 6px;
+		border: 1px solid var(--color-border);
+		border-radius: 3px;
+		background: var(--color-bg-primary);
+		color: var(--color-text-primary);
+		font-family: var(--font-mono);
+		font-size: var(--font-size-sm);
+		text-align: center;
+	}
+
+	.constraint-input::placeholder {
+		color: var(--color-text-muted);
+		opacity: 0.6;
+	}
+
+	.constraint-error {
+		font-size: var(--font-size-xs);
+		color: var(--color-danger, #e74c3c);
+	}
+
+	/* Progress */
 
 	.progress-section {
 		display: flex;
 		align-items: center;
 		gap: var(--spacing-md);
+		flex: 1;
 	}
 
 	.progress-bar-track {
@@ -771,6 +958,8 @@
 		0%, 100% { opacity: 0.5; }
 		50% { opacity: 1; }
 	}
+
+	/* Results */
 
 	.results-area {
 		display: flex;
@@ -887,111 +1076,5 @@
 
 	.open-portfolio-link:hover {
 		text-decoration: underline;
-	}
-
-	/* Constraints UI */
-
-	.constraints-toggle {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
-		padding: 6px 10px;
-		cursor: pointer;
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-		color: var(--color-text-secondary);
-		width: 100%;
-		text-align: left;
-	}
-
-	.constraints-toggle:hover {
-		background: var(--color-bg-tertiary);
-	}
-
-	.toggle-chevron {
-		transition: transform 0.15s;
-		flex-shrink: 0;
-	}
-
-	.toggle-chevron.open {
-		transform: rotate(180deg);
-	}
-
-	.constraint-badge {
-		margin-left: auto;
-		background: var(--color-accent-deep, #1a8a8a);
-		color: #fff;
-		font-size: 10px;
-		font-weight: 600;
-		padding: 1px 6px;
-		border-radius: 8px;
-		min-width: 18px;
-		text-align: center;
-	}
-
-	.constraints-panel {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		padding-top: var(--spacing-sm);
-	}
-
-	.constraints-header {
-		display: grid;
-		grid-template-columns: 1fr 56px 56px;
-		gap: 6px;
-		font-size: 10px;
-		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		padding: 0 0 4px;
-	}
-
-	.constraints-col.num {
-		text-align: center;
-	}
-
-	.constraint-row {
-		display: grid;
-		grid-template-columns: 1fr 56px 56px;
-		gap: 6px;
-		align-items: center;
-	}
-
-	.constraint-name {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: var(--font-size-xs);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.constraint-input {
-		width: 56px;
-		padding: 3px 4px;
-		border: 1px solid var(--color-border);
-		border-radius: 3px;
-		background: var(--color-bg-primary);
-		color: var(--color-text-primary);
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-		text-align: center;
-	}
-
-	.constraint-input::placeholder {
-		color: var(--color-text-muted);
-		opacity: 0.6;
-	}
-
-	.constraint-error {
-		font-size: var(--font-size-xs);
-		color: var(--color-danger, #e74c3c);
-		margin-top: 4px;
 	}
 </style>

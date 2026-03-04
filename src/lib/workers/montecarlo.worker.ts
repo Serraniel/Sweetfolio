@@ -23,7 +23,7 @@ self.onmessage = (event: MessageEvent<MonteCarloWorkerRequest>) => {
   const { config, assets } = event.data.payload;
 
   try {
-    const result = runSimulation(config.simulationCount, config.riskFreeRate, assets, config.constraints);
+    const result = runSimulation(config, assets);
     const response: MonteCarloWorkerResponse = {
       type: 'simulation-result',
       payload: result,
@@ -45,11 +45,10 @@ self.onmessage = (event: MessageEvent<MonteCarloWorkerRequest>) => {
 };
 
 function runSimulation(
-  simulationCount: number,
-  riskFreeRate: number,
+  config: import('$lib/types').MonteCarloConfig,
   assets: Array<{ id: string; prices: PricePoint[] }>,
-  constraints?: WeightConstraint[],
 ): MonteCarloResult {
+  const { simulationCount, riskFreeRate, constraints, defaultMinWeight, stepSize } = config;
   const n = assets.length;
   if (n === 0) return {
     scatterVolatilities: new Float64Array(0),
@@ -70,7 +69,9 @@ function runSimulation(
   if (constraints) {
     for (const c of constraints) constraintMap.set(c.assetId, c);
   }
-  const mins = assetIds.map((id) => constraintMap.get(id)?.min ?? 0);
+  const defaultMin = defaultMinWeight ?? 0;
+  const step = stepSize ?? 0.005;
+  const mins = assetIds.map((id) => constraintMap.get(id)?.min ?? defaultMin);
   const maxs = assetIds.map((id) => constraintMap.get(id)?.max ?? 1);
 
   // Covariance matrix requires synchronized (contemporaneous) observations,
@@ -90,7 +91,7 @@ function runSimulation(
 
   for (let sim = 0; sim < simulationCount; sim++) {
     // Generate random weights (non-negative, sum to 1, discrete steps, respecting constraints)
-    const weights = generateRandomWeights(n, mins, maxs);
+    const weights = generateRandomWeights(n, mins, maxs, Math.random, step);
 
     // Deduplicate: skip if we've seen this exact weight combo before
     const key = weights.map((w) => w.toFixed(3)).join(',');
