@@ -1,3 +1,15 @@
+## [0.5.3](https://github.com/Serraniel/Sweetfolio/compare/v0.5.2...v0.5.3) (2026-03-04)
+
+
+### Bug Fixes
+
+* **simulation:** align time periods between MC worker and asset markers ([a52f1a3](https://github.com/Serraniel/Sweetfolio/commit/a52f1a310446d3e65bbd04e2413b1a9df69cf9a5))
+
+
+### Continuous Integration
+
+* Bump actions/checkout from 4 to 6 ([bde0cbf](https://github.com/Serraniel/Sweetfolio/commit/bde0cbf76af8f8699827f1e4960c35d63e8c1558))
+
 ## [0.5.2](https://github.com/Serraniel/Sweetfolio/compare/v0.5.1...v0.5.2) (2026-03-03)
 
 
