@@ -10,6 +10,7 @@
 	import { initStores } from '$lib/stores/init';
 	import { autoRefreshAssets } from '$lib/stores/auto-refresh';
 	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
+	import { loadConfig } from '$lib/config';
 	import { decodeSharePayload, type SharePayload } from '$lib/sharing/codec';
 
 	let { children }: { children: Snippet } = $props();
@@ -18,7 +19,7 @@
 	let sharePayload: SharePayload | null = $state(null);
 
 	onMount(async () => {
-		await initStores();
+		await Promise.all([initStores(), loadConfig()]);
 		autoRefreshAssets();
 		autoFetchCurrencyRates();
 

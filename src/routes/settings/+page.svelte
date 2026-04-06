@@ -18,6 +18,8 @@
 	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
 	import ExportModal from '$lib/components/io/ExportModal.svelte';
 	import ImportWizard from '$lib/components/io/ImportWizard.svelte';
+	import { exportToPortfolioPerformanceXML } from '$lib/io/pp-export';
+	import { transactions } from '$lib/stores/transactions';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
@@ -141,6 +143,21 @@
 	async function handleDeleteCurrency(pair: string) {
 		if (!confirm(`Delete currency pair ${pair}?`)) return;
 		await removeCurrencyRate(pair);
+	}
+
+	async function exportToPP() {
+		const trackedPortfolios = $portfolios.filter(
+			(p) => p.mode === 'tracked' || p.mode === 'both'
+		);
+		const allTransactions = $transactions;
+		const xml = exportToPortfolioPerformanceXML(trackedPortfolios, $assets, allTransactions);
+		const blob = new Blob([xml], { type: 'application/xml' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'sweetfolio-pp-export.xml';
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	async function handleClearData() {
@@ -550,6 +567,23 @@
 					</div>
 					<div class="setting-control">
 						<Button variant="default" size="sm" onclick={() => showImportWizard = true}>Import Data</Button>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Export to Portfolio Performance</h2>
+				<p class="section-description">Export all tracked portfolios as a Portfolio Performance XML file. Open it directly in the Portfolio Performance desktop app.</p>
+
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">Portfolio Performance XML</span>
+						<span class="setting-description">Downloads a .xml file containing all portfolios with mode "tracked" or "both"</span>
+					</div>
+					<div class="setting-control">
+						<Button variant="default" size="sm" onclick={exportToPP}>Export to PP</Button>
 					</div>
 				</div>
 			</div>
