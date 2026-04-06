@@ -18,6 +18,8 @@
 	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
 	import ExportModal from '$lib/components/io/ExportModal.svelte';
 	import ImportWizard from '$lib/components/io/ImportWizard.svelte';
+	import { exportToAIFormat } from '$lib/io/ai-export';
+	import { transactions } from '$lib/stores/transactions';
 
 	let mainCurrency = $state('EUR');
 	let riskFreeRate = $state(0);
@@ -141,6 +143,17 @@
 	async function handleDeleteCurrency(pair: string) {
 		if (!confirm(`Delete currency pair ${pair}?`)) return;
 		await removeCurrencyRate(pair);
+	}
+
+	async function exportForAI() {
+		const data = exportToAIFormat($portfolios, $assets, $transactions);
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'sweetfolio-ai-export.json';
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	async function handleClearData() {
@@ -550,6 +563,23 @@
 					</div>
 					<div class="setting-control">
 						<Button variant="default" size="sm" onclick={() => showImportWizard = true}>Import Data</Button>
+					</div>
+				</div>
+			</div>
+		</Card>
+
+		<Card>
+			<div class="setting-section">
+				<h2>Export for AI Agents</h2>
+				<p class="section-description">Download a self-describing JSON file optimized for AI agent consumption. Use with the Sweetfolio MCP server or pass directly to an AI assistant.</p>
+
+				<div class="setting-row">
+					<div class="setting-info">
+						<span class="setting-label">AI Export</span>
+						<span class="setting-description">Includes all portfolios, assets, and transactions in a structured format</span>
+					</div>
+					<div class="setting-control">
+						<Button variant="default" size="sm" onclick={exportForAI}>Download AI Export</Button>
 					</div>
 				</div>
 			</div>
