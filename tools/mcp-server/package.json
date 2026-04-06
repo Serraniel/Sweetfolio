@@ -1,0 +1,20 @@
+{
+  "name": "sweetfolio-mcp",
+  "version": "1.0.0",
+  "description": "Local MCP server for Sweetfolio AI export files",
+  "type": "module",
+  "bin": {
+    "sweetfolio-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^22.0.0"
+  }
+}
