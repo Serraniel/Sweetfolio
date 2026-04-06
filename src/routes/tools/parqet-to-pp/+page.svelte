@@ -20,6 +20,8 @@
 	let step = $state<Step>('connect');
 	let accessToken = $state<string | null>(null);
 	let refreshToken = $state<string | null>(null);
+	let customRedirectUri = $state('');
+	let clientId = $state<string | null>(null);
 	let portfolios = $state<ParqetPortfolio[]>([]);
 	let selectedIds = $state<Set<string>>(new Set());
 	let error = $state<string | null>(null);
@@ -30,6 +32,7 @@
 		const s = $settings;
 		accessToken = (s.parqet_access_token as string | null) ?? null;
 		refreshToken = (s.parqet_refresh_token as string | null) ?? null;
+		clientId = (s.parqet_client_id as string | null) ?? null;
 		if (accessToken) {
 			loadPortfolios();
 		}
@@ -61,7 +64,7 @@
 			sessionStorage.setItem('parqet_code_verifier', verifier);
 			sessionStorage.setItem('parqet_oauth_state', state);
 
-			const authUrl = buildAuthUrl(challenge, state, redirectUri);
+			const authUrl = buildAuthUrl(challenge, state, redirectUri, clientId ?? undefined);
 
 			const popup = window.open(authUrl, 'parqet-oauth', 'width=600,height=700,noopener');
 			if (!popup) {
@@ -93,7 +96,7 @@
 				}
 
 				try {
-					const tokens = await exchangeCodeForTokens(code, storedVerifier, redirectUri);
+					const tokens = await exchangeCodeForTokens(code, storedVerifier, redirectUri, clientId ?? undefined);
 					accessToken = tokens.access_token;
 					refreshToken = tokens.refresh_token;
 					await setSetting('parqet_access_token', tokens.access_token);
@@ -215,7 +218,20 @@
 					Authorise Sweetfolio to read your Parqet portfolios via OAuth2. Your credentials stay in
 					your browser — nothing is sent to any server.
 				</p>
-				<Button variant="primary" size="lg" onclick={connect}>Connect with Parqet</Button>
+				{#if !clientId}
+					<div class="connect-notice">
+						No Parqet Client ID configured. Go to
+						<a href="/settings">Settings → Parqet Integration</a>
+						to add your Client ID and register
+						<code>{typeof window !== 'undefined' ? window.location.origin : ''}/callback</code>
+						as the redirect URI in your Parqet app.
+					</div>
+				{:else}
+					<div class="connect-info">
+						Using redirect URI: <code>{typeof window !== 'undefined' ? window.location.origin : ''}/callback</code>
+					</div>
+				{/if}
+				<Button variant="primary" size="lg" onclick={connect} disabled={!clientId}>Connect with Parqet</Button>
 			</div>
 		</Card>
 	{:else if step === 'select'}
@@ -382,6 +398,29 @@
 		max-width: 440px;
 		line-height: 1.6;
 		margin: 0;
+	}
+
+	.connect-notice {
+		background: rgba(255, 200, 0, 0.08);
+		border: 1px solid rgba(255, 200, 0, 0.3);
+		border-radius: var(--radius-sm);
+		padding: var(--spacing-sm) var(--spacing-md);
+		font-size: var(--font-size-sm);
+		color: var(--color-text-secondary);
+		max-width: 440px;
+		line-height: 1.5;
+	}
+	.connect-notice a { color: var(--color-accent); }
+	.connect-notice code, .connect-info code {
+		font-family: var(--font-mono);
+		font-size: 0.9em;
+		background: var(--color-bg-primary);
+		padding: 1px 4px;
+		border-radius: 3px;
+	}
+	.connect-info {
+		font-size: var(--font-size-xs);
+		color: var(--color-text-muted);
 	}
 
 	/* Toolbar */

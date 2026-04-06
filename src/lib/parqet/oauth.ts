@@ -1,4 +1,4 @@
-import { PARQET_AUTH_URL, PARQET_TOKEN_URL, PARQET_CLIENT_ID } from './types';
+import { PARQET_AUTH_URL, PARQET_TOKEN_URL, PARQET_CLIENT_ID_DEFAULT } from './types';
 import type { ParqetTokenResponse } from './types';
 
 const VERIFIER_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
@@ -33,10 +33,11 @@ export function buildAuthUrl(
   codeChallenge: string,
   state: string,
   redirectUri: string,
+  clientId = PARQET_CLIENT_ID_DEFAULT,
 ): string {
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: PARQET_CLIENT_ID,
+    client_id: clientId,
     scope: 'portfolio:read',
     redirect_uri: redirectUri,
     code_challenge_method: 'S256',
@@ -50,12 +51,13 @@ export async function exchangeCodeForTokens(
   code: string,
   codeVerifier: string,
   redirectUri: string,
+  clientId = PARQET_CLIENT_ID_DEFAULT,
 ): Promise<ParqetTokenResponse> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
     redirect_uri: redirectUri,
-    client_id: PARQET_CLIENT_ID,
+    client_id: clientId,
     code_verifier: codeVerifier,
   });
   const response = await fetch(PARQET_TOKEN_URL, {
@@ -70,11 +72,14 @@ export async function exchangeCodeForTokens(
   return response.json() as Promise<ParqetTokenResponse>;
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<ParqetTokenResponse> {
+export async function refreshAccessToken(
+  refreshToken: string,
+  clientId = PARQET_CLIENT_ID_DEFAULT,
+): Promise<ParqetTokenResponse> {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
-    client_id: PARQET_CLIENT_ID,
+    client_id: clientId,
   });
   const response = await fetch(PARQET_TOKEN_URL, {
     method: 'POST',

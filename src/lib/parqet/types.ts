@@ -3,7 +3,9 @@
 export const PARQET_BASE_URL = 'https://connect.parqet.com';
 export const PARQET_AUTH_URL = `${PARQET_BASE_URL}/oauth2/authorize`;
 export const PARQET_TOKEN_URL = `${PARQET_BASE_URL}/oauth2/token`;
-export const PARQET_CLIENT_ID = '019cc556-cefa-7752-b920-d41b927c7756';
+/** Default/test client ID. Self-hosters should register their own app and set `parqet_client_id` in Settings. */
+export const PARQET_CLIENT_ID_DEFAULT = '019cc556-cefa-7752-b920-d41b927c7756';
+export const PARQET_CLIENT_ID = PARQET_CLIENT_ID_DEFAULT;
 
 export type ParqetActivityType =
   | 'buy' | 'sell' | 'dividend' | 'interest'
