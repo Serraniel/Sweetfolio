@@ -94,9 +94,55 @@ services:
     restart: unless-stopped
 ```
 
+## Admin Configuration (`config.json`)
+
+Sweetfolio supports a runtime configuration file for admin/deployment-level settings. Create a `config.json` and mount it into the container:
+
+```json
+{
+  "parqetClientId": "your-parqet-oauth-client-id"
+}
+```
+
+Mount it via Docker:
+
+```bash
+docker run -d -p 8080:80 \
+  -v ./config.json:/usr/share/nginx/html/config.json:ro \
+  ghcr.io/serraniel/sweetfolio:latest
+```
+
+Or in `docker-compose.yml`:
+
+```yaml
+services:
+  sweetfolio:
+    image: ghcr.io/serraniel/sweetfolio:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/usr/share/nginx/html/config.json:ro
+```
+
+### Available Options
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `parqetClientId` | string | OAuth Client ID for the Parqet integration. Register an app at [developer.parqet.com](https://developer.parqet.com) and set the redirect URI to `https://your-sweetfolio-url/callback`. |
+
+### Parqet Integration Setup
+
+1. Go to [developer.parqet.com](https://developer.parqet.com) and create an OAuth application
+2. Set the redirect URI to `https://your-sweetfolio-url/callback` (e.g. `https://sweetfolio.example.com/callback`)
+3. Copy the Client ID into your `config.json` as `parqetClientId`
+4. Restart the container
+
+Users can then connect to Parqet via **Tools → Parqet → Portfolio Performance** without any additional setup.
+
 ## Environment Variables
 
-Sweetfolio is a fully client-side application. There are no server-side environment variables to configure. All settings (currency, theme, etc.) are managed in the browser via the settings page and stored in IndexedDB.
+Sweetfolio is a fully client-side application. There are no server-side environment variables to configure. All user settings (currency, theme, etc.) are managed in the browser via the settings page and stored in IndexedDB.
 
 ## Updating
 

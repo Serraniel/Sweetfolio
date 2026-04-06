@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import Card from '$lib/components/shared/Card.svelte';
 	import Button from '$lib/components/shared/Button.svelte';
-	import { settings, setSetting, removeSetting } from '$lib/stores/settings';
+	import { setSetting, removeSetting } from '$lib/stores/settings';
+	import { getConfig } from '$lib/config';
 	import {
 		generateCodeVerifier,
 		generateCodeChallenge,
@@ -21,18 +22,17 @@
 	let accessToken = $state<string | null>(null);
 	let refreshToken = $state<string | null>(null);
 	let customRedirectUri = $state('');
-	let clientId = $state<string | null>(null);
+	let clientId = $derived(getConfig().parqetClientId || null);
 	let portfolios = $state<ParqetPortfolio[]>([]);
 	let selectedIds = $state<Set<string>>(new Set());
 	let error = $state<string | null>(null);
 	let progress = $state('');
 	let downloadLinks = $state<{ name: string; url: string; filename: string }[]>([]);
 
-	onMount(() => {
-		const s = $settings;
-		accessToken = (s.parqet_access_token as string | null) ?? null;
-		refreshToken = (s.parqet_refresh_token as string | null) ?? null;
-		clientId = (s.parqet_client_id as string | null) ?? null;
+	onMount(async () => {
+		const { get } = await import('$lib/storage/settings');
+		accessToken = (await get('parqet_access_token') as string | null) ?? null;
+		refreshToken = (await get('parqet_refresh_token') as string | null) ?? null;
 		if (accessToken) {
 			loadPortfolios();
 		}

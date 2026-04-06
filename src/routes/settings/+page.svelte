@@ -36,7 +36,6 @@
 	let alphaVantageTestResult: { ok: boolean; message: string } | null = $state(null);
 	let showExportModal = $state(false);
 	let showImportWizard = $state(false);
-	let parqetClientId = $state('');
 
 	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
 
@@ -91,7 +90,6 @@
 		if (s.alphaVantageApiKey !== undefined) alphaVantageApiKey = s.alphaVantageApiKey as string;
 		if (s.corsProxyUrl !== undefined) corsProxyUrl = s.corsProxyUrl as string;
 		if (s.dataSourcePrimary) dataSourcePrimary = s.dataSourcePrimary as string;
-		if (s.parqet_client_id) parqetClientId = s.parqet_client_id as string;
 	});
 
 	// Load currencies on mount
@@ -569,33 +567,6 @@
 					</div>
 					<div class="setting-control">
 						<Button variant="default" size="sm" onclick={() => showImportWizard = true}>Import Data</Button>
-					</div>
-				</div>
-			</div>
-		</Card>
-
-		<Card>
-			<div class="setting-section">
-				<h2>Parqet Integration</h2>
-				<p class="section-description">
-					To connect to Parqet, register an OAuth app at
-					<a href="https://developer.parqet.com" target="_blank" rel="noopener">developer.parqet.com</a>
-					and set the redirect URI to <code>{typeof window !== 'undefined' ? window.location.origin : ''}/callback</code>.
-					Then paste your Client ID below.
-				</p>
-				<div class="setting-row">
-					<div class="setting-info">
-						<span class="setting-label">Parqet OAuth Client ID</span>
-						<span class="setting-description">Found in your Parqet app settings</span>
-					</div>
-					<div class="setting-control">
-						<input
-							class="api-key-input"
-							type="text"
-							placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-							bind:value={parqetClientId}
-							onchange={() => setSetting('parqet_client_id', parqetClientId)}
-						/>
 					</div>
 				</div>
 			</div>

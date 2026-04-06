@@ -4,3 +4,7 @@ services:
     ports:
       - "8080:80"
     restart: unless-stopped
+    # Optional: mount a custom config.json to enable integrations.
+    # See docs/SELF_HOSTING.md for available options.
+    # volumes:
+    #   - ./config.json:/usr/share/nginx/html/config.json:ro
