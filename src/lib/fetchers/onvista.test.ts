@@ -153,6 +153,23 @@ describe('getChartHistory', () => {
     expect(prices[0].date < prices[1].date).toBe(true);
   });
 
+  it('requests the eod_history endpoint with range=MAX', async () => {
+    const spy = mockFetch([
+      { ok: true, json: () => ({ datetimeLast: [1704067200000], last: [100.0] }) },
+    ]);
+
+    await getChartHistory('FUND', '12345', 99999);
+
+    const url = spy.mock.calls[0][0] as string;
+    // Onvista retired chart_history; we must hit eod_history with range/startDate
+    expect(url).toContain('/instruments/FUND/12345/eod_history');
+    expect(url).toContain('idNotation=99999');
+    expect(url).toContain('range=MAX');
+    expect(url).toContain('startDate=');
+    expect(url).not.toContain('chart_history');
+    expect(url).not.toContain('resolution=');
+  });
+
   it('deduplicates by date', async () => {
     mockFetch([
       {

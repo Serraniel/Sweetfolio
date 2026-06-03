@@ -7,7 +7,7 @@
  * Flow:
  * 1. Search by ISIN or WKN to find the instrument
  * 2. Get snapshot for the instrument to obtain idNotation and metadata
- * 3. Fetch chart history using idNotation for daily resolution
+ * 3. Fetch end-of-day history using idNotation for daily prices
  */
 
 import type { PricePoint, AssetClassification } from '$lib/types';
@@ -56,7 +56,7 @@ interface SnapshotResponse {
   wkn?: string;
 }
 
-interface ChartHistoryResponse {
+interface EodHistoryResponse {
   datetimeLast: number[];
   last: number[];
 }
@@ -175,23 +175,30 @@ export async function getSnapshot(
 }
 
 /**
- * Fetch daily chart history for an instrument.
- * Defaults to fetching all available data (from 2000-01-01 to today).
+ * Fetch daily end-of-day price history for an instrument.
+ *
+ * Uses Onvista's `eod_history` endpoint. Onvista retired the previously used
+ * `chart_history` endpoint (`resolution=1D&startDate=…&endDate=…`), which broke
+ * historical price fetching by ISIN/WKN. The `eod_history` endpoint takes a
+ * `range` (here `MAX` for the full available history) together with a `startDate`
+ * floor. The JSON response shape (parallel `datetimeLast` / `last` arrays) is
+ * unchanged between the two endpoints.
+ *
+ * Defaults to fetching all available data (from 2000-01-01, a floor well before
+ * any tradable instrument's inception).
  */
 export async function getChartHistory(
   entityType: string,
   entityValue: string,
   idNotation: number,
   startDate?: Date,
-  endDate?: Date,
 ): Promise<PricePoint[]> {
   const start = formatDate(startDate ?? new Date(2000, 0, 1));
-  const end = formatDate(endDate ?? new Date());
   const url =
-    `${BASE_URL}/instruments/${encodeURIComponent(entityType)}/${encodeURIComponent(entityValue)}/chart_history` +
-    `?idNotation=${idNotation}&resolution=1D&startDate=${start}&endDate=${end}`;
+    `${BASE_URL}/instruments/${encodeURIComponent(entityType)}/${encodeURIComponent(entityValue)}/eod_history` +
+    `?idNotation=${idNotation}&range=MAX&startDate=${start}`;
 
-  const data = await fetchJSON<ChartHistoryResponse>(url);
+  const data = await fetchJSON<EodHistoryResponse>(url);
 
   if (!data.datetimeLast || !data.last || data.datetimeLast.length !== data.last.length) {
     return [];
