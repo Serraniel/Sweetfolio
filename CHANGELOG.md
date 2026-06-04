@@ -1,3 +1,44 @@
+## [0.5.4](https://github.com/Serraniel/Sweetfolio/compare/v0.5.3...v0.5.4) (2026-06-04)
+
+
+* Merge branch 'main' into dependabot/github_actions/docker/build-push-action-7 ([f11f660](https://github.com/Serraniel/Sweetfolio/commit/f11f660aabd6093d68cc9b3ad4e45fdbc5677b72))
+* Merge branch 'main' into dependabot/github_actions/docker/login-action-4 ([3244564](https://github.com/Serraniel/Sweetfolio/commit/32445642671b6fd70f6f0e1e67d830f9a059d503))
+* Merge branch 'main' into dependabot/github_actions/docker/metadata-action-6 ([c3cdb15](https://github.com/Serraniel/Sweetfolio/commit/c3cdb15fc116b6cc8fce5e2c97280af8147123a6))
+
+
+### Bug Fixes
+
+* **onvista:** use eod_history endpoint for historical prices ([04c4a39](https://github.com/Serraniel/Sweetfolio/commit/04c4a393c3b03f45eb218de42cfc47f42292e815))
+
+
+### Build System
+
+* **deps-dev:** bump @playwright/test in the minor-and-patch group ([bb336fc](https://github.com/Serraniel/Sweetfolio/commit/bb336fc8522a28dae2d00384800129642999912b))
+* **deps-dev:** bump devalue from 5.6.3 to 5.6.4 ([0d9ca80](https://github.com/Serraniel/Sweetfolio/commit/0d9ca80a6bbab3b3202df12ba0d410e2b8fc5f51))
+* **deps-dev:** bump handlebars from 4.7.8 to 4.7.9 ([11e181b](https://github.com/Serraniel/Sweetfolio/commit/11e181bab61cd0ee1af123887903f766b138c3a0))
+* **deps-dev:** bump lodash-es from 4.17.23 to 4.18.1 ([5380e59](https://github.com/Serraniel/Sweetfolio/commit/5380e599bb9a72c2b2d58a0631be8bf659d1842f))
+* **deps-dev:** bump picomatch from 2.3.1 to 2.3.2 ([5c388b8](https://github.com/Serraniel/Sweetfolio/commit/5c388b8acb3d43af6ec601f53c8b0be484d372ca))
+* **deps-dev:** bump the minor-and-patch group across 1 directory with 3 updates ([24551ab](https://github.com/Serraniel/Sweetfolio/commit/24551abb261f742f092777824ecc8fa96d370023))
+* **deps-dev:** bump the minor-and-patch group across 1 directory with 3 updates ([9108039](https://github.com/Serraniel/Sweetfolio/commit/91080394be6fd522380a06b66601ac530a166015))
+* **deps-dev:** bump the minor-and-patch group across 1 directory with 3 updates ([16dcc21](https://github.com/Serraniel/Sweetfolio/commit/16dcc216c6865f49ce7fc4602979b64eb93dacad))
+* **deps-dev:** bump the minor-and-patch group across 1 directory with 4 updates ([76ef259](https://github.com/Serraniel/Sweetfolio/commit/76ef259a16dfa1500f47caddf76cf1c0b2d9ae51))
+* **deps-dev:** bump the minor-and-patch group with 2 updates ([46a69b0](https://github.com/Serraniel/Sweetfolio/commit/46a69b0645323f49db54c8e70da8323e6563e993))
+* **deps-dev:** bump the minor-and-patch group with 2 updates ([74b7bf8](https://github.com/Serraniel/Sweetfolio/commit/74b7bf83209b6eea49d44ab4ec597d60368a719d))
+* **deps-dev:** bump typescript from 5.9.3 to 6.0.3 ([cd02c08](https://github.com/Serraniel/Sweetfolio/commit/cd02c0866f543dd690c456c43916ecafd7e06808))
+* **deps-dev:** bump undici from 6.23.0 to 6.24.1 ([f7ae3bb](https://github.com/Serraniel/Sweetfolio/commit/f7ae3bb93dc0da2363bc0ea3003e04f4b278119d))
+* **deps-dev:** bump vite from 6.4.1 to 6.4.2 ([5b45180](https://github.com/Serraniel/Sweetfolio/commit/5b45180c909c7b46a533dffb65686b02dd913f37))
+* **deps:** bump actions/upload-artifact from 4 to 7 ([2d82f3d](https://github.com/Serraniel/Sweetfolio/commit/2d82f3d3615ca2167bc1f4bea3274c3b223c3aac))
+* **deps:** bump lodash from 4.17.23 to 4.18.1 ([e98fff7](https://github.com/Serraniel/Sweetfolio/commit/e98fff71593e66d211e20eea0626c5203100fc45))
+
+
+### Continuous Integration
+
+* Bump actions/setup-node from 4 to 6 ([12873bd](https://github.com/Serraniel/Sweetfolio/commit/12873bda28b69b026d8e4935a2e182c14b691853))
+* bump dependabot/fetch-metadata from 2 to 3 ([cd29620](https://github.com/Serraniel/Sweetfolio/commit/cd29620e4da6588271af2ed925bdf3d242620c3b))
+* bump docker/build-push-action from 6 to 7 ([d566ce3](https://github.com/Serraniel/Sweetfolio/commit/d566ce3726baf28d63e77aef7700643637ee0393))
+* bump docker/login-action from 3 to 4 ([86968fd](https://github.com/Serraniel/Sweetfolio/commit/86968fd16f226c1593a7b0864a4f268ce8488aa5))
+* bump docker/metadata-action from 5 to 6 ([243443a](https://github.com/Serraniel/Sweetfolio/commit/243443a83f10d8556f7d616d745dc5ec0d6eb4f5))
+
 ## [0.5.3](https://github.com/Serraniel/Sweetfolio/compare/v0.5.2...v0.5.3) (2026-03-04)
 
 
