@@ -29,21 +29,143 @@ export interface ConstraintValidation {
 	errors: string[];
 }
 
-export function validateConstraints(constraints: ReadonlyArray<WeightConstraint | undefined>): ConstraintValidation {
+/** Limits on the number of held assets (MC-4). */
+export interface AssetCountLimits {
+	minAssets?: number;
+	maxAssets?: number;
+}
+
+export function validateConstraints(
+	constraints: ReadonlyArray<WeightConstraint | undefined>,
+	limits: AssetCountLimits = {},
+	labels?: readonly string[]
+): ConstraintValidation {
 	const errors: string[] = [];
+	const name = (i: number) => labels?.[i] ?? `Asset ${i + 1}`;
+	const pct = (x: number) => `${+(x * 100).toFixed(1)} %`;
 	let minSum = 0;
 	let maxSum = 0;
 	constraints.forEach((c, i) => {
 		const min = c?.min ?? 0;
 		const max = c?.max ?? 1;
-		if (min < 0 || max > 1) errors.push(`Asset ${i + 1}: limits must be between 0 % and 100 %.`);
-		if (min > max) errors.push(`Asset ${i + 1}: minimum is greater than maximum.`);
+		const floor = c?.floor ?? 0;
+		if (min < 0 || max > 1 || floor < 0 || floor > 1) errors.push(`${name(i)}: limits must be between 0 % and 100 %.`);
+		if (min > max) errors.push(`${name(i)}: minimum is greater than maximum.`);
+		else if (min === 0 && floor > max)
+			errors.push(`${name(i)}: the minimum per held asset (${pct(floor)}) is above its maximum (${pct(max)}).`);
 		minSum += min;
 		maxSum += max;
 	});
 	if (minSum > 1 + 1e-9) errors.push(`Minimums add up to ${(minSum * 100).toFixed(1)} % (more than 100 %).`);
 	if (maxSum < 1 - 1e-9) errors.push(`Maximums add up to ${(maxSum * 100).toFixed(1)} % (less than 100 %).`);
-	return { ok: errors.length === 0, errors };
+	const n = constraints.length;
+	const { minAssets, maxAssets } = limits;
+	const forced = constraints.filter((c) => (c?.min ?? 0) > 0).length;
+	for (const v of [minAssets, maxAssets])
+		if (v !== undefined && (!Number.isInteger(v) || v < 1)) errors.push('The number of assets must be a whole number of at least 1.');
+	if (minAssets !== undefined && maxAssets !== undefined && minAssets > maxAssets)
+		errors.push(`At least ${minAssets} assets but at most ${maxAssets} assets is impossible.`);
+	if (minAssets !== undefined && minAssets > n) errors.push(`At least ${minAssets} assets required, but only ${n} are selected.`);
+	if (maxAssets !== undefined && forced > maxAssets)
+		errors.push(`${forced} assets have a minimum above 0 %, but at most ${maxAssets} may be held.`);
+	if (errors.length === 0) {
+		const plan = planSubsets(constraints, limits);
+		if (plan && plan.sizes.length === 0)
+			errors.push(
+				`No combination of ${plan.kMin}–${plan.kMax} assets satisfies these limits: the minimums exceed 100 % or the maximums stay below 100 %.`
+			);
+	}
+	return { ok: errors.length === 0, errors: [...new Set(errors)] };
+}
+
+const STEPS = Math.round(1 / WEIGHT_STEP);
+
+/**
+ * Portfolio shapes when assets are optional with a minimum once held
+ * (weight 0 or ≥ floor) or the number of held assets is limited (MC-4).
+ * Weights are counted in 0.5 % steps.
+ */
+export interface SubsetPlan {
+	n: number;
+	/** Assets with a minimum above 0 are held in every portfolio. */
+	forced: number[];
+	optional: number[];
+	/** Steps a held asset needs at least (≥ 1, so it really is held). */
+	floor: number[];
+	cap: number[];
+	kMin: number;
+	kMax: number;
+	/** Feasible numbers of held assets. */
+	sizes: number[];
+	/** One feasible set of optional assets per size. */
+	examples: Map<number, number[]>;
+}
+
+/** Returns null when plain per-asset min/max limits are enough. */
+export function planSubsets(constraints: ReadonlyArray<WeightConstraint | undefined>, limits: AssetCountLimits = {}): SubsetPlan | null {
+	const n = constraints.length;
+	const minAssets = limits.minAssets !== undefined && limits.minAssets > 1 ? limits.minAssets : undefined;
+	const maxAssets = limits.maxAssets !== undefined && limits.maxAssets < n ? limits.maxAssets : undefined;
+	if (minAssets === undefined && maxAssets === undefined && !constraints.some((c) => (c?.floor ?? 0) > 0)) return null;
+	const floor = constraints.map((c) => Math.max(1, Math.ceil(Math.max(c?.min ?? 0, c?.floor ?? 0) * STEPS - 1e-9)));
+	const cap = constraints.map((c) => Math.floor((c?.max ?? 1) * STEPS + 1e-9));
+	const forced: number[] = [];
+	const optional: number[] = [];
+	for (let i = 0; i < n; i++) {
+		if ((constraints[i]?.min ?? 0) > 0) forced.push(i);
+		else if (cap[i]! >= floor[i]!) optional.push(i);
+	}
+	const kMin = Math.max(minAssets ?? 1, forced.length, 1);
+	const kMax = Math.min(maxAssets ?? n, forced.length + optional.length);
+	const fFloor = forced.reduce((s, i) => s + floor[i]!, 0);
+	const fCap = forced.reduce((s, i) => s + cap[i]!, 0);
+	// best[j][s]: largest sum of maximums over j optional assets whose floors add up to s steps.
+	const m = optional.length;
+	const W = STEPS + 1;
+	const best = Array.from({ length: m + 1 }, () => new Int32Array(W).fill(-1));
+	best[0]![0] = 0;
+	const take: Uint8Array[] = [];
+	optional.forEach((i, t) => {
+		const marks = new Uint8Array((m + 1) * W);
+		for (let j = t; j >= 0; j--)
+			for (let s = STEPS - floor[i]!; s >= 0; s--) {
+				const v = best[j]![s]!;
+				if (v < 0 || v + cap[i]! <= best[j + 1]![s + floor[i]!]!) continue;
+				best[j + 1]![s + floor[i]!] = v + cap[i]!;
+				marks[(j + 1) * W + s + floor[i]!] = 1;
+			}
+		take.push(marks);
+	});
+	const sizes: number[] = [];
+	const examples = new Map<number, number[]>();
+	for (let k = kMin; k <= kMax; k++) {
+		const j0 = k - forced.length;
+		for (let s0 = 0; s0 <= STEPS - fFloor; s0++) {
+			const v = best[j0]![s0]!;
+			if (v < 0 || v + fCap < STEPS) continue;
+			const set: number[] = [];
+			for (let t = m - 1, j = j0, s = s0; t >= 0 && j > 0; t--)
+				if (take[t]![j * W + s]) {
+					set.push(optional[t]!);
+					j--;
+					s -= floor[optional[t]!]!;
+				}
+			sizes.push(k);
+			examples.set(k, set);
+			break;
+		}
+	}
+	return { n, forced, optional, floor, cap, kMin, kMax, sizes, examples };
+}
+
+function fits(plan: SubsetPlan, held: readonly number[]): boolean {
+	let f = 0;
+	let c = 0;
+	for (const i of held) {
+		f += plan.floor[i]!;
+		c += plan.cap[i]!;
+	}
+	return f <= STEPS && c >= STEPS;
 }
 
 /**
@@ -79,7 +201,6 @@ export function gammaSample(alpha: number, rng: Rng): number {
  * portfolios, > 1 balanced ones.
  */
 export function generateWeights(n: number, rng: Rng, constraints?: ReadonlyArray<WeightConstraint | undefined>, alpha = 1): number[] {
-	const STEPS = Math.round(1 / WEIGHT_STEP);
 	const hasConstraints = !!constraints && constraints.some((c) => c && (c.min > 0 || c.max < 1));
 	const minSteps = new Array<number>(n);
 	const maxSteps = new Array<number>(n);
@@ -113,7 +234,41 @@ export function generateWeights(n: number, rng: Rng, constraints?: ReadonlyArray
 		if (keptMin > STEPS) for (let i = 0; i < n; i++) minSteps[i] = 0;
 	}
 
-	// Allocate minimum steps, then distribute the remainder proportionally to raw shares (water-filling).
+	return fillSteps(minSteps, maxSteps, raw).map((s) => s / STEPS);
+}
+
+/**
+ * Random weights for a subset plan: pick a feasible number of held assets,
+ * then which ones, then their weights between floor and cap.
+ */
+export function generateSubsetWeights(plan: SubsetPlan, rng: Rng, alpha = 1): number[] {
+	const k = plan.sizes[Math.floor(rng() * plan.sizes.length)]!;
+	const need = k - plan.forced.length;
+	let held: number[] | null = null;
+	for (let tries = 0; tries < 24 && !held; tries++) {
+		const pool = plan.optional.slice();
+		for (let j = 0; j < need; j++) {
+			const r = j + Math.floor(rng() * (pool.length - j));
+			[pool[j], pool[r]] = [pool[r]!, pool[j]!];
+		}
+		const pick = plan.forced.concat(pool.slice(0, need));
+		if (fits(plan, pick)) held = pick;
+	}
+	held ??= plan.forced.concat(plan.examples.get(k)!);
+	const minSteps = new Array<number>(plan.n).fill(0);
+	const maxSteps = new Array<number>(plan.n).fill(0);
+	const raw = new Array<number>(plan.n).fill(0);
+	for (const i of held) {
+		minSteps[i] = plan.floor[i]!;
+		maxSteps[i] = plan.cap[i]!;
+		raw[i] = alpha === 1 ? -Math.log(rng() || 1e-12) : gammaSample(alpha, rng) + 1e-300;
+	}
+	return fillSteps(minSteps, maxSteps, raw).map((s) => s / STEPS);
+}
+
+/** Allocate minimum steps, then distribute the remainder proportionally to raw shares (water-filling). */
+function fillSteps(minSteps: readonly number[], maxSteps: readonly number[], raw: readonly number[]): number[] {
+	const n = raw.length;
 	const steps = minSteps.slice();
 	let remaining = STEPS - steps.reduce((s, v) => s + v, 0);
 	const free = (i: number) => maxSteps[i]! - steps[i]!;
@@ -151,10 +306,10 @@ export function generateWeights(n: number, rng: Rng, constraints?: ReadonlyArray
 		for (let i = 1; i < n; i++) if (free(i) > free(best)) best = i;
 		steps[best]! += remaining;
 	}
-	return steps.map((s) => s / STEPS);
+	return steps;
 }
 
-export interface SimulationInput {
+export interface SimulationInput extends AssetCountLimits {
 	assets: ReadonlyArray<{ id: string; prices: readonly PricePoint[] }>;
 	count: number;
 	riskFreeRate: number;
@@ -321,23 +476,109 @@ export function maxReturnWeights(est: Estimates, lo: readonly number[], hi: read
 	return w;
 }
 
+/** Mean-variance objective w·μ − (λ/2)·w'Σw; −w'Σw for λ = ∞. */
+function objective(w: readonly number[], est: Estimates, lambda: number): number {
+	let arith = 0;
+	let variance = 0;
+	for (let i = 0; i < w.length; i++) {
+		if (w[i] === 0) continue;
+		arith += w[i]! * est.mu[i]!;
+		for (let j = 0; j < w.length; j++) variance += w[i]! * w[j]! * est.cov[i]![j]!;
+	}
+	return Number.isFinite(lambda) ? arith - (lambda / 2) * variance : -variance;
+}
+
 /**
- * Exact efficient frontier (MC-5): solutions for a log-spaced range of risk
+ * Heuristic optimum under a subset plan: solve without floors and counts,
+ * hold the assets with the largest weights (count clamped to a feasible size),
+ * re-optimize on that set, then improve by dropping assets stuck at their
+ * floor, adding the most attractive missing asset or swapping the two.
+ */
+function solveSubset(
+	est: Estimates,
+	lambda: number,
+	plan: SubsetPlan,
+	lo: readonly number[],
+	hi: readonly number[],
+	iterations: number
+): number[] {
+	const n = plan.n;
+	const restricted = (held: readonly number[], iters: number) => {
+		const l = new Array<number>(n).fill(0);
+		const h = new Array<number>(n).fill(0);
+		for (const i of held) {
+			l[i] = plan.floor[i]! / STEPS;
+			h[i] = plan.cap[i]! / STEPS;
+		}
+		return solveMeanVariance(est, lambda, l, h, iters);
+	};
+	const relaxed = solveMeanVariance(est, lambda, lo, hi, iterations);
+	const order = plan.optional.slice().sort((a, b) => relaxed[b]! - relaxed[a]!);
+	const used = plan.forced.length + order.filter((i) => relaxed[i]! >= WEIGHT_STEP / 2).length;
+	const k = plan.sizes.reduce((b, s) => (Math.abs(s - used) < Math.abs(b - used) ? s : b), plan.sizes[0]!);
+	let held = plan.forced.concat(order.slice(0, k - plan.forced.length));
+	if (!fits(plan, held)) held = plan.forced.concat(plan.examples.get(k)!);
+	let w = restricted(held, iterations);
+	let f = objective(w, est, lambda);
+	const sizes = new Set(plan.sizes);
+	for (let round = 0; round < 2 * n; round++) {
+		// Marginal value of each asset at the current portfolio.
+		const g = est.mu.map(
+			(m, i) =>
+				(Number.isFinite(lambda) ? m : 0) - (Number.isFinite(lambda) ? lambda : 1) * est.cov[i]!.reduce((s, x, j) => s + x * w[j]!, 0)
+		);
+		const inSet = new Set(held);
+		const out = plan.optional.filter((i) => !inSet.has(i)).sort((a, b) => g[b]! - g[a]!)[0];
+		const removable = held.filter((i) => !plan.forced.includes(i));
+		const worst = removable.sort((a, b) => g[a]! - g[b]!)[0];
+		const candidates: number[][] = [];
+		if (sizes.has(held.length - 1))
+			for (const i of removable) if (w[i]! <= plan.floor[i]! / STEPS + 1e-6) candidates.push(held.filter((j) => j !== i));
+		if (out !== undefined && sizes.has(held.length + 1)) candidates.push([...held, out]);
+		if (out !== undefined && worst !== undefined) candidates.push([...held.filter((j) => j !== worst), out]);
+		let bestSet: number[] | null = null;
+		let bestW = w;
+		let bestF = f;
+		for (const c of candidates) {
+			if (!fits(plan, c)) continue;
+			const wc = restricted(c, iterations);
+			const fc = objective(wc, est, lambda);
+			if (fc > bestF + 1e-10) {
+				bestSet = c;
+				bestW = wc;
+				bestF = fc;
+			}
+		}
+		if (!bestSet) break;
+		held = bestSet;
+		w = bestW;
+		f = bestF;
+	}
+	return w;
+}
+
+/**
+ * Efficient frontier (MC-5): solutions for a log-spaced range of risk
  * aversion plus the minimum-variance and maximum-return corners, sorted by
- * volatility and filtered to be efficient.
+ * volatility and filtered to be efficient. Exact for per-asset min/max;
+ * heuristic when held minimums or asset counts apply (see solveSubset).
  */
 export function efficientFrontier(
 	est: Estimates,
 	constraints: ReadonlyArray<WeightConstraint | undefined> | undefined,
-	points = 24
+	points = 24,
+	limits: AssetCountLimits = {}
 ): number[][] {
 	const n = est.mu.length;
 	const lo = Array.from({ length: n }, (_, i) => constraints?.[i]?.min ?? 0);
 	const hi = Array.from({ length: n }, (_, i) => constraints?.[i]?.max ?? 1);
+	const plan = constraints ? planSubsets(constraints, limits) : null;
+	if (plan && plan.sizes.length === 0) return [];
 	const scale = spectralNorm(est.cov) || 1;
 	type Point = { lambda: number; w: number[]; volatility: number; annualizedReturn: number };
 	const solve = (lambda: number): Point => {
-		const w = Number.isFinite(lambda) ? solveMeanVariance(est, lambda, lo, hi, 1000) : solveMeanVariance(est, Infinity, lo, hi, 1500);
+		const iterations = plan ? 500 : Number.isFinite(lambda) ? 1000 : 1500;
+		const w = plan ? solveSubset(est, lambda, plan, lo, hi, iterations) : solveMeanVariance(est, lambda, lo, hi, iterations);
 		return { lambda, w, ...portfolioStats(w, est, 0) };
 	};
 	// λ = 1 maximizes the compound return (top end of the shown frontier); larger λ trade
@@ -353,14 +594,15 @@ export function efficientFrontier(
 			pts[0]!.volatility - minVar.volatility,
 			Math.hypot(pts[0]!.volatility - minVar.volatility, pts[0]!.annualizedReturn - minVar.annualizedReturn)
 		);
-	for (let round = 0; round < 6 && pts.length < 80; round++) {
+	const maxPoints = plan ? 48 : 80;
+	for (let round = 0; round < 6 && pts.length < maxPoints; round++) {
 		const target = span() / 30;
 		const next: Point[] = [pts[0]!];
 		let added = 0;
 		for (let k = 1; k < pts.length; k++) {
 			const a = pts[k - 1]!;
 			const b = pts[k]!;
-			if (Math.hypot(a.volatility - b.volatility, a.annualizedReturn - b.annualizedReturn) > target && pts.length + added < 80) {
+			if (Math.hypot(a.volatility - b.volatility, a.annualizedReturn - b.annualizedReturn) > target && pts.length + added < maxPoints) {
 				next.push(solve(Math.sqrt(a.lambda * b.lambda)));
 				added++;
 			}
@@ -391,7 +633,8 @@ export function runSimulation(
 	const n = input.assets.length;
 	const ids = input.assets.map((a) => a.id);
 	const est = estimateInputs(input.assets);
-	const frontierWeights = efficientFrontier(est, input.constraints);
+	const plan = input.constraints ? planSubsets(input.constraints, input) : null;
+	const frontierWeights = efficientFrontier(est, input.constraints, 24, input);
 	const total = Math.max(0, Math.floor(input.count));
 	const capacity = total + frontierWeights.length;
 	const volatilities = new Float64Array(capacity);
@@ -411,7 +654,7 @@ export function runSimulation(
 	for (let sim = 0; sim < total; sim++) {
 		// Vary the concentration so both diversified and concentrated portfolios appear.
 		const alpha = Math.exp(Math.log(0.15) + rng() * (Math.log(1.5) - Math.log(0.15)));
-		const w = generateWeights(n, rng, input.constraints, alpha);
+		const w = plan ? generateSubsetWeights(plan, rng, alpha) : generateWeights(n, rng, input.constraints, alpha);
 		const key = w.map((x) => Math.round(x * 1000)).join(',');
 		if (!seen.has(key)) {
 			seen.add(key);
@@ -419,11 +662,13 @@ export function runSimulation(
 		}
 		if (onProgress && ((sim + 1) % progressEvery === 0 || sim === total - 1)) onProgress(sim + 1, total);
 	}
-	const frontier: number[] = [];
+	let frontier: number[] = [];
 	for (const w of frontierWeights) {
 		frontier.push(count);
 		push(w);
 	}
+	// The heuristic frontier can miss portfolios; take the efficient set of everything found.
+	if (plan) frontier = efficientIndices(volatilities.subarray(0, count), returns.subarray(0, count));
 	return {
 		assetIds: ids,
 		volatilities: volatilities.slice(0, count),
@@ -437,8 +682,22 @@ export function runSimulation(
 			const unit = ids.map((_, j) => (j === i ? 1 : 0));
 			const s = portfolioStats(unit, est, input.riskFreeRate);
 			return { id, annualizedReturn: s.annualizedReturn, volatility: s.volatility };
-		})
+		}),
+		...(plan ? { frontierApproximate: true } : {})
 	};
+}
+
+/** Indices of points not beaten by another point (more return at ≤ risk), ascending volatility. */
+function efficientIndices(volatilities: Float64Array, returns: Float64Array): number[] {
+	const order = Array.from(volatilities.keys()).sort((a, b) => volatilities[a]! - volatilities[b]! || returns[b]! - returns[a]!);
+	const out: number[] = [];
+	let best = -Infinity;
+	for (const i of order)
+		if (returns[i]! > best + 1e-10) {
+			out.push(i);
+			best = returns[i]!;
+		}
+	return out;
 }
 
 export function weightsAt(result: MonteCarloResult, index: number): Record<string, number> {

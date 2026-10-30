@@ -158,6 +158,8 @@ export interface CorrelationMatrix {
 export interface WeightConstraint {
 	min: number;
 	max: number;
+	/** Minimum weight once held: the asset is either 0 or at least this (MC-4). */
+	floor?: number;
 }
 
 export interface MonteCarloConfig {
@@ -189,6 +191,8 @@ export interface MonteCarloResult {
 	/** Common history the estimates are based on. */
 	window: { start: string; end: string; observations: number };
 	assetStats: Array<{ id: string; annualizedReturn: number; volatility: number }>;
+	/** Frontier found heuristically (asset counts or held minimums make it combinatorial). */
+	frontierApproximate?: boolean;
 }
 
 export interface StoredSimulation {

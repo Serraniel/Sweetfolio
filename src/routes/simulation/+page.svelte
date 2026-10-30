@@ -28,13 +28,23 @@
 		)
 	);
 	const selectedAssets = $derived(sim.assetIds.map((id) => app.assetById.get(id)).filter((a): a is Asset => !!a));
-	const validation = $derived(sim.useConstraints ? validateConstraints(sim.parsedConstraints()) : { ok: true, errors: [] });
+	const parsed = $derived(sim.parsedConstraints());
+	const validation = $derived(
+		sim.useConstraints
+			? validateConstraints(
+					parsed.constraints,
+					parsed,
+					selectedAssets.map((a) => a.name)
+				)
+			: { ok: true, errors: [] }
+	);
 	const canRun = $derived(selectedAssets.length >= 2 && sim.count >= 100 && sim.count <= 100_000 && validation.ok);
 	$effect(() => {
 		for (const id of sim.assetIds) if (!sim.constraints[id]) sim.constraints[id] = { min: '', max: '' };
 	});
 	let colorBySharpe = $state(true);
 	let showDominating = $state(false);
+	let onlyDominating = $state(false);
 
 	function inputs(ids: string[]) {
 		return ids.map((id) => {
@@ -50,7 +60,14 @@
 		sim.riskFreeRate = app.riskFreeRate;
 		const ids = selectedAssets.map((a) => a.id);
 		sim.run = runMonteCarlo(
-			{ assets: inputs(ids), count: sim.count, riskFreeRate: app.riskFreeRate, constraints: sim.parsedConstraints() },
+			{
+				assets: inputs(ids),
+				count: sim.count,
+				riskFreeRate: app.riskFreeRate,
+				constraints: parsed.constraints,
+				minAssets: parsed.minAssets,
+				maxAssets: parsed.maxAssets
+			},
 			(done, total) => (sim.progress = { done, total })
 		);
 		try {
@@ -154,25 +171,62 @@
 				<Toggle
 					bind:checked={sim.useConstraints}
 					label="Weight constraints"
-					description="Set minimum / maximum weights per asset (e.g. equity ≥ 40 %, gold ≤ 15 %)."
+					description="Limit weights for all assets or per asset (e.g. equity ≥ 40 %, gold ≤ 15 %) and the number of assets held."
 				/>
 				{#if sim.useConstraints && selectedAssets.length}
 					<div class="c-table">
-						<span class="xs muted">Asset</span><span class="xs muted">Min %</span><span class="xs muted">Max %</span>
+						<span class="xs muted">All assets</span><span class="xs muted">Min %</span><span class="xs muted">Max %</span>
+						<span class="small">Weight per asset</span>
+						<input
+							class="input num"
+							inputmode="decimal"
+							placeholder="0"
+							bind:value={sim.limits.minWeight}
+							aria-label="Minimum weight per held asset"
+						/>
+						<input
+							class="input num"
+							inputmode="decimal"
+							placeholder="100"
+							bind:value={sim.limits.maxWeight}
+							aria-label="Maximum weight per asset"
+						/>
+						<span class="small">Number of assets</span>
+						<input
+							class="input num"
+							inputmode="numeric"
+							placeholder="1"
+							bind:value={sim.limits.minAssets}
+							aria-label="Minimum number of assets"
+						/>
+						<input
+							class="input num"
+							inputmode="numeric"
+							placeholder={String(selectedAssets.length)}
+							bind:value={sim.limits.maxAssets}
+							aria-label="Maximum number of assets"
+						/>
+					</div>
+					<p class="xs muted hint">
+						The minimum applies to assets that are held: each weight is 0 % or at least that. Entries per asset override it; a per-asset
+						minimum above 0 % means the asset is always held.
+					</p>
+					<div class="c-table">
+						<span class="xs muted">Per asset</span><span class="xs muted">Min %</span><span class="xs muted">Max %</span>
 						{#each selectedAssets as a (a.id)}
 							{#if sim.constraints[a.id]}
 								<span class="truncate small">{a.name}</span>
 								<input
 									class="input num"
 									inputmode="decimal"
-									placeholder="0"
+									placeholder={sim.limits.minWeight.trim() || '0'}
 									bind:value={sim.constraints[a.id]!.min}
 									aria-label="Minimum weight of {a.name}"
 								/>
 								<input
 									class="input num"
 									inputmode="decimal"
-									placeholder="100"
+									placeholder={sim.limits.maxWeight.trim() || '100'}
 									bind:value={sim.constraints[a.id]!.max}
 									aria-label="Maximum weight of {a.name}"
 								/>
@@ -197,8 +251,8 @@
 				<Button variant="primary" icon="simulation" disabled={!canRun} onclick={run}>Run simulation</Button>
 			{/if}
 			<p class="xs muted">
-				Expected returns use each asset's full history; risk uses common dates. Risk-free rate {fmt.num(app.settings.riskFreeRate, 2, 0)} %, values
-				in {app.settings.mainCurrency}.
+				Returns and risk are estimated on the assets' common history. Risk-free rate {fmt.num(app.settings.riskFreeRate, 2, 0)} %, values in {app
+					.settings.mainCurrency}.
 			</p>
 		</div>
 	</Card>
@@ -218,13 +272,24 @@
 			{/if}
 			<Card
 				title="Efficient frontier"
-				subtitle="{fmt.num(result.count, 0)} portfolios · estimated from {fmt.date(result.window.start)} to {fmt.date(result.window.end)}"
+				subtitle="{fmt.num(result.count, 0)} portfolios · estimated from {fmt.date(result.window.start)} to {fmt.date(
+					result.window.end
+				)}{result.frontierApproximate ? ' · frontier approximated (asset counts / held minimums)' : ''}"
 			>
 				{#snippet actions()}
 					<label class="row xs"><input type="checkbox" bind:checked={colorBySharpe} />Color by Sharpe</label>
-					{#if benchmark}<label class="row xs"><input type="checkbox" bind:checked={showDominating} />Beats benchmark</label>{/if}
+					{#if benchmark}<label class="row xs"><input type="checkbox" bind:checked={showDominating} />Beats benchmark</label
+						>{#if showDominating}<label class="row xs"><input type="checkbox" bind:checked={onlyDominating} />Only these</label>{/if}{/if}
 				{/snippet}
-				<Frontier {result} {colorBySharpe} {markers} {dominating} selected={sim.selected} onselect={(i) => (sim.selected = i)} />
+				<Frontier
+					{result}
+					{colorBySharpe}
+					{markers}
+					{dominating}
+					onlyDominating={onlyDominating && !!dominating}
+					selected={sim.selected}
+					onselect={(i) => (sim.selected = i)}
+				/>
 				<div class="row picks">
 					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'sharpe'))}>Max Sharpe</Button>
 					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'minVol'))}>Min volatility</Button>
@@ -294,6 +359,9 @@
 		gap: 6px 8px;
 		align-items: center;
 		margin-top: 8px;
+	}
+	.hint {
+		margin: 6px 0 0;
 	}
 	.c-table .input {
 		min-height: 32px;

@@ -11,6 +11,8 @@ export interface MonteCarloRequest {
 	count: number;
 	riskFreeRate: number;
 	constraints?: Array<WeightConstraint | undefined>;
+	minAssets?: number;
+	maxAssets?: number;
 }
 
 export type MonteCarloMessage =

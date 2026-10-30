@@ -6,7 +6,9 @@ import {
 	dominatingIndices,
 	efficientFrontier,
 	estimateInputs,
+	generateSubsetWeights,
 	generateWeights,
+	planSubsets,
 	portfolioStats,
 	projectCapped,
 	runSimulation,
@@ -84,6 +86,56 @@ describe('MC-4 weight constraints', () => {
 				expect(x).toBeLessThanOrEqual(c[i]!.max + 1e-9);
 			});
 		}
+	});
+});
+
+describe('MC-4 held minimums and asset counts', () => {
+	const open = (n: number, floor?: number, max = 1) => Array.from({ length: n }, () => ({ min: 0, max, ...(floor ? { floor } : {}) }));
+	const held = (w: readonly number[]) => w.filter((x) => x > 0).length;
+
+	it('plain per-asset limits need no subset plan', () => {
+		expect(planSubsets([{ min: 0.1, max: 0.5 }, undefined])).toBeNull();
+		expect(planSubsets(open(4), { minAssets: 1, maxAssets: 4 })).toBeNull();
+	});
+	it('finds the feasible numbers of held assets', () => {
+		// 0 or ≥ 30 %: at most 3 assets; max 40 %: at least 3 assets.
+		expect(planSubsets(open(6, 0.3, 0.4))!.sizes).toEqual([3]);
+		expect(planSubsets(open(6), { minAssets: 2, maxAssets: 4 })!.sizes).toEqual([2, 3, 4]);
+	});
+	it('rejects infeasible combinations with a message', () => {
+		expect(validateConstraints(open(6, 0.3, 0.2)).errors.join()).toContain('above its maximum');
+		expect(validateConstraints(open(6, 0.3), { minAssets: 4 }).errors.join()).toContain('No combination of 4–6 assets');
+		expect(validateConstraints(open(3), { minAssets: 4 }).ok).toBe(false);
+		expect(validateConstraints(open(5), { minAssets: 3, maxAssets: 2 }).ok).toBe(false);
+		expect(validateConstraints(open(5), { minAssets: 1.5 }).ok).toBe(false);
+		expect(
+			validateConstraints(
+				[
+					{ min: 0.1, max: 1 },
+					{ min: 0.1, max: 1 },
+					{ min: 0, max: 1 }
+				],
+				{ maxAssets: 1 }
+			).ok
+		).toBe(false);
+		expect(validateConstraints(open(8, 0.05, 0.25), { minAssets: 4, maxAssets: 6 }).ok).toBe(true);
+	});
+	it('sampled weights are 0 or within floor and cap, with an allowed count', () => {
+		const c = [{ min: 0.1, max: 0.5 }, ...open(7, 0.05, 0.25)];
+		const plan = planSubsets(c, { minAssets: 3, maxAssets: 5 })!;
+		const rng = seededRng(3);
+		const counts = new Set<number>();
+		for (let k = 0; k < 2000; k++) {
+			const w = generateSubsetWeights(plan, rng, k % 2 ? 1 : 0.2);
+			expect(sumOf(w)).toBeCloseTo(1, 9);
+			expect(w[0]).toBeGreaterThanOrEqual(0.1 - 1e-9);
+			w.forEach((x, i) => {
+				if (x > 0) expect(x).toBeGreaterThanOrEqual(Math.max(c[i]!.min, c[i]!.floor ?? 0) - 1e-9);
+				expect(x).toBeLessThanOrEqual(c[i]!.max + 1e-9);
+			});
+			counts.add(held(w));
+		}
+		expect([...counts].sort()).toEqual([3, 4, 5]);
 	});
 });
 
@@ -203,6 +255,32 @@ describe('MC-6/MC-7 simulation', () => {
 		const single = r.assetStats.find((s) => s.id === 'a')!;
 		const est = estimateInputs(assets);
 		expect(single.annualizedReturn).toBeCloseTo(portfolioStats([1, 0, 0], est, 0).annualizedReturn, 9);
+	});
+	it('frontier under held minimums and counts is feasible and not beaten by any sample', () => {
+		const prices = Array.from({ length: 21 }, (_, k) =>
+			series('2015-01-01', 1200, (i) => 0.0002 + (k % 7) * 0.0001 + Math.sin(i / (3 + k) + k) * (0.004 + (k % 5) * 0.002))
+		);
+		const many = prices.map((p, k) => ({ id: `x${k}`, prices: p }));
+		const constraints = many.map(() => ({ min: 0, max: 0.3, floor: 0.05 }));
+		const started = performance.now();
+		const s = runSimulation({ assets: many, count: 5000, riskFreeRate: 0, constraints, minAssets: 4, maxAssets: 8 }, seededRng(9));
+		expect(performance.now() - started).toBeLessThan(15_000);
+		expect(s.frontierApproximate).toBe(true);
+		const n = many.length;
+		for (let i = 0; i < s.count; i++) {
+			const w = Array.from(s.weights.subarray(i * n, (i + 1) * n));
+			const k = w.filter((x) => x > 1e-6).length;
+			expect(k).toBeGreaterThanOrEqual(4);
+			expect(k).toBeLessThanOrEqual(8);
+			for (const x of w) expect(x <= 1e-6 || (x >= 0.05 - 1e-4 && x <= 0.3 + 1e-4)).toBe(true);
+		}
+		const fv = s.frontier.map((i) => s.volatilities[i]!);
+		for (let k = 1; k < fv.length; k++) expect(fv[k]!).toBeGreaterThan(fv[k - 1]!);
+		for (let i = 0; i < s.count; i++) {
+			// No point has at most the risk and more return than the best frontier point at that risk.
+			const best = Math.max(...s.frontier.filter((f) => s.volatilities[f]! <= s.volatilities[i]! + 1e-12).map((f) => s.returns[f]!));
+			expect(s.returns[i]!).toBeLessThanOrEqual(best + 1e-9);
+		}
 	});
 	it('finds portfolios dominating a reference', () => {
 		const worst = { volatility: Math.max(...r.volatilities), annualizedReturn: Math.min(...r.returns) };

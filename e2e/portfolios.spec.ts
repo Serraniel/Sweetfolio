@@ -118,3 +118,29 @@ test('MC-1/MC-7 simulation runs and inspects a portfolio', async ({ page }) => {
 	await page.getByRole('link', { name: 'Open' }).click();
 	await expect(page).toHaveURL(/portfolios\/sim-/);
 });
+
+test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByText('Weight constraints').click();
+	await page.getByLabel('Minimum number of assets').fill('9');
+	await expect(page.getByText(/At least 9 assets required/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+	await page.getByLabel('Minimum number of assets').fill('2');
+	await page.getByLabel('Minimum weight per held asset').fill('20');
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByText(/frontier approximated/)).toBeVisible({ timeout: 20_000 });
+	const weights = page.locator('.weights li .num');
+	for (const w of await weights.allTextContents()) {
+		const v = Number.parseFloat(w.replace(',', '.'));
+		expect(v === 0 || v >= 20).toBe(true);
+	}
+	const box = (await page.locator('.frontier canvas').boundingBox())!;
+	await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 5 });
+	await page.mouse.up();
+	await page.getByRole('button', { name: 'Reset zoom' }).click();
+	await expect(page.getByRole('button', { name: 'Reset zoom' })).toBeHidden();
+});
