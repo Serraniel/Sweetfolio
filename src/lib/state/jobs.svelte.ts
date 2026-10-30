@@ -9,6 +9,7 @@ import { fetchEurRate } from '#lib/fetchers/ecb.ts';
 import { fetchSecurity, onvista } from '#lib/fetchers/market-data.ts';
 import { app } from './app.svelte.ts';
 import { notify } from './toasts.svelte.ts';
+import * as fmt from '#lib/format.ts';
 
 const STALE_MS = 24 * 60 * 60 * 1000;
 
@@ -90,16 +91,22 @@ class Jobs {
 		];
 	}
 
-	async fetchCurrencyRates() {
+	/** `manual`: started from the button, so also report when there is nothing to do. */
+	async fetchCurrencyRates(opts: { manual?: boolean } = {}) {
 		if (this.fetchingRates) return;
 		const main = app.settings.mainCurrency;
 		const pairs = neededEcbPairs(this.usedCurrencies(), main);
-		if (!pairs.length) return;
+		if (!pairs.length) {
+			if (opts.manual)
+				notify.show(`No exchange rates needed: all assets, transactions and cash accounts are in ${main} or have no ECB rates.`);
+			return;
+		}
 		this.fetchingRates = true;
 		const id = 'rates';
 		notify.startTask(id, 'Fetching exchange rates', pairs.length);
 		const errors: string[] = [];
 		const fetched = new Map<string, CurrencyRate>();
+		let added = 0;
 		try {
 			for (const [i, pair] of pairs.entries()) {
 				notify.updateTask(id, { current: i + 1, detail: pair.slice(0, 3) });
@@ -108,6 +115,7 @@ class Jobs {
 					const last = existing?.rates.at(-1)?.date;
 					const rate = await fetchEurRate(pair.slice(0, 3), last);
 					const merged = mergeRates(existing, rate);
+					added += merged.rates.length - (existing?.rates.length ?? 0);
 					fetched.set(pair, merged);
 					await app.saveCurrencies([merged]);
 				} catch (err) {
@@ -135,7 +143,16 @@ class Jobs {
 			}
 		} finally {
 			this.fetchingRates = false;
-			notify.finishTask(id, errors.length ? undefined : 'Exchange rates updated', errors);
+			const codes = pairs.map((p) => p.slice(0, 3)).join(', ');
+			notify.finishTask(
+				id,
+				errors.length
+					? undefined
+					: added
+						? `Exchange rates updated: ${fmt.num(added, 0)} new rates (${codes})`
+						: `Exchange rates are up to date (${codes})`,
+				errors
+			);
 		}
 	}
 

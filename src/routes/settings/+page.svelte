@@ -267,8 +267,11 @@
 
 		<section id="currency">
 			<Card title="Exchange rates">
-				{#snippet actions()}<Button size="sm" icon="refresh" loading={jobs.fetchingRates} onclick={() => jobs.fetchCurrencyRates()}
-						>Fetch from ECB</Button
+				{#snippet actions()}<Button
+						size="sm"
+						icon="refresh"
+						loading={jobs.fetchingRates}
+						onclick={() => jobs.fetchCurrencyRates({ manual: true })}>Fetch from ECB</Button
 					>{/snippet}
 				<p class="small muted">
 					Rates for your assets' currencies are fetched automatically from the European Central Bank. You can also upload your own history;
