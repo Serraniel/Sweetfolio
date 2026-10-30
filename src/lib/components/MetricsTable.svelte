@@ -83,7 +83,7 @@
 						<td class="right num {row.key === 'volatility' ? '' : fmt.signClass(v)}">
 							{#if loading && !metrics}<span class="skeleton"></span>{:else}{row.kind === 'pct' ? fmt.pct(v) : fmt.num(v)}{/if}
 							{#if benchmark && b !== undefined}<span
-									class="bench xs {compareClass(row.key, v, b)}"
+									class="bench {compareClass(row.key, v, b)}"
 									title="{benchmarkLabel}: {row.kind === 'pct' ? fmt.pct(b) : fmt.num(b)}"
 									>{row.kind === 'pct' ? fmt.pct(b) : fmt.num(b)}</span
 								>{/if}
@@ -140,16 +140,19 @@
 	}
 	.bench {
 		display: block;
-		margin-top: 2px;
+		margin-top: 1px;
+		font-size: 0.6875rem;
+		line-height: 1.2;
+		opacity: 0.8;
 		color: var(--muted);
 		font-weight: 400;
 	}
 	/* Muted versions of the positive / negative colours: the benchmark did better / worse. */
 	.bench.b-better {
-		color: color-mix(in srgb, var(--positive) 55%, var(--muted));
+		color: color-mix(in srgb, var(--positive) 40%, var(--muted));
 	}
 	.bench.b-worse {
-		color: color-mix(in srgb, var(--negative) 55%, var(--muted));
+		color: color-mix(in srgb, var(--negative) 40%, var(--muted));
 	}
 	.skeleton {
 		display: inline-block;
