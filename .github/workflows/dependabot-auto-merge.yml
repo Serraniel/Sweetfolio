@@ -1,31 +1,28 @@
-name: Dependabot Auto-Merge
+# Auto-merge Dependabot patch/minor updates once required checks pass (DE-5).
+# Requires "Allow auto-merge" in the repository settings and branch protection
+# with required status checks on main.
+name: Dependabot auto-merge
 
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+on: pull_request
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  # Auto-approve non-major Dependabot PRs immediately.
-  # Enqueueing happens in dependabot-enqueue.yml after CI passes.
-  auto-approve:
-    if: github.actor == 'dependabot[bot]'
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch Dependabot metadata
-        id: metadata
+      - id: meta
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-approve non-major updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - name: Enable auto-merge for patch and minor updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
         env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
         run: |
-          gh pr review "$PR_NUMBER" --approve --repo "$REPO"
+          gh pr review --approve "$PR_URL" || true
+          gh pr merge --auto --squash "$PR_URL"

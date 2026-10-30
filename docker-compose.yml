@@ -1,6 +1,12 @@
 services:
   sweetfolio:
-    image: ghcr.io/serraniel/sweetfolio:latest
+    image: ghcr.io/serraniel/sweetfolio:latest # or :edge for the newest main build
     ports:
-      - "8080:80"
+      - '8080:8080'
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    # Optional runtime configuration (e.g. Parqet client id), see docs/SELF_HOSTING.md
+    # volumes:
+    #   - ./config.json:/usr/share/nginx/html/config.json:ro
