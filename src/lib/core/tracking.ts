@@ -236,6 +236,12 @@ export interface ValuePoint {
 	date: ISODate;
 	value: number;
 	invested: number;
+	/**
+	 * External cash flow into the portfolio since the previous point (+ in, − out):
+	 * deposits/withdrawals when tracking cash; otherwise buys in, and sells,
+	 * dividends, fees and taxes out, since their cash is not part of `value`.
+	 */
+	flow: number;
 }
 
 /**
@@ -259,6 +265,7 @@ export function valueHistory(
 	const positions = new Map<string, number>();
 	let cash = 0;
 	let invested = 0;
+	let flow = 0;
 	let idx = 0;
 	const out: ValuePoint[] = [];
 	const lots = new Map<string, Array<{ q: number; c: number }>>();
@@ -268,6 +275,9 @@ export function valueHistory(
 			const tx = sorted[idx++]!;
 			const q = tx.quantity ?? 0;
 			cash += cashFlow(tx);
+			if (options.trackCash) {
+				if (tx.type === 'deposit' || tx.type === 'withdrawal') flow += cashFlow(tx);
+			} else if (tx.type !== 'deposit' && tx.type !== 'withdrawal') flow -= cashFlow(tx);
 			if (tx.type === 'buy') {
 				positions.set(tx.assetId, (positions.get(tx.assetId) ?? 0) + q);
 				const cost = q * (tx.price ?? 0) + (tx.fee || 0);
@@ -301,7 +311,27 @@ export function valueHistory(
 				value += l.reduce((s, x) => s + x.q * x.c, 0);
 			}
 		}
-		out.push({ date, value, invested });
+		out.push({ date, value, invested, flow });
+		flow = 0;
+	}
+	return out;
+}
+
+/**
+ * Time-weighted performance index (start 100) from a value history: each step's
+ * return is (value − flow) ÷ previous value, so deposits and withdrawals do not
+ * count as gains or losses. Steps without previous value (start, fully sold)
+ * leave the index unchanged.
+ */
+export function twrIndex(points: readonly ValuePoint[]): PricePoint[] {
+	const out: PricePoint[] = [];
+	let index = 100;
+	let prev = 0;
+	for (const p of points) {
+		if (prev > DUST && out.length) index *= (p.value - p.flow) / prev;
+		// Skip the time before the first position: there is nothing to measure yet.
+		if (out.length || p.value > DUST) out.push({ date: p.date, close: index });
+		prev = p.value;
 	}
 	return out;
 }

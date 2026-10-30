@@ -16,6 +16,12 @@
 	import { colorAt } from '#lib/charts/palette.ts';
 
 	let createOpen = $state(false);
+	// Portfolios picked for the compare page (CP-5).
+	let selected = $state<string[]>([]);
+	const toggle = (id: string) => (selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+	$effect(() => {
+		if (selected.some((id) => !app.portfolioById.has(id))) selected = selected.filter((id) => app.portfolioById.has(id));
+	});
 	const list = $derived([...app.portfolios].sort((a, b) => a.name.localeCompare(b.name)));
 	const MODE_LABEL = { model: 'Model', tracked: 'Tracked', both: 'Model + tracked' } as const;
 
@@ -49,10 +55,25 @@
 		</EmptyState>
 	</Card>
 {:else}
+	{#if selected.length}
+		<div class="selection">
+			<span class="small"><b>{selected.length}</b> selected</span>
+			<div class="row">
+				<Button
+					size="sm"
+					variant="primary"
+					icon="compare"
+					disabled={selected.length < 2}
+					onclick={() => goto(`/compare?portfolios=${selected.map((id) => app.portfolioSlug(id)).join(',')}`)}>Compare</Button
+				>
+				<Button size="sm" variant="ghost" onclick={() => (selected = [])}>Clear</Button>
+			</div>
+		</div>
+	{/if}
 	<div class="grid" style="--min: 290px">
 		{#each list as p (p.id)}
 			{@const tv = p.mode !== 'model' ? trackedView(p) : null}
-			<article class="pf-card">
+			<article class="pf-card" class:sel={selected.includes(p.id)}>
 				<a class="body" href="/portfolios/{app.portfolioSlug(p.id)}">
 					<div class="spread">
 						<h2 class="truncate">{p.name}</h2>
@@ -92,6 +113,15 @@
 					{/if}
 				</a>
 				<div class="foot">
+					<label class="pick xs muted"
+						><input
+							type="checkbox"
+							checked={selected.includes(p.id)}
+							onchange={() => toggle(p.id)}
+							aria-label="Select {p.name} for comparison"
+						/>Compare</label
+					>
+					<span class="spacer"></span>
 					<button
 						class="icon-btn"
 						class:on={app.isBenchmark('portfolio', p.id)}
@@ -125,8 +155,30 @@
 			border-color 0.15s,
 			transform 0.15s;
 	}
-	.pf-card:hover {
+	.pf-card:hover,
+	.pf-card.sel {
 		border-color: var(--accent);
+	}
+	.selection {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		flex-wrap: wrap;
+		margin-bottom: var(--space-4);
+		padding: 10px var(--space-4);
+		border-radius: var(--radius);
+		background: var(--accent-soft);
+	}
+	.pick {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding-left: 8px;
+		cursor: pointer;
+	}
+	.spacer {
+		flex: 1;
 	}
 	.body {
 		display: grid;
@@ -169,6 +221,7 @@
 	}
 	.foot {
 		display: flex;
+		align-items: center;
 		justify-content: flex-end;
 		gap: 2px;
 		padding: 4px 8px 8px;

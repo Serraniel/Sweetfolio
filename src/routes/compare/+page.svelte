@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { PERIOD_KEYS, type MetricsResult, type PeriodKey, type PeriodMetrics } from '#lib/domain/types.ts';
+	import { PERIOD_KEYS, type MetricsResult, type PeriodKey, type PeriodMetrics, type PricePoint } from '#lib/domain/types.ts';
 	import { availablePeriods, drawdownSeries } from '#lib/core/metrics.ts';
 	import { app } from '#lib/state/app.svelte.ts';
+	import { performanceSeries } from '#lib/state/portfolio-view.ts';
 	import { asyncDerived } from '#lib/state/async.svelte.ts';
 	import * as calc from '#lib/workers/client.ts';
 	import * as fmt from '#lib/format.ts';
@@ -16,15 +17,64 @@
 	import LineChart from '#lib/charts/LineChart.svelte';
 	import { colorAt } from '#lib/charts/palette.ts';
 
+	// Assets in `slugs`, portfolios in `portfolios` (CP-1, CP-5).
 	const slugs = $derived((page.url.searchParams.get('slugs') ?? '').split(',').filter(Boolean));
+	const portfolioSlugs = $derived((page.url.searchParams.get('portfolios') ?? '').split(',').filter(Boolean));
 	const assets = $derived(slugs.map((s) => app.assetBySlug(s)).filter((a): a is NonNullable<typeof a> => !!a));
-	const series = $derived(assets.map((a) => ({ asset: a, prices: app.converted(a).prices })));
-	const metrics = asyncDerived(() => (series.length ? Promise.all(series.map((s) => calc.metrics(s.prices, app.riskFreeRate))) : null));
+	const portfolios = $derived(portfolioSlugs.map((s) => app.portfolioBySlug(s)).filter((p): p is NonNullable<typeof p> => !!p));
+
+	interface Item {
+		key: string;
+		name: string;
+		href: string;
+		slug: string;
+		kind: 'asset' | 'portfolio';
+		prices: PricePoint[];
+		type: string;
+		currency: string;
+		isin: string | null;
+		wkn: string | null;
+	}
+	const items = $derived<Item[]>([
+		...assets.map((a) => ({
+			key: `a:${a.id}`,
+			name: a.name,
+			href: `/assets/${app.assetSlug(a.id)}`,
+			slug: app.assetSlug(a.id),
+			kind: 'asset' as const,
+			prices: app.converted(a).prices,
+			type: a.classification.toUpperCase(),
+			currency: a.currency,
+			isin: a.isin,
+			wkn: a.wkn
+		})),
+		...portfolios.map((p) => {
+			const perf = performanceSeries(p);
+			return {
+				key: `p:${p.id}`,
+				name: p.name,
+				href: `/portfolios/${app.portfolioSlug(p.id)}`,
+				slug: app.portfolioSlug(p.id),
+				kind: 'portfolio' as const,
+				prices: perf.prices,
+				type: perf.kind === 'backtest' ? 'Portfolio (backtest)' : 'Portfolio (time-weighted, actual)',
+				currency: app.settings.mainCurrency,
+				isin: null,
+				wkn: null
+			};
+		})
+	]);
+	// One entry per item (same order as `items`), null without enough history.
+	const metrics = asyncDerived(() =>
+		items.length
+			? Promise.all(items.map((i) => (i.prices.length > 1 ? calc.metrics(i.prices, app.riskFreeRate) : Promise.resolve(null))))
+			: null
+	);
 
 	const LABELS: Record<PeriodKey, string> = { '1y': '1Y', '3y': '3Y', '5y': '5Y', '10y': '10Y', '15y': '15Y', all: 'All' };
 	// A period is only comparable when every asset covers it (CP-2).
 	const common = $derived.by(() => {
-		const sets = series.map((s) => availablePeriods(s.prices));
+		const sets = items.map((i) => availablePeriods(i.prices));
 		return PERIOD_KEYS.filter((p) => sets.every((set) => set.has(p)));
 	});
 	let period = $state<PeriodKey>('1y');
@@ -40,9 +90,9 @@
 		{ key: 'maxDrawdown', label: 'Max drawdown', better: 'high', kind: 'pct' }
 	];
 
-	function best(row: (typeof ROWS)[number], all: MetricsResult[] | null): number | null {
-		if (!all || series.length < 2) return null;
-		const vals = all.map((m) => m[period]?.[row.key] as number | undefined);
+	function best(row: (typeof ROWS)[number], all: Array<MetricsResult | null> | null): number | null {
+		if (!all || items.length < 2) return null;
+		const vals = all.map((m) => m?.[period]?.[row.key] as number | undefined);
 		let idx: number | null = null;
 		vals.forEach((v, i) => {
 			if (v === undefined) return;
@@ -51,52 +101,74 @@
 		return idx;
 	}
 
-	function setSlugs(next: string[]) {
-		goto(`/compare?slugs=${next.join(',')}`, { replace: true, reset: false });
+	function setItems(nextAssets: string[], nextPortfolios: string[]) {
+		const q = new URLSearchParams();
+		if (nextAssets.length) q.set('slugs', nextAssets.join(','));
+		if (nextPortfolios.length) q.set('portfolios', nextPortfolios.join(','));
+		goto(`/compare?${q.toString().replaceAll('%2C', ',')}`, { replace: true, reset: false });
+	}
+	function remove(item: Item) {
+		if (item.kind === 'asset')
+			setItems(
+				slugs.filter((s) => s !== item.slug),
+				portfolioSlugs
+			);
+		else
+			setItems(
+				slugs,
+				portfolioSlugs.filter((s) => s !== item.slug)
+			);
 	}
 	let adding = $state('');
-	const addable = $derived(app.assets.filter((a) => !assets.includes(a)).sort((a, b) => a.name.localeCompare(b.name)));
+	const addableAssets = $derived(app.assets.filter((a) => !assets.includes(a)).sort((a, b) => a.name.localeCompare(b.name)));
+	const addablePortfolios = $derived(
+		app.portfolios
+			.filter((p) => !portfolios.includes(p) && (p.allocations.length || app.transactionsOf(p.id).length))
+			.sort((a, b) => a.name.localeCompare(b.name))
+	);
+	function add() {
+		const [kind, id] = [adding.slice(0, 1), adding.slice(2)];
+		if (kind === 'a') setItems([...slugs, app.assetSlug(id)], portfolioSlugs);
+		else setItems(slugs, [...portfolioSlugs, app.portfolioSlug(id)]);
+		adding = '';
+	}
 </script>
 
 <PageHeader
-	title="Compare assets"
-	back={{ href: '/assets', label: 'Assets' }}
-	subtitle="Side-by-side metrics and charts in {app.settings.mainCurrency}."
+	title="Compare"
+	back={assets.length || !portfolios.length ? { href: '/assets', label: 'Assets' } : { href: '/portfolios', label: 'Portfolios' }}
+	subtitle="Assets and portfolios side by side, in {app.settings
+		.mainCurrency}. Portfolios use their backtest, tracked ones their time-weighted return."
 />
 
 <div class="stack" style="--gap: 20px">
 	<Card>
 		<div class="chips">
-			{#each assets as a, i (a.id)}
+			{#each items as item, i (item.key)}
 				<span class="chip" style="--c: {colorAt(i)}">
-					<i></i><a href="/assets/{app.assetSlug(a.id)}" class="truncate">{a.name}</a>
-					<button aria-label="Remove {a.name}" onclick={() => setSlugs(slugs.filter((s) => s !== app.assetSlug(a.id)))}
-						><Icon name="x" size={14} /></button
-					>
+					<i></i>{#if item.kind === 'portfolio'}<Icon name="portfolio" size={14} />{/if}<a href={item.href} class="truncate">{item.name}</a>
+					<button aria-label="Remove {item.name}" onclick={() => remove(item)}><Icon name="x" size={14} /></button>
 				</span>
 			{/each}
 			<div class="row add">
-				<select class="select" bind:value={adding} aria-label="Add asset to comparison">
-					<option value="">Add asset…</option>
-					{#each addable as a (a.id)}<option value={a.id}>{a.name}</option>{/each}
+				<select class="select" bind:value={adding} aria-label="Add to comparison">
+					<option value="">Add asset or portfolio…</option>
+					{#if addableAssets.length}<optgroup label="Assets"
+							>{#each addableAssets as a (a.id)}<option value="a:{a.id}">{a.name}</option>{/each}</optgroup
+						>{/if}
+					{#if addablePortfolios.length}<optgroup label="Portfolios"
+							>{#each addablePortfolios as p (p.id)}<option value="p:{p.id}">{p.name}</option>{/each}</optgroup
+						>{/if}
 				</select>
-				<Button
-					size="sm"
-					icon="plus"
-					disabled={!adding}
-					onclick={() => {
-						setSlugs([...slugs, app.assetSlug(adding)]);
-						adding = '';
-					}}>Add</Button
-				>
+				<Button size="sm" icon="plus" disabled={!adding} onclick={add}>Add</Button>
 			</div>
 		</div>
 	</Card>
 
-	{#if assets.length === 0}
+	{#if items.length === 0}
 		<Card
 			><EmptyState icon="compare" title="Nothing to compare yet"
-				>Select two or more assets on the <a href="/assets">assets page</a>, or add them above.</EmptyState
+				>Select two or more <a href="/assets">assets</a> or <a href="/portfolios">portfolios</a> and choose Compare, or add them above.</EmptyState
 			></Card
 		>
 	{:else}
@@ -115,7 +187,8 @@
 					<thead>
 						<tr>
 							<th>Metric</th>
-							{#each assets as a, i (a.id)}<th class="right"><span class="dot" style="background: {colorAt(i)}"></span>{a.name}</th>{/each}
+							{#each items as item, i (item.key)}<th class="right"><span class="dot" style="background: {colorAt(i)}"></span>{item.name}</th
+								>{/each}
 						</tr>
 					</thead>
 					<tbody>
@@ -123,7 +196,7 @@
 							{@const b = best(row, metrics.value)}
 							<tr>
 								<th scope="row" class="metric">{row.label}</th>
-								{#each assets as a, i (a.id)}
+								{#each items as item, i (item.key)}
 									{@const v = metrics.value?.[i]?.[period]?.[row.key] as number | undefined}
 									<td class="right num {row.key === 'volatility' ? '' : fmt.signClass(v)}" class:best={b === i}
 										>{row.kind === 'pct' ? fmt.pct(v) : fmt.num(v)}</td
@@ -134,12 +207,12 @@
 					</tbody>
 				</table>
 			</div>
-			{#if !common.length}<p class="small muted">The selected assets have no overlapping period with enough history.</p>{/if}
+			{#if !common.length}<p class="small muted">The selection has no overlapping period with enough history.</p>{/if}
 		</Card>
 
 		<Card title="Performance" subtitle="Rebased to the start of the selected range">
 			<LineChart
-				series={series.map((s) => ({ label: s.asset.name, data: s.prices }))}
+				series={items.map((s, i) => ({ label: s.name, data: s.prices, color: colorAt(i) }))}
 				mode="relative"
 				allowRelative
 				format="currency"
@@ -150,7 +223,7 @@
 
 		<Card title="Drawdowns">
 			<LineChart
-				series={series.map((s) => ({ label: s.asset.name, data: drawdownSeries(s.prices) }))}
+				series={items.map((s, i) => ({ label: s.name, data: drawdownSeries(s.prices), color: colorAt(i) }))}
 				format="percent"
 				height={220}
 				label="Drawdown comparison"
@@ -162,29 +235,30 @@
 				<table class="table">
 					<thead
 						><tr
-							><th>Detail</th>{#each assets as a (a.id)}<th>{a.name}</th>{/each}</tr
+							><th>Detail</th>{#each items as item (item.key)}<th>{item.name}</th>{/each}</tr
 						></thead
 					>
 					<tbody>
 						<tr
-							><th scope="row" class="metric">Type</th>{#each assets as a (a.id)}<td>{a.classification.toUpperCase()}</td>{/each}</tr
+							><th scope="row" class="metric">Type</th>{#each items as item (item.key)}<td>{item.type}</td>{/each}</tr
 						>
 						<tr
-							><th scope="row" class="metric">Currency</th>{#each assets as a (a.id)}<td>{a.currency}</td>{/each}</tr
+							><th scope="row" class="metric">Currency</th>{#each items as item (item.key)}<td>{item.currency}</td>{/each}</tr
 						>
 						<tr
-							><th scope="row" class="metric">ISIN</th>{#each assets as a (a.id)}<td class="mono">{a.isin ?? '–'}</td>{/each}</tr
+							><th scope="row" class="metric">ISIN</th>{#each items as item (item.key)}<td class="mono">{item.isin ?? '–'}</td>{/each}</tr
 						>
 						<tr
-							><th scope="row" class="metric">WKN</th>{#each assets as a (a.id)}<td class="mono">{a.wkn ?? '–'}</td>{/each}</tr
+							><th scope="row" class="metric">WKN</th>{#each items as item (item.key)}<td class="mono">{item.wkn ?? '–'}</td>{/each}</tr
 						>
 						<tr
-							><th scope="row" class="metric">History</th>{#each assets as a (a.id)}<td class="num"
-									>{fmt.date(a.prices[0]?.date)} – {fmt.date(a.prices.at(-1)?.date)}</td
+							><th scope="row" class="metric">History</th>{#each items as item (item.key)}<td class="num"
+									>{fmt.date(item.prices[0]?.date)} – {fmt.date(item.prices.at(-1)?.date)}</td
 								>{/each}</tr
 						>
 						<tr
-							><th scope="row" class="metric">Data points</th>{#each assets as a (a.id)}<td class="num">{a.prices.length}</td>{/each}</tr
+							><th scope="row" class="metric">Data points</th>{#each items as item (item.key)}<td class="num">{item.prices.length}</td
+								>{/each}</tr
 						>
 					</tbody>
 				</table>

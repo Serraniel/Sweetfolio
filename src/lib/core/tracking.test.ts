@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tx } from '#test/fixtures.ts';
-import { cashBalance, computeDrift, computeHoldings, fifo, positionAt, rebalanceTrades, valueHistory } from './tracking.ts';
+import { cashBalance, computeDrift, computeHoldings, fifo, positionAt, rebalanceTrades, twrIndex, valueHistory } from './tracking.ts';
 
 describe('PT-4 FIFO cost basis', () => {
 	const txs = [
@@ -125,5 +125,61 @@ describe('PT-8 drift and rebalancing', () => {
 		const t = rebalanceTrades(model, holdings, { availableCash: 20, cashOnly: true });
 		expect(t.every((x) => x.action === 'buy')).toBe(true);
 		expect(t.reduce((s, x) => s + x.value, 0)).toBeCloseTo(20);
+	});
+});
+
+describe('CP-5 time-weighted performance of tracked portfolios', () => {
+	// Price 100 until Jan 10, 110 until Jan 20, then 121: +10 % twice = +21 %.
+	const prices = [
+		{ date: '2024-01-01', close: 100 },
+		{ date: '2024-01-10', close: 110 },
+		{ date: '2024-01-20', close: 121 }
+	];
+	const last = (txs: Parameters<typeof valueHistory>[0], trackCash = false) =>
+		twrIndex(valueHistory(txs, () => prices, '2024-01-25', { trackCash })).at(-1)!.close;
+
+	it('ignores additional buys (money in is not a gain)', () => {
+		expect(
+			last([
+				tx({ type: 'buy', date: '2024-01-01', quantity: 10, price: 100 }),
+				tx({ type: 'buy', date: '2024-01-10', quantity: 10, price: 110 })
+			])
+		).toBeCloseTo(121, 6);
+	});
+	it('ignores deposits when tracking cash, idle cash dilutes the return', () => {
+		// 1 000 deposited and fully invested; another 1 100 deposited and kept as cash after +10 %.
+		const v = last(
+			[
+				tx({ type: 'deposit', date: '2024-01-01', amount: 1000 }),
+				tx({ type: 'buy', date: '2024-01-01', quantity: 10, price: 100 }),
+				tx({ type: 'deposit', date: '2024-01-10', amount: 1100 })
+			],
+			true
+		);
+		// +10 % on 1 000, then +10 % on 1 100 invested of 2 200 total = +5 %: 110 × 1.05.
+		expect(v).toBeCloseTo(115.5, 6);
+	});
+	it('counts dividends and sell proceeds without cash tracking as returned to the investor', () => {
+		const v = last([
+			tx({ type: 'buy', date: '2024-01-01', quantity: 10, price: 100 }),
+			tx({ type: 'dividend', date: '2024-01-10', amount: 100 }),
+			tx({ type: 'sell', date: '2024-01-20', quantity: 10, price: 121 })
+		]);
+		// Jan 10: (1 100 + 100 paid out) ÷ 1 000 = +20 %; Jan 20: 1 210 ÷ 1 100 = +10 %.
+		expect(v).toBeCloseTo(132, 6);
+	});
+	it('starts at the first position and stays flat while nothing is held', () => {
+		const idx = twrIndex(
+			valueHistory(
+				[
+					tx({ type: 'buy', date: '2024-01-10', quantity: 1, price: 110 }),
+					tx({ type: 'sell', date: '2024-01-15', quantity: 1, price: 110 })
+				],
+				() => prices,
+				'2024-01-25'
+			)
+		);
+		expect(idx[0]!.date).toBe('2024-01-10');
+		expect(idx.at(-1)!.close).toBeCloseTo(100, 6);
 	});
 });

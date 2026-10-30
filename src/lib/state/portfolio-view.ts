@@ -1,14 +1,13 @@
 /** Derived views of tracked portfolios in the portfolio currency (PT-5 … PT-8). */
 import type { Portfolio, PricePoint, Transaction } from '#lib/domain/types.ts';
 import { convertAmount, convertPrices } from '#lib/core/currency.ts';
-import { computeHoldings, rebalanceTrades, computeDrift, valueHistory, type HoldingsSummary } from '#lib/core/tracking.ts';
+import { computeHoldings, rebalanceTrades, computeDrift, twrIndex, valueHistory, type HoldingsSummary } from '#lib/core/tracking.ts';
 import { todayISO } from '#lib/core/dates.ts';
 import { app } from './app.svelte.ts';
 
-/** Transactions with monetary fields converted into the portfolio currency where needed. */
-export function normalizedTransactions(p: Portfolio): { transactions: Transaction[]; unconverted: number } {
+/** Transactions with monetary fields converted into `target` (default: portfolio currency) where needed. */
+export function normalizedTransactions(p: Portfolio, target = p.cashCurrency): { transactions: Transaction[]; unconverted: number } {
 	let unconverted = 0;
-	const target = p.cashCurrency;
 	const transactions = app.transactionsOf(p.id).map((t) => {
 		if (t.currency === target) return t;
 		const conv = (v: number | null) => (v === null ? null : convertAmount(v, t.date, t.currency, target, app.currencies));
@@ -46,14 +45,15 @@ export function trackedView(p: Portfolio): TrackedView {
 	return { summary: computeHoldings(transactions, (id) => latestPriceIn(id, p.cashCurrency), { trackCash: p.trackCash }), unconverted };
 }
 
-export function trackedHistory(p: Portfolio) {
-	const { transactions } = normalizedTransactions(p);
+/** Value history in `currency` (default: portfolio currency). */
+export function trackedHistory(p: Portfolio, currency = p.cashCurrency) {
+	const { transactions } = normalizedTransactions(p, currency);
 	const cache = new Map<string, PricePoint[]>();
 	return valueHistory(
 		transactions,
 		(id) => {
 			let s = cache.get(id);
-			if (!s) cache.set(id, (s = seriesIn(id, p.cashCurrency)));
+			if (!s) cache.set(id, (s = seriesIn(id, currency)));
 			return s;
 		},
 		todayISO(),
@@ -69,4 +69,15 @@ export function driftView(p: Portfolio, view: TrackedView, cashOnly: boolean) {
 			cashOnly
 		})
 	};
+}
+
+/**
+ * Comparable performance series of a portfolio in the main currency (CP-5):
+ * the backtest for model portfolios, the time-weighted index of the real
+ * transactions for tracked ones (and for "both" once it has transactions).
+ */
+export function performanceSeries(p: Portfolio): { prices: PricePoint[]; kind: 'backtest' | 'actual' } {
+	const actual = p.mode === 'tracked' || (p.mode === 'both' && app.transactionsOf(p.id).length > 0);
+	if (!actual) return { prices: app.portfolioSeries(p).prices, kind: 'backtest' };
+	return { prices: twrIndex(trackedHistory(p, app.settings.mainCurrency)), kind: 'actual' };
 }

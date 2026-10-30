@@ -85,12 +85,13 @@ mapping from requirement to verification stays visible.
 
 ## 5. Comparison
 
-| ID   | Requirement                                                                                                                                                |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CP-1 | `/compare?slugs=a,b,c` compares 2+ assets (selected via checkboxes on the asset list, from a correlation cell, or added on the page). URL is kept in sync. |
-| CP-2 | Metrics comparison for a selectable period; periods not available for every selected asset are disabled; the best value per row is highlighted.            |
-| CP-3 | Overlaid price chart in relative % mode, drawdown chart(s), details table (classification, currency, ISIN, WKN, range, data points).                       |
-| CP-4 | Add/remove assets on the page.                                                                                                                             |
+| ID   | Requirement                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CP-1 | `/compare?slugs=a,b&portfolios=x,y` compares 2+ assets and/or portfolios (selected via checkboxes on the asset or portfolio list, from a correlation cell, or added on the page). URL is kept in sync.                                                                                                                                                                                                      |
+| CP-2 | Metrics comparison for a selectable period; periods not available for every selected asset are disabled; the best value per row is highlighted.                                                                                                                                                                                                                                                             |
+| CP-3 | Overlaid price chart in relative % mode, drawdown chart(s), details table (classification, currency, ISIN, WKN, range, data points).                                                                                                                                                                                                                                                                        |
+| CP-4 | Add/remove assets and portfolios on the page.                                                                                                                                                                                                                                                                                                                                                               |
+| CP-5 | Portfolios in the comparison use a performance series in the main currency: the backtest for model portfolios, a time-weighted return index of the real transactions for tracked portfolios (and for "both" once it has transactions), so deposits, withdrawals and additional buys do not count as gains. Without cash tracking, buys count as money in and sells, dividends, fees and taxes as money out. |
 
 ## 6. Portfolios (model)
 

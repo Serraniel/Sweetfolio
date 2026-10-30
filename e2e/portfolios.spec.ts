@@ -88,6 +88,11 @@ test('PT-3/PT-5/PT-7 tracked portfolio with cash', async ({ page }) => {
 	await expect(page.locator('table.holdings')).toContainText('Alpha');
 	await expect(page.getByText('Cash', { exact: true }).first()).toBeVisible();
 	await expect(page.getByText(/3[.,]999/).first()).toBeVisible();
+
+	// Tracked portfolios are compared by their time-weighted return (CP-5).
+	await page.goto('/compare?portfolios=depot&slugs=alpha');
+	await expect(page.getByText('Portfolio (time-weighted, actual)')).toBeVisible();
+	await expect(page.locator('table').first().locator('tbody tr').first().locator('td').nth(1)).not.toHaveText('–');
 });
 
 test('ST-1/ST-4 strategy generates portfolios', async ({ page }) => {
@@ -201,4 +206,38 @@ test('MC-4 limits stay with their asset after an asset is deleted', async ({ pag
 	await expect(page.getByText('The settings changed since this run')).toBeHidden();
 	await page.getByLabel('Maximum weight of Gold').fill('30');
 	await expect(page.getByText('The settings changed since this run')).toBeVisible();
+});
+
+test('CP-5 compare portfolios with each other and with assets', async ({ page }) => {
+	for (const [name, asset] of [
+		['Only Alpha', 'Alpha'],
+		['Only Beta', 'Beta']
+	] as const) {
+		await page.goto('/portfolios');
+		await page.getByRole('button', { name: 'New portfolio' }).first().click();
+		const d = page.getByRole('dialog');
+		await d.getByLabel('Name').fill(name);
+		await d.getByLabel('Add asset').selectOption({ label: asset });
+		await d.getByRole('button', { name: 'Add', exact: true }).click();
+		await d.getByRole('button', { name: 'Create' }).click();
+		await expect(page.getByRole('heading', { name: 'Backtest' })).toBeVisible();
+	}
+	await page.goto('/portfolios');
+	await page.getByLabel('Select Only Alpha for comparison').check();
+	await expect(page.getByRole('button', { name: 'Compare' })).toBeDisabled();
+	await page.getByLabel('Select Only Beta for comparison').check();
+	await page.getByRole('button', { name: 'Compare' }).click();
+	await expect(page).toHaveURL(/compare\?portfolios=/);
+	await page.getByLabel('Add to comparison').selectOption({ label: 'Alpha' });
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(page).toHaveURL(/slugs=alpha/);
+	const table = page.locator('table').first();
+	await expect(table.locator('thead th')).toHaveText(['Metric', 'Alpha', 'Only Alpha', 'Only Beta']);
+	// A portfolio holding only Alpha performs exactly like Alpha.
+	const totals = table.locator('tbody tr').first().locator('td');
+	await expect(totals.nth(0)).not.toHaveText('–');
+	await expect(totals.nth(1)).toHaveText((await totals.nth(0).textContent())!);
+	await expect(page.getByText('Portfolio (backtest)').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Remove Only Beta' }).click();
+	await expect(page).not.toHaveURL(/only-beta/);
 });
