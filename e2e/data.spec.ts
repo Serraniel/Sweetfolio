@@ -132,6 +132,8 @@ test('SH-2 share link for an asset already in the library', async ({ page }) => 
 	await page.getByRole('button', { name: 'Edit', exact: true }).click();
 	await page.getByRole('dialog').getByLabel('ISIN').fill('IE00B4L5Y983');
 	await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+	// The dialog closes only after the IndexedDB write committed.
+	await expect(page.getByRole('dialog')).toBeHidden();
 	const hash = '#share=' + LZString.compressToEncodedURIComponent('p:Shared One|IE00B4L5Y983:1');
 	await page.goto('/' + hash);
 	const d = page.getByRole('dialog');
