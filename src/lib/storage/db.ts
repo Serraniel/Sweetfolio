@@ -1,119 +1,145 @@
 /**
- * IndexedDB initialization and version management.
- * Database name: "sweetfolio"
+ * IndexedDB access (DP-1). Database `sweetfolio`, schema v5.
+ * Upgrades are additive and idempotent: missing stores/indexes are created and
+ * records from older versions are back-filled.
+ *   v1 → classification on assets (v0.5)
+ *   v2 → (v0.5.x current)
+ *   v3/v4 → strategies, transactions, portfolio mode fields (epic branch)
+ *   v5 → rewrite; normalizes all of the above
  */
+import type { Asset, CurrencyRate, Portfolio, Strategy, StoredSimulation, Transaction } from '#lib/domain/types.ts';
 
-const DB_NAME = 'sweetfolio';
-const DB_VERSION = 2;
+export const DB_NAME = 'sweetfolio';
+export const DB_VERSION = 5;
 
-let dbInstance: IDBDatabase | null = null;
-let dbPending: Promise<IDBDatabase> | null = null;
+export interface StoreMap {
+	assets: Asset;
+	portfolios: Portfolio;
+	strategies: Strategy;
+	transactions: Transaction;
+	currencies: CurrencyRate;
+	settings: { key: string; value: unknown };
+	simulations: StoredSimulation;
+}
+export type StoreName = keyof StoreMap;
+export const STORE_NAMES: StoreName[] = ['assets', 'portfolios', 'strategies', 'transactions', 'currencies', 'settings', 'simulations'];
 
-export function getDB(): Promise<IDBDatabase> {
-  if (dbInstance && dbInstance.version >= DB_VERSION) return Promise.resolve(dbInstance);
+const SCHEMA: Record<StoreName, { keyPath: string; indexes: Array<[string, string]> }> = {
+	assets: {
+		keyPath: 'id',
+		indexes: [
+			['by-isin', 'isin'],
+			['by-name', 'name'],
+			['by-classification', 'classification']
+		]
+	},
+	portfolios: { keyPath: 'id', indexes: [['by-name', 'name']] },
+	strategies: { keyPath: 'id', indexes: [['by-name', 'name']] },
+	transactions: {
+		keyPath: 'id',
+		indexes: [
+			['by-portfolioId', 'portfolioId'],
+			['by-date', 'date'],
+			['by-assetId', 'assetId']
+		]
+	},
+	currencies: { keyPath: 'pair', indexes: [] },
+	settings: { keyPath: 'key', indexes: [] },
+	simulations: { keyPath: 'id', indexes: [] }
+};
 
-  // Return the in-flight open request if one exists (prevents concurrent opens)
-  if (dbPending) return dbPending;
-
-  // Close stale connection before re-opening at new version
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
-  }
-
-  dbPending = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onblocked = () => {
-      // Another tab holds an older connection — warn but keep waiting
-      console.warn('IndexedDB upgrade blocked. Close other Sweetfolio tabs and reload.');
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-
-      // assets store
-      if (!db.objectStoreNames.contains('assets')) {
-        const assetStore = db.createObjectStore('assets', { keyPath: 'id' });
-        assetStore.createIndex('by-isin', 'isin', { unique: false });
-        assetStore.createIndex('by-name', 'name', { unique: false });
-        assetStore.createIndex('by-classification', 'classification', { unique: false });
-      }
-
-      // portfolios store
-      if (!db.objectStoreNames.contains('portfolios')) {
-        const portfolioStore = db.createObjectStore('portfolios', { keyPath: 'id' });
-        portfolioStore.createIndex('by-name', 'name', { unique: false });
-      }
-
-      // currencies store
-      if (!db.objectStoreNames.contains('currencies')) {
-        db.createObjectStore('currencies', { keyPath: 'pair' });
-      }
-
-      // settings store
-      if (!db.objectStoreNames.contains('settings')) {
-        db.createObjectStore('settings', { keyPath: 'key' });
-      }
-
-      // simulations store
-      if (!db.objectStoreNames.contains('simulations')) {
-        db.createObjectStore('simulations', { keyPath: 'id' });
-      }
-
-      // Migration v1 → v2: add classification to existing assets
-      if (event.oldVersion === 1) {
-        const tx = (event.target as IDBOpenDBRequest).transaction!;
-        const store = tx.objectStore('assets');
-        store.createIndex('by-classification', 'classification', { unique: false });
-
-        // Backfill existing assets with 'unknown'
-        const cursorReq = store.openCursor();
-        cursorReq.onsuccess = () => {
-          const cursor = cursorReq.result;
-          if (cursor) {
-            const asset = cursor.value;
-            if (!asset.classification) {
-              asset.classification = 'unknown';
-              cursor.update(asset);
-            }
-            cursor.continue();
-          }
-        };
-        cursorReq.onerror = () => {
-          console.error('Failed to backfill asset classification during migration', cursorReq.error);
-        };
-      }
-    };
-
-    request.onsuccess = (event) => {
-      dbInstance = (event.target as IDBOpenDBRequest).result;
-      dbPending = null;
-
-      dbInstance.onclose = () => {
-        dbInstance = null;
-      };
-
-      dbInstance.onversionchange = () => {
-        dbInstance?.close();
-        dbInstance = null;
-      };
-
-      resolve(dbInstance);
-    };
-
-    request.onerror = () => {
-      dbPending = null;
-      reject(request.error);
-    };
-  });
-
-  return dbPending;
+export function req<T>(r: IDBRequest<T>): Promise<T> {
+	return new Promise((resolve, reject) => {
+		r.onsuccess = () => resolve(r.result);
+		r.onerror = () => reject(r.error);
+	});
 }
 
-export function transaction(
-  storeNames: string | string[],
-  mode: IDBTransactionMode = 'readonly',
-): Promise<IDBTransaction> {
-  return getDB().then((db) => db.transaction(storeNames, mode));
+export function done(tx: IDBTransaction): Promise<void> {
+	return new Promise((resolve, reject) => {
+		tx.oncomplete = () => resolve();
+		tx.onerror = () => reject(tx.error);
+		tx.onabort = () => reject(tx.error ?? new Error('Transaction aborted'));
+	});
+}
+
+function backfill(store: IDBObjectStore, patch: (value: Record<string, unknown>) => boolean): void {
+	const cursorReq = store.openCursor();
+	cursorReq.onsuccess = () => {
+		const cursor = cursorReq.result;
+		if (!cursor) return;
+		const value = cursor.value as Record<string, unknown>;
+		if (patch(value)) cursor.update(value);
+		cursor.continue();
+	};
+}
+
+function upgrade(db: IDBDatabase, tx: IDBTransaction, oldVersion: number): void {
+	for (const name of STORE_NAMES) {
+		const def = SCHEMA[name];
+		const store = db.objectStoreNames.contains(name) ? tx.objectStore(name) : db.createObjectStore(name, { keyPath: def.keyPath });
+		for (const [idx, key] of def.indexes) if (!store.indexNames.contains(idx)) store.createIndex(idx, key, { unique: false });
+	}
+	if (oldVersion > 0 && oldVersion < 5) {
+		backfill(tx.objectStore('assets'), (a) => {
+			if (a.classification) return false;
+			a.classification = 'unknown';
+			return true;
+		});
+		backfill(tx.objectStore('portfolios'), (p) => {
+			if (p.mode) return false;
+			p.mode = 'model';
+			p.trackCash = false;
+			p.cashCurrency = 'EUR';
+			p.sourceStrategyId = p.sourceStrategyId ?? null;
+			return true;
+		});
+	}
+}
+
+export interface OpenOptions {
+	/** Called when another tab upgrades the database; this connection is closed. */
+	onVersionChange?: () => void;
+	onBlocked?: () => void;
+}
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+export function openDB(options: OpenOptions = {}): Promise<IDBDatabase> {
+	if (dbPromise) return dbPromise;
+	dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+		const request = indexedDB.open(DB_NAME, DB_VERSION);
+		request.onupgradeneeded = (e) => upgrade(request.result, request.transaction!, e.oldVersion);
+		request.onblocked = () => options.onBlocked?.();
+		request.onerror = () => {
+			dbPromise = null;
+			reject(request.error);
+		};
+		request.onsuccess = () => {
+			const db = request.result;
+			db.onversionchange = () => {
+				db.close();
+				dbPromise = null;
+				options.onVersionChange?.();
+			};
+			db.onclose = () => {
+				dbPromise = null;
+			};
+			resolve(db);
+		};
+	});
+	return dbPromise;
+}
+
+/** Close and forget the cached connection (tests, clear-all). */
+export async function closeDB(): Promise<void> {
+	if (!dbPromise) return;
+	const db = await dbPromise.catch(() => null);
+	db?.close();
+	dbPromise = null;
+}
+
+export async function deleteDatabase(): Promise<void> {
+	await closeDB();
+	await req(indexedDB.deleteDatabase(DB_NAME) as unknown as IDBRequest<unknown>);
 }

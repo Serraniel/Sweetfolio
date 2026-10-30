@@ -1,330 +1,267 @@
 <script lang="ts">
-	import Card from '$lib/components/shared/Card.svelte';
-	import Button from '$lib/components/shared/Button.svelte';
-	import CorrelationMatrix from '$lib/charts/CorrelationMatrix.svelte';
-	import { assets } from '$lib/stores/assets';
-	import { portfolios } from '$lib/stores/portfolios';
-	import { calculateCorrelation } from '$lib/workers/manager';
-	import type { CorrelationMatrix as CorrelationMatrixData } from '$lib/types';
+	import { app } from '#lib/state/app.svelte.ts';
+	import { asyncDerived } from '#lib/state/async.svelte.ts';
+	import * as calc from '#lib/workers/client.ts';
+	import { computeHoldings } from '#lib/core/tracking.ts';
+	import { convertAmount } from '#lib/core/currency.ts';
+	import * as fmt from '#lib/format.ts';
+	import { goto } from '$app/navigation';
+	import PageHeader from '#lib/ui/PageHeader.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Stat from '#lib/ui/Stat.svelte';
+	import Icon from '#lib/ui/Icon.svelte';
+	import Heatmap from '#lib/charts/Heatmap.svelte';
+	import LineChart from '#lib/charts/LineChart.svelte';
 
-	let correlation: CorrelationMatrixData | null = $state(null);
-	let correlationLoading = $state(false);
+	const main = $derived(app.settings.mainCurrency);
+	const empty = $derived(app.assets.length === 0);
 
-	// Compute correlation when we have 2+ assets
-	let correlationSeq = 0;
-	$effect(() => {
-		const assetData = $assets
-			.filter((a) => a.prices.length >= 2)
-			.map((a) => ({ id: a.id, prices: a.prices }));
+	const correlationAssets = $derived(
+		[...app.assets]
+			.filter((a) => a.prices.length > 20)
+			.sort((a, b) => a.name.localeCompare(b.name))
+			.slice(0, 24)
+	);
+	const correlation = asyncDerived(() =>
+		correlationAssets.length >= 2 ? calc.correlation(correlationAssets.map((a) => ({ id: a.id, prices: app.converted(a).prices }))) : null
+	);
+	const labels = $derived(new Map(app.assets.map((a) => [a.id, a.name])));
 
-		if (assetData.length < 2) {
-			correlation = null;
-			return;
-		}
+	const benchmarkSeries = $derived(app.benchmarkResolved ? app.benchmarkSeries() : null);
+	const benchmarkMetrics = asyncDerived(() =>
+		benchmarkSeries && benchmarkSeries.length > 1 ? calc.metrics(benchmarkSeries, app.riskFreeRate) : null
+	);
 
-		correlationLoading = true;
-		const seq = ++correlationSeq;
-		calculateCorrelation(assetData)
-			.then((result) => {
-				if (seq === correlationSeq) {
-					correlation = result;
-					correlationLoading = false;
-				}
+	const tracked = $derived(
+		app.portfolios
+			.filter((p) => p.mode !== 'model')
+			.map((p) => {
+				const latest = (id: string) => {
+					const a = app.assetById.get(id);
+					const last = a?.prices.at(-1);
+					if (!a || !last) return null;
+					return convertAmount(last.close, last.date, a.currency, p.cashCurrency, app.currencies);
+				};
+				const s = computeHoldings(app.transactionsOf(p.id), latest, { trackCash: p.trackCash });
+				return { p, s };
 			})
-			.catch(() => {
-				if (seq === correlationSeq) {
-					correlationLoading = false;
-				}
-			});
-	});
+	);
 
-	function getCorrelationLabels(): string[] {
-		if (!correlation) return [];
-		const corr = correlation as CorrelationMatrixData;
-		return corr.assetIds.map((id: string) => {
-			const asset = $assets.find((a) => a.id === id);
-			return asset?.name ?? id.slice(0, 8);
-		});
-	}
-
-	const correlationLabels = $derived(getCorrelationLabels());
+	const steps = $derived([
+		{
+			done: app.assets.length > 0,
+			title: 'Add assets',
+			text: 'Look up an ISIN/WKN or upload CSV price histories.',
+			href: '/assets',
+			cta: 'Add assets'
+		},
+		{
+			done: app.portfolios.length > 0,
+			title: 'Build a portfolio',
+			text: 'Combine assets with weights and backtest it — or track real transactions.',
+			href: '/portfolios',
+			cta: 'Create portfolio'
+		},
+		{
+			done: !!app.settings.benchmark,
+			title: 'Pick a benchmark',
+			text: 'Mark an asset or portfolio as benchmark to compare everything against it.',
+			href: '/assets',
+			cta: 'Choose benchmark'
+		},
+		{
+			done: false,
+			title: 'Run a simulation',
+			text: 'Find efficient allocations with a Monte Carlo simulation.',
+			href: '/simulation',
+			cta: 'Simulate'
+		}
+	]);
 </script>
 
-<svelte:head>
-	<title>Dashboard – Sweetfolio</title>
-</svelte:head>
+<PageHeader title="Dashboard" subtitle="Plan, backtest and track your portfolios — privately, in your browser." />
 
-<div class="dashboard">
-	<header class="page-header">
-		<h1>Dashboard</h1>
-		<p class="page-subtitle">Overview of your portfolio data</p>
-	</header>
-
-	<div class="summary-cards">
-		<Card variant="accent">
-			<div class="summary-card">
-				<div class="summary-icon assets-icon">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-					</svg>
-				</div>
-				<div class="summary-info">
-					<span class="summary-value">{$assets.length}</span>
-					<span class="summary-label">Assets</span>
-				</div>
-			</div>
-		</Card>
-
-		<Card variant="accent">
-			<div class="summary-card">
-				<div class="summary-icon portfolios-icon">
-					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
-					</svg>
-				</div>
-				<div class="summary-info">
-					<span class="summary-value">{$portfolios.length}</span>
-					<span class="summary-label">Portfolios</span>
-				</div>
-			</div>
-		</Card>
-
+<div class="stack" style="--gap: 20px">
+	<div class="stats">
+		<a class="stat-card" href="/assets"><Stat label="Assets" value={String(app.assets.length)} /></a>
+		<a class="stat-card" href="/portfolios"><Stat label="Portfolios" value={String(app.portfolios.length)} /></a>
+		<a class="stat-card" href="/strategies"><Stat label="Strategies" value={String(app.strategies.length)} /></a>
+		<a class="stat-card" href="/settings"
+			><Stat label="Currency" value={main} sub={`Risk-free ${fmt.num(app.settings.riskFreeRate, 2, 0)} %`} /></a
+		>
 	</div>
 
-	<section class="quick-actions">
-		<h2>Quick Actions</h2>
-		<div class="action-grid">
-			<a href="/assets" class="action-card">
-				<Card>
-					<div class="action-content">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-							<polyline points="17 8 12 3 7 8"/>
-							<line x1="12" y1="3" x2="12" y2="15"/>
-						</svg>
-						<span>Upload Asset Data</span>
-					</div>
-				</Card>
-			</a>
-
-			<a href="/portfolios" class="action-card">
-				<Card>
-					<div class="action-content">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="12" y1="5" x2="12" y2="19"/>
-							<line x1="5" y1="12" x2="19" y2="12"/>
-						</svg>
-						<span>Create Portfolio</span>
-					</div>
-				</Card>
-			</a>
-
-			<a href="/simulation" class="action-card">
-				<Card>
-					<div class="action-content">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-						</svg>
-						<span>Run Simulation</span>
-					</div>
-				</Card>
-			</a>
-		</div>
-	</section>
-
-	{#if correlation && correlationLabels.length > 0}
-		<section class="correlation-section">
-			<h2>Asset Correlations</h2>
-			<Card padding="lg">
-				<CorrelationMatrix data={correlation} labels={correlationLabels} />
-			</Card>
-		</section>
+	{#if empty || steps.filter((s) => s.done).length < 3}
+		<Card title="Getting started">
+			<ol class="steps">
+				{#each steps as s, i (s.title)}
+					<li class:done={s.done}>
+						<span class="badge"
+							>{#if s.done}<Icon name="check" size={14} />{:else}{i + 1}{/if}</span
+						>
+						<div>
+							<h3>{s.title}</h3>
+							<p class="small muted">{s.text}</p>
+						</div>
+						{#if !s.done}<Button size="sm" href={s.href}>{s.cta}</Button>{/if}
+					</li>
+				{/each}
+			</ol>
+		</Card>
 	{/if}
 
-	<section class="getting-started">
-		<Card padding="lg">
-			<h2>Getting Started</h2>
-			<p class="muted">
-				Upload historical price data as CSV files to begin analyzing your portfolio.
-				Sweetfolio processes all data locally in your browser -- nothing leaves your device.
-			</p>
-			<div class="steps">
-				<div class="step">
-					<span class="step-number">1</span>
-					<div>
-						<strong>Upload Assets</strong>
-						<p class="muted">Import CSV files with historical price data for your securities.</p>
-					</div>
-				</div>
-				<div class="step">
-					<span class="step-number">2</span>
-					<div>
-						<strong>Build Portfolios</strong>
-						<p class="muted">Combine assets with custom weight allocations.</p>
-					</div>
-				</div>
-				<div class="step">
-					<span class="step-number">3</span>
-					<div>
-						<strong>Run Simulations</strong>
-						<p class="muted">Use Monte Carlo simulations to explore the efficient frontier.</p>
-					</div>
-				</div>
+	{#if tracked.length}
+		<Card title="Tracked portfolios">
+			<div class="tracked">
+				{#each tracked as { p, s } (p.id)}
+					<a class="tracked-item" href="/portfolios/{app.portfolioSlug(p.id)}">
+						<span class="truncate strong">{p.name}</span>
+						<span class="num big">{fmt.money(s.totalValue, p.cashCurrency)}</span>
+						<span class="num small {fmt.signClass(s.totalReturn)}"
+							>{fmt.money(s.totalReturn, p.cashCurrency, { signed: true })} · {fmt.pct(s.totalReturnPercent, 1, true)}</span
+						>
+					</a>
+				{/each}
 			</div>
 		</Card>
-	</section>
+	{/if}
+
+	{#if app.benchmarkResolved && benchmarkSeries}
+		<Card title="Benchmark" subtitle={app.benchmarkResolved.name}>
+			{#snippet actions()}
+				<Button
+					size="sm"
+					variant="ghost"
+					href={app.benchmarkResolved?.kind === 'asset'
+						? `/assets/${app.assetSlug(app.benchmarkResolved.ref.id)}`
+						: `/portfolios/${app.portfolioSlug(app.benchmarkResolved?.ref.id ?? '')}`}>Open</Button
+				>
+			{/snippet}
+			<div class="bench-stats">
+				{#each [['1y', '1Y'], ['5y', '5Y'], ['all', 'All']] as const as [k, l] (k)}
+					{@const m = benchmarkMetrics.value?.[k]}
+					<Stat label="Return p.a. {l}" value={fmt.pct(m?.annualizedReturn)} tone={fmt.signClass(m?.annualizedReturn)} />
+				{/each}
+				<Stat label="Volatility" value={fmt.pct(benchmarkMetrics.value?.all?.volatility)} />
+			</div>
+			<LineChart
+				series={[{ label: app.benchmarkResolved.name, data: benchmarkSeries, fill: true }]}
+				height={180}
+				showRange={false}
+				label="Benchmark history"
+			/>
+		</Card>
+	{/if}
+
+	{#if correlationAssets.length >= 2}
+		<Card title="Asset correlations" subtitle="Pearson correlation of daily log returns on common dates">
+			{#if correlation.value}
+				<Heatmap
+					matrix={correlation.value}
+					{labels}
+					onselect={(a, b) => goto(`/compare?slugs=${[a, b].map((id) => app.assetSlug(id)).join(',')}`)}
+				/>
+			{:else}
+				<p class="muted small">Calculating…</p>
+			{/if}
+			{#if app.assets.length > correlationAssets.length}<p class="xs muted">
+					Showing {correlationAssets.length} of {app.assets.length} assets.
+				</p>{/if}
+		</Card>
+	{/if}
+
+	<Card title="Quick actions">
+		<div class="row">
+			<Button icon="upload" href="/assets">Add assets</Button>
+			<Button icon="portfolio" href="/portfolios">Portfolios</Button>
+			<Button icon="simulation" href="/simulation">Run simulation</Button>
+			<Button icon="download" href="/settings#data">Backup &amp; import</Button>
+		</div>
+	</Card>
 </div>
 
 <style>
-	.dashboard {
-		max-width: 1100px;
-	}
-
-	.page-header {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.page-header h1 {
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.page-subtitle {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-base);
-	}
-
-	.summary-cards {
+	.stats {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-2xl);
+		grid-template-columns: repeat(2, 1fr);
+		gap: var(--space-3);
 	}
-
-	.summary-card {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-md);
+	@media (min-width: 900px) {
+		.stats {
+			grid-template-columns: repeat(4, 1fr);
+		}
 	}
-
-	.summary-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 48px;
-		height: 48px;
-		border-radius: var(--radius-md);
-		flex-shrink: 0;
+	.stat-card {
+		padding: var(--space-4);
+		border-radius: var(--radius-lg);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow);
+		color: inherit;
+		text-decoration: none;
+		transition: border-color 0.15s;
 	}
-
-	.assets-icon {
-		background: rgba(141, 208, 196, 0.15);
-		color: var(--color-miku-teal);
+	.stat-card:hover {
+		border-color: var(--accent);
+		text-decoration: none;
 	}
-
-	.portfolios-icon {
-		background: rgba(26, 138, 138, 0.15);
-		color: var(--color-deep-teal);
-	}
-
-	.summary-info {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.summary-value {
-		font-size: var(--font-size-2xl);
-		font-weight: 700;
-		line-height: 1.2;
-	}
-
-	.summary-label {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-muted);
-	}
-
-	.quick-actions {
-		margin-bottom: var(--spacing-2xl);
-	}
-
-	.quick-actions h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.action-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-		gap: var(--spacing-md);
-	}
-
-	.action-card {
-		color: var(--color-text-primary);
-	}
-
-	.action-content {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--spacing-sm);
-		text-align: center;
-		color: var(--color-text-secondary);
-		font-weight: 500;
-		font-size: var(--font-size-sm);
-	}
-
-	.action-card:hover .action-content {
-		color: var(--color-accent);
-	}
-
-	.correlation-section {
-		margin-bottom: var(--spacing-2xl);
-	}
-
-	.correlation-section h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.getting-started h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.muted {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-sm);
-	}
-
 	.steps {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-md);
-		margin-top: var(--spacing-lg);
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: var(--space-3);
 	}
-
-	.step {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--spacing-md);
-	}
-
-	.step-number {
-		display: flex;
+	.steps li {
+		display: grid;
+		grid-template-columns: 28px 1fr auto;
+		gap: var(--space-3);
 		align-items: center;
-		justify-content: center;
+	}
+	.steps li.done {
+		opacity: 0.6;
+	}
+	.badge {
+		display: grid;
+		place-items: center;
 		width: 28px;
 		height: 28px;
 		border-radius: 50%;
-		background: linear-gradient(135deg, var(--color-deep-teal), var(--color-miku-teal));
-		color: #fff;
-		font-size: var(--font-size-sm);
+		background: var(--accent-soft);
+		color: var(--accent);
 		font-weight: 700;
-		flex-shrink: 0;
+		font-size: var(--text-sm);
 	}
-
-	.step strong {
-		display: block;
-		margin-bottom: var(--spacing-xs);
-		font-size: var(--font-size-sm);
+	.done .badge {
+		background: var(--accent);
+		color: var(--accent-contrast);
+	}
+	.tracked {
+		display: grid;
+		gap: var(--space-3);
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+	}
+	.tracked-item {
+		display: grid;
+		gap: 2px;
+		padding: var(--space-3);
+		border-radius: var(--radius);
+		background: var(--surface-2);
+		color: inherit;
+		text-decoration: none;
+	}
+	.strong {
+		font-weight: 600;
+	}
+	.big {
+		font-size: var(--text-xl);
+		font-weight: 650;
+	}
+	.bench-stats {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+		gap: var(--space-3);
+		margin-bottom: var(--space-4);
 	}
 </style>

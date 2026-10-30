@@ -1,25 +1,21 @@
-/**
- * Shared types for data fetcher modules.
- */
+import type { AssetClassification, PricePoint } from '#lib/domain/types.ts';
 
-import type { PricePoint, AssetClassification } from '$lib/types';
-
-/** Result from a successful price data fetch. */
-export interface FetchResult {
-  prices: PricePoint[];
-  name: string | null;
-  isin: string | null;
-  wkn: string | null;
-  currency: string | null;
-  classification: AssetClassification | null;
+export interface InstrumentData {
+	prices: PricePoint[];
+	name: string | null;
+	isin: string | null;
+	wkn: string | null;
+	currency: string | null;
+	classification: AssetClassification | null;
+	source: string;
 }
 
-/** Error from a failed fetch attempt. */
-export interface FetchError {
-  message: string;
-  recoverable: boolean;
+export interface InstrumentInfo {
+	name: string;
+	isin: string | null;
+	wkn: string | null;
+	currency: string | null;
+	classification: AssetClassification | null;
 }
 
-export type FetchOutcome =
-  | { success: true; data: FetchResult }
-  | { success: false; error: FetchError };
+export type FetchOutcome = { ok: true; data: InstrumentData } | { ok: false; error: string };

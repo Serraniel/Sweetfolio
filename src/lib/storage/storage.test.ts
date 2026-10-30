@@ -1,202 +1,162 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import 'fake-indexeddb/auto';
-import type { Asset, Portfolio, CurrencyRate, StoredSimulation } from '$lib/types';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { normalizeAsset, normalizePortfolio, normalizeSettings } from '#lib/domain/normalize.ts';
+import { closeDB, DB_NAME, deleteDatabase, req } from './db.ts';
+import { batch, clearAll, getAll, getSettings, put, remove, setSettings } from './repo.ts';
 
-// We must reset the indexedDB between tests.
-// fake-indexeddb/auto patches the global indexedDB.
-// We need to re-import modules fresh each test to reset the singleton db.
-
-// Since the storage modules cache the db instance, we use dynamic imports
-// and reset indexedDB state between tests.
-
-async function resetDB() {
-  // Delete the database between tests
-  const deleteRequest = indexedDB.deleteDatabase('sweetfolio');
-  await new Promise<void>((resolve, reject) => {
-    deleteRequest.onsuccess = () => resolve();
-    deleteRequest.onerror = () => reject(deleteRequest.error);
-  });
+async function createLegacyDB(version: number, setup: (db: IDBDatabase) => void, seed: (tx: IDBTransaction) => void) {
+	await new Promise<void>((resolve, reject) => {
+		const r = indexedDB.open(DB_NAME, version);
+		r.onupgradeneeded = () => {
+			setup(r.result);
+			seed(r.transaction!);
+		};
+		r.onsuccess = () => {
+			r.result.close();
+			resolve();
+		};
+		r.onerror = () => reject(r.error);
+	});
 }
 
-describe('Storage: assets', () => {
-  beforeEach(async () => {
-    await resetDB();
-    // Reset the cached db instance by re-importing
-    const dbModule = await import('./db');
-    // Access the internal state - we need to reset the cached instance
-    // Since we can't easily reset the module, we work around it
-    // by just deleting and recreating
-  });
-
-  it('CRUD operations on assets', async () => {
-    // Dynamic import to get fresh module references after DB reset
-    const { getDB } = await import('./db');
-    const assetsModule = await import('./assets');
-
-    // Force a new DB connection by getting the DB
-    await getDB();
-
-    const asset: Asset = {
-      id: 'test-1',
-      name: 'Test Asset',
-      isin: 'US1234567890',
-      wkn: null,
-      currency: 'USD',
-      classification: 'unknown',
-      prices: [
-        { date: '2024-01-01', close: 100 },
-        { date: '2024-01-02', close: 110 },
-      ],
-      formatConfig: null,
-      rawCSV: null,
-      rawCSVStoredAt: null,
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-      lastRefreshedAt: null,
-    };
-
-    // Put
-    await assetsModule.put(asset);
-
-    // GetAll
-    const all = await assetsModule.getAll();
-    expect(all).toHaveLength(1);
-    expect(all[0].name).toBe('Test Asset');
-
-    // GetById
-    const found = await assetsModule.getById('test-1');
-    expect(found).toBeDefined();
-    expect(found!.id).toBe('test-1');
-
-    // Update (put again)
-    const updated = { ...asset, name: 'Updated Asset' };
-    await assetsModule.put(updated);
-    const afterUpdate = await assetsModule.getById('test-1');
-    expect(afterUpdate!.name).toBe('Updated Asset');
-
-    // Remove
-    await assetsModule.remove('test-1');
-    const afterRemove = await assetsModule.getById('test-1');
-    expect(afterRemove).toBeUndefined();
-  });
+beforeEach(async () => {
+	await deleteDatabase();
+});
+afterEach(async () => {
+	await closeDB();
 });
 
-describe('Storage: portfolios', () => {
-  it('CRUD operations on portfolios', async () => {
-    const { getDB } = await import('./db');
-    const portfolioModule = await import('./portfolios');
-    await getDB();
+describe('DP-1 upgrade from v0.5.x (IndexedDB v2)', () => {
+	it('keeps data, adds new stores and back-fills portfolio fields', async () => {
+		await createLegacyDB(
+			2,
+			(db) => {
+				const a = db.createObjectStore('assets', { keyPath: 'id' });
+				a.createIndex('by-isin', 'isin');
+				a.createIndex('by-name', 'name');
+				db.createObjectStore('portfolios', { keyPath: 'id' }).createIndex('by-name', 'name');
+				db.createObjectStore('currencies', { keyPath: 'pair' });
+				db.createObjectStore('settings', { keyPath: 'key' });
+				db.createObjectStore('simulations', { keyPath: 'id' });
+			},
+			(tx) => {
+				tx.objectStore('assets').put({
+					id: 'a1',
+					name: 'World',
+					isin: 'IE00B4L5Y983',
+					wkn: null,
+					currency: 'EUR',
+					prices: [{ date: '2024-01-02', close: 1 }],
+					formatConfig: null,
+					createdAt: 'x',
+					updatedAt: 'x'
+				});
+				tx.objectStore('portfolios').put({
+					id: 'p1',
+					name: 'P',
+					allocations: [{ assetId: 'a1', weight: 1 }],
+					isBenchmark: true,
+					createdAt: 'x',
+					updatedAt: 'x'
+				});
+				tx.objectStore('settings').put({ key: 'mainCurrency', value: 'USD' });
+				tx.objectStore('settings').put({ key: 'riskFreeRate', value: 2 });
+			}
+		);
+		const assets = await getAll('assets');
+		expect(assets[0]!.classification).toBe('unknown');
+		const portfolios = await getAll('portfolios');
+		expect(portfolios[0]).toMatchObject({ mode: 'model', trackCash: false, cashCurrency: 'EUR', isBenchmark: true });
+		expect(await getAll('transactions')).toEqual([]);
+		expect(await getAll('strategies')).toEqual([]);
+		const s = normalizeSettings(await getSettings());
+		expect(s).toMatchObject({ mainCurrency: 'USD', riskFreeRate: 2, autoRefreshAssets: true });
+	});
 
-    const portfolio: Portfolio = {
-      id: 'port-1',
-      name: 'My Portfolio',
-      allocations: [
-        { assetId: 'a1', weight: 0.6 },
-        { assetId: 'a2', weight: 0.4 },
-      ],
-      isBenchmark: false,
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-    };
-
-    await portfolioModule.put(portfolio);
-    const all = await portfolioModule.getAll();
-    expect(all.length).toBeGreaterThanOrEqual(1);
-
-    const found = await portfolioModule.getById('port-1');
-    expect(found).toBeDefined();
-    expect(found!.allocations).toHaveLength(2);
-
-    await portfolioModule.remove('port-1');
-    const afterRemove = await portfolioModule.getById('port-1');
-    expect(afterRemove).toBeUndefined();
-  });
+	it('upgrades from the epic branch (v4) without data loss', async () => {
+		await createLegacyDB(
+			4,
+			(db) => {
+				for (const n of ['assets', 'portfolios', 'strategies', 'transactions', 'simulations']) db.createObjectStore(n, { keyPath: 'id' });
+				db.createObjectStore('currencies', { keyPath: 'pair' });
+				db.createObjectStore('settings', { keyPath: 'key' });
+			},
+			(tx) => {
+				tx.objectStore('transactions').put({
+					id: 't1',
+					portfolioId: 'p1',
+					type: 'buy',
+					assetId: 'a1',
+					date: '2024-01-01',
+					quantity: 1,
+					price: 1,
+					fee: 0,
+					amount: null,
+					withholdingTax: 0,
+					currency: 'EUR',
+					notes: '',
+					createdAt: 'x',
+					updatedAt: 'x'
+				});
+				tx.objectStore('strategies').put({
+					id: 's1',
+					name: 'S',
+					root: { type: 'group', id: 'r', label: 'R', weight: 1, children: [] },
+					generatedPortfolioIds: [],
+					createdAt: 'x',
+					updatedAt: 'x'
+				});
+			}
+		);
+		expect(await getAll('transactions')).toHaveLength(1);
+		expect(await getAll('strategies')).toHaveLength(1);
+		const db = await (await import('./db.ts')).openDB();
+		expect(Array.from(db.transaction('transactions').objectStore('transactions').indexNames)).toContain('by-portfolioId');
+	});
 });
 
-describe('Storage: currencies', () => {
-  it('CRUD operations on currencies', async () => {
-    const { getDB } = await import('./db');
-    const currModule = await import('./currencies');
-    await getDB();
-
-    const rate: CurrencyRate = {
-      pair: 'USDEUR',
-      rates: [
-        { date: '2024-01-01', rate: 0.9 },
-        { date: '2024-01-02', rate: 0.92 },
-      ],
-    };
-
-    await currModule.put(rate);
-    const all = await currModule.getAll();
-    expect(all.length).toBeGreaterThanOrEqual(1);
-
-    const found = await currModule.getByPair('USDEUR');
-    expect(found).toBeDefined();
-    expect(found!.rates).toHaveLength(2);
-
-    await currModule.remove('USDEUR');
-    const afterRemove = await currModule.getByPair('USDEUR');
-    expect(afterRemove).toBeUndefined();
-  });
+describe('repo', () => {
+	it('CRUD, batch and settings', async () => {
+		await put('portfolios', normalizePortfolio({ id: 'p1', name: 'A' }));
+		await batch([
+			{ store: 'assets', put: [normalizeAsset({ id: 'a1' })] },
+			{ store: 'portfolios', delete: ['p1'] }
+		]);
+		expect(await getAll('portfolios')).toEqual([]);
+		expect(await getAll('assets')).toHaveLength(1);
+		await setSettings({ mainCurrency: 'CHF' });
+		expect((await getSettings()).mainCurrency).toBe('CHF');
+		await remove('assets', 'a1');
+		expect(await getAll('assets')).toEqual([]);
+		await setSettings({ x: 1 });
+		await clearAll();
+		expect(await getSettings()).toEqual({});
+	});
 });
 
-describe('Storage: settings', () => {
-  it('CRUD operations on settings', async () => {
-    const { getDB } = await import('./db');
-    const settingsModule = await import('./settings');
-    await getDB();
-
-    await settingsModule.set('mainCurrency', 'EUR');
-    const val = await settingsModule.get('mainCurrency');
-    expect(val).toBe('EUR');
-
-    const all = await settingsModule.getAll();
-    expect(all['mainCurrency']).toBe('EUR');
-
-    await settingsModule.set('mainCurrency', 'USD');
-    const updated = await settingsModule.get('mainCurrency');
-    expect(updated).toBe('USD');
-
-    await settingsModule.remove('mainCurrency');
-    const afterRemove = await settingsModule.get('mainCurrency');
-    expect(afterRemove).toBeUndefined();
-  });
-});
-
-describe('Storage: simulations', () => {
-  it('CRUD operations on simulations', async () => {
-    const { getDB } = await import('./db');
-    const simModule = await import('./simulations');
-    await getDB();
-
-    const sim: StoredSimulation = {
-      id: 'sim-1',
-      config: {
-        simulationCount: 1000,
-        assetIds: ['a1', 'a2'],
-        riskFreeRate: 0,
-        benchmarkPortfolioId: null,
-      },
-      results: {
-        scatterVolatilities: new Float64Array(0),
-        scatterReturns: new Float64Array(0),
-        portfolioCount: 0,
-        efficientFrontier: [],
-      },
-      createdAt: '2024-01-01T00:00:00Z',
-    };
-
-    await simModule.put(sim);
-    const all = await simModule.getAll();
-    expect(all.length).toBeGreaterThanOrEqual(1);
-
-    const found = await simModule.getById('sim-1');
-    expect(found).toBeDefined();
-    expect(found!.config.simulationCount).toBe(1000);
-
-    await simModule.remove('sim-1');
-    const afterRemove = await simModule.getById('sim-1');
-    expect(afterRemove).toBeUndefined();
-  });
+describe('P-11 normalization', () => {
+	it('fills defaults for legacy records', () => {
+		const a = normalizeAsset({
+			id: 'a',
+			name: 'X',
+			prices: [
+				{ date: '2024-01-03', close: 2 },
+				{ date: '2024-01-02', close: 1 },
+				{ date: 'bad', close: 1 }
+			]
+		});
+		expect(a.prices.map((p) => p.date)).toEqual(['2024-01-02', '2024-01-03']);
+		expect(a).toMatchObject({ classification: 'unknown', rawCSV: null, lastRefreshedAt: null });
+		const p = normalizePortfolio({
+			id: 'p',
+			allocations: [
+				{ assetId: 'a', weight: 0 },
+				{ assetId: 'b', weight: 0.5 }
+			]
+		});
+		expect(p.allocations).toEqual([{ assetId: 'b', weight: 0.5 }]);
+		expect(normalizeSettings({ riskFreeRate: '2.5', benchmark: { type: 'x', id: 1 } })).toMatchObject({
+			riskFreeRate: 2.5,
+			benchmark: null
+		});
+	});
 });
