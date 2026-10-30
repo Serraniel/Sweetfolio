@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Asset } from '#lib/domain/types.ts';
+	import type { Asset, RebalanceFrequency } from '#lib/domain/types.ts';
 	import { newPortfolio, cleanAllocations } from '#lib/domain/factories.ts';
 	import {
 		bestIndex,
@@ -60,6 +60,8 @@
 		for (const id of sim.assetIds) if (!sim.constraints[id]) sim.constraints[id] = { min: '', max: '' };
 	});
 	let colorBySharpe = $state(true);
+	// The simulation values portfolios that keep their weights; buy & hold drifts away from them (MC-8).
+	let saveRebalance = $state<RebalanceFrequency>('monthly');
 	let showDominating = $state(false);
 	let onlyDominating = $state(false);
 
@@ -174,9 +176,12 @@
 			.sort((a, b) => b.weight - a.weight)
 			.map((a) => `${app.assetById.get(a.assetId)?.name.split(' ').slice(0, 2).join(' ')} ${Math.round(a.weight * 100)}%`)
 			.join(' / ');
-		const p = newPortfolio({ name: `Sim: ${names}`.slice(0, 60), allocations });
+		const p = newPortfolio({ name: `Sim: ${names}`.slice(0, 60), allocations, rebalance: saveRebalance });
 		await app.savePortfolio(p);
-		notify.success(`Saved “${p.name}”`, { label: 'Open', href: `/portfolios/${app.portfolioSlug(p.id)}` });
+		notify.success(`Saved “${p.name}”${saveRebalance === 'none' ? '' : `, rebalanced ${saveRebalance}`}`, {
+			label: 'Open',
+			href: `/portfolios/${app.portfolioSlug(p.id)}`
+		});
 	}
 
 	const PRESETS = [1_000, 10_000, 100_000, 1_000_000];
@@ -346,12 +351,24 @@
 			</Card>
 			{#if inspected}
 				<Card title="Portfolio inspector">
-					{#snippet actions()}<Button size="sm" variant="primary" icon="plus" onclick={saveAsPortfolio}>Save as portfolio</Button>{/snippet}
+					{#snippet actions()}
+						<select class="select save-rb" bind:value={saveRebalance} aria-label="Rebalancing of the saved portfolio">
+							<option value="monthly">Rebalance monthly</option>
+							<option value="quarterly">Rebalance quarterly</option>
+							<option value="annually">Rebalance annually</option>
+							<option value="none">Buy &amp; hold</option>
+						</select>
+						<Button size="sm" variant="primary" icon="plus" onclick={saveAsPortfolio}>Save as portfolio</Button>
+					{/snippet}
 					<div class="stats">
 						<Stat label="Return p.a." value={fmt.pct(inspected.ret)} tone={fmt.signClass(inspected.ret)} />
 						<Stat label="Volatility" value={fmt.pct(inspected.vol)} />
 						<Stat label="Sharpe" value={fmt.num(inspected.sharpe)} />
 					</div>
+					<p class="xs muted rb-note">
+						Return and risk assume the weights are kept (rebalanced). Without rebalancing, strong or volatile assets grow beyond their
+						weight and the saved portfolio's risk can end up much higher.
+					</p>
 					<ul class="weights">
 						{#each resultAssets as a, i (result.assetIds[i])}
 							{@const w = inspected.weights[result.assetIds[i]!] ?? 0}
@@ -427,6 +444,15 @@
 		grid-template-columns: repeat(3, 1fr);
 		gap: var(--space-3);
 		margin-bottom: var(--space-4);
+	}
+	.save-rb {
+		width: auto;
+		min-height: 32px;
+		padding: 4px 28px 4px 10px;
+		font-size: var(--text-xs);
+	}
+	.rb-note {
+		margin: calc(-1 * var(--space-2)) 0 var(--space-3);
 	}
 	.weights {
 		list-style: none;

@@ -136,6 +136,8 @@ test('MC-1/MC-7 simulation runs and inspects a portfolio', async ({ page }) => {
 	await page.getByRole('button', { name: 'Save as portfolio' }).click();
 	await page.getByRole('link', { name: 'Open' }).click();
 	await expect(page).toHaveURL(/portfolios\/sim-/);
+	// Saved like the simulation values it: with the weights kept (MC-8).
+	await expect(page.getByText('Rebalanced monthly')).toBeVisible();
 });
 
 test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
