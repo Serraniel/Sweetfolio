@@ -1,3 +1,4 @@
+import type { SimulationPhase } from '#lib/core/montecarlo.ts';
 import type { CorrelationMatrix, MetricsResult, MonteCarloResult, PricePoint, WeightConstraint } from '#lib/domain/types.ts';
 
 export type CalcRequest =
@@ -16,4 +17,6 @@ export interface MonteCarloRequest {
 }
 
 export type MonteCarloMessage =
-	{ kind: 'progress'; done: number; total: number } | { kind: 'result'; result: MonteCarloResult } | { kind: 'error'; error: string };
+	| { kind: 'progress'; done: number; total: number; phase: SimulationPhase }
+	| { kind: 'result'; result: MonteCarloResult }
+	| { kind: 'error'; error: string };

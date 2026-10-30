@@ -6,6 +6,7 @@
 import type { CorrelationMatrix, MetricsResult, MonteCarloResult, PricePoint } from '#lib/domain/types.ts';
 import { computeCorrelationMatrix } from '#lib/core/correlation.ts';
 import { computeMetrics } from '#lib/core/metrics.ts';
+import type { SimulationPhase } from '#lib/core/montecarlo.ts';
 import type { CalcRequest, CalcResponse, MonteCarloMessage, MonteCarloRequest } from './protocol.ts';
 
 let calcWorker: Worker | null = null;
@@ -91,14 +92,17 @@ export interface MonteCarloRun {
 	cancel: () => void;
 }
 
-export function runMonteCarlo(req: MonteCarloRequest, onProgress: (done: number, total: number) => void): MonteCarloRun {
+export function runMonteCarlo(
+	req: MonteCarloRequest,
+	onProgress: (done: number, total: number, phase: SimulationPhase) => void
+): MonteCarloRun {
 	const w = new Worker(new URL('./montecarlo.worker.ts', import.meta.url), { type: 'module' });
 	let reject!: (e: Error) => void;
 	const promise = new Promise<MonteCarloResult>((resolve, rej) => {
 		reject = rej;
 		w.onmessage = (e: MessageEvent<MonteCarloMessage>) => {
 			const m = e.data;
-			if (m.kind === 'progress') onProgress(m.done, m.total);
+			if (m.kind === 'progress') onProgress(m.done, m.total, m.phase);
 			else {
 				w.terminate();
 				if (m.kind === 'result') resolve(m.result);

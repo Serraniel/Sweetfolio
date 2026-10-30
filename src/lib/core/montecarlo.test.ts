@@ -282,6 +282,16 @@ describe('MC-6/MC-7 simulation', () => {
 			expect(s.returns[i]!).toBeLessThanOrEqual(best + 1e-9);
 		}
 	});
+	it('reports progress for the random portfolios first, then the frontier', () => {
+		const seen: string[] = [];
+		let last: [number, number] = [0, 0];
+		runSimulation({ assets, count: 1000, riskFreeRate: 0 }, seededRng(1), (done, total, phase) => {
+			if (seen.at(-1) !== phase) seen.push(phase);
+			last = [done, total];
+		});
+		expect(seen).toEqual(['portfolios', 'frontier']);
+		expect(last[0]).toBe(last[1]);
+	});
 	it('finds portfolios dominating a reference', () => {
 		const worst = { volatility: Math.max(...r.volatilities), annualizedReturn: Math.min(...r.returns) };
 		expect(dominatingIndices(r, worst).length).toBeGreaterThan(0);

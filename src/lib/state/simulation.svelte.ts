@@ -1,7 +1,7 @@
 /** Session-scoped simulation state so results survive navigation (MC-9). */
 import type { MonteCarloResult, WeightConstraint } from '#lib/domain/types.ts';
 import type { MonteCarloRun } from '#lib/workers/client.ts';
-import type { AssetCountLimits } from '#lib/core/montecarlo.ts';
+import type { AssetCountLimits, SimulationPhase } from '#lib/core/montecarlo.ts';
 
 class SimulationState {
 	count = $state(10_000);
@@ -10,7 +10,7 @@ class SimulationState {
 	useConstraints = $state(false);
 	result = $state.raw<MonteCarloResult | null>(null);
 	riskFreeRate = $state(0);
-	progress = $state<{ done: number; total: number } | null>(null);
+	progress = $state<{ done: number; total: number; phase: SimulationPhase } | null>(null);
 	run: MonteCarloRun | null = null;
 	selected = $state<number | null>(null);
 

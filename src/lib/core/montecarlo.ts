@@ -9,6 +9,10 @@ import { alignSeries, ensureSorted } from './series.ts';
 
 export const WEIGHT_STEP = 0.005;
 export const MIN_UNCONSTRAINED_WEIGHT = 0.03;
+/** Upper bound for frontier points (λ grid incl. refinement, plus the minimum-variance corner). */
+const MAX_FRONTIER_POINTS = 81;
+
+export type SimulationPhase = 'portfolios' | 'frontier';
 
 export type Rng = () => number;
 
@@ -396,18 +400,34 @@ export function seriesStats(prices: readonly PricePoint[], window: { start: stri
 /** Euclidean projection onto { w : Σw = 1, lo ≤ w ≤ hi } (bisection on the shift). */
 export function projectCapped(v: readonly number[], lo: readonly number[], hi: readonly number[]): number[] {
 	const n = v.length;
-	const at = (tau: number) => v.map((x, i) => Math.min(hi[i]!, Math.max(lo[i]!, x - tau)));
-	const total = (tau: number) => at(tau).reduce((s, x) => s + x, 0);
-	let a = Math.min(...v.map((x, i) => x - hi[i]!)) - 1;
-	let b = Math.max(...v.map((x, i) => x - lo[i]!)) + 1;
+	// Loops instead of array helpers: this runs for every optimizer step (hot path).
+	const total = (tau: number) => {
+		let sum = 0;
+		for (let i = 0; i < n; i++) sum += Math.min(hi[i]!, Math.max(lo[i]!, v[i]! - tau));
+		return sum;
+	};
+	let a = Infinity;
+	let b = -Infinity;
+	for (let i = 0; i < n; i++) {
+		a = Math.min(a, v[i]! - hi[i]!);
+		b = Math.max(b, v[i]! - lo[i]!);
+	}
+	a -= 1;
+	b += 1;
 	for (let k = 0; k < 60; k++) {
 		const m = (a + b) / 2;
 		if (total(m) > 1) a = m;
 		else b = m;
 	}
-	const w = at((a + b) / 2);
-	const s = w.reduce((x, y) => x + y, 0);
-	return n && s > 0 ? w.map((x) => x / s) : w;
+	const tau = (a + b) / 2;
+	const w = new Array<number>(n);
+	let sum = 0;
+	for (let i = 0; i < n; i++) {
+		w[i] = Math.min(hi[i]!, Math.max(lo[i]!, v[i]! - tau));
+		sum += w[i]!;
+	}
+	if (n && sum > 0) for (let i = 0; i < n; i++) w[i] = w[i]! / sum;
+	return w;
 }
 
 function spectralNorm(m: number[][]): number {
@@ -438,18 +458,20 @@ export function solveMeanVariance(
 	const n = est.mu.length;
 	const minVar = !Number.isFinite(lambda);
 	const L = Math.max(1e-12, (minVar ? 1 : lambda) * spectralNorm(est.cov));
-	const grad = (w: number[]) =>
-		est.cov.map((row, i) => (minVar ? 0 : -est.mu[i]!) + (minVar ? 1 : lambda) * row.reduce((s, x, j) => s + x * w[j]!, 0));
+	const scale = minVar ? 1 : lambda;
+	const step = new Array<number>(n);
 	let w = projectCapped(new Array<number>(n).fill(1 / n), lo, hi);
 	let y = w;
 	let t = 1;
 	for (let k = 0; k < iterations; k++) {
-		const g = grad(y);
-		const next = projectCapped(
-			y.map((x, i) => x - g[i]! / L),
-			lo,
-			hi
-		);
+		// Gradient step: y − ∇f(y)/L with ∇f = −μ + λΣy (min variance: Σy).
+		for (let i = 0; i < n; i++) {
+			const row = est.cov[i]!;
+			let sy = 0;
+			for (let j = 0; j < n; j++) sy += row[j]! * y[j]!;
+			step[i] = y[i]! - ((minVar ? 0 : -est.mu[i]!) + scale * sy) / L;
+		}
+		const next = projectCapped(step, lo, hi);
 		const tn = (1 + Math.sqrt(1 + 4 * t * t)) / 2;
 		let delta = 0;
 		for (let i = 0; i < n; i++) delta = Math.max(delta, Math.abs(next[i]! - w[i]!));
@@ -567,7 +589,8 @@ export function efficientFrontier(
 	est: Estimates,
 	constraints: ReadonlyArray<WeightConstraint | undefined> | undefined,
 	points = 24,
-	limits: AssetCountLimits = {}
+	limits: AssetCountLimits = {},
+	onStep?: (done: number, total: number) => void
 ): number[][] {
 	const n = est.mu.length;
 	const lo = Array.from({ length: n }, (_, i) => constraints?.[i]?.min ?? 0);
@@ -576,7 +599,10 @@ export function efficientFrontier(
 	if (plan && plan.sizes.length === 0) return [];
 	const scale = spectralNorm(est.cov) || 1;
 	type Point = { lambda: number; w: number[]; volatility: number; annualizedReturn: number };
+	const maxPoints = plan ? 48 : MAX_FRONTIER_POINTS - 1;
+	let solved = 0;
 	const solve = (lambda: number): Point => {
+		onStep?.(solved++, maxPoints + 1);
 		const iterations = plan ? 500 : Number.isFinite(lambda) ? 1000 : 1500;
 		const w = plan ? solveSubset(est, lambda, plan, lo, hi, iterations) : solveMeanVariance(est, lambda, lo, hi, iterations);
 		return { lambda, w, ...portfolioStats(w, est, 0) };
@@ -594,7 +620,6 @@ export function efficientFrontier(
 			pts[0]!.volatility - minVar.volatility,
 			Math.hypot(pts[0]!.volatility - minVar.volatility, pts[0]!.annualizedReturn - minVar.annualizedReturn)
 		);
-	const maxPoints = plan ? 48 : 80;
 	for (let round = 0; round < 6 && pts.length < maxPoints; round++) {
 		const target = span() / 30;
 		const next: Point[] = [pts[0]!];
@@ -621,22 +646,23 @@ export function efficientFrontier(
 			best = p.annualizedReturn;
 		}
 	}
+	onStep?.(maxPoints + 1, maxPoints + 1);
 	return out.map((p) => p.w);
 }
 
 export function runSimulation(
 	input: SimulationInput,
 	rng: Rng = Math.random,
-	onProgress?: (done: number, total: number) => void,
+	onProgress?: (done: number, total: number, phase: SimulationPhase) => void,
 	progressEvery = 500
 ): MonteCarloResult {
 	const n = input.assets.length;
 	const ids = input.assets.map((a) => a.id);
 	const est = estimateInputs(input.assets);
 	const plan = input.constraints ? planSubsets(input.constraints, input) : null;
-	const frontierWeights = efficientFrontier(est, input.constraints, 24, input);
 	const total = Math.max(0, Math.floor(input.count));
-	const capacity = total + frontierWeights.length;
+	// Random portfolios first, then the frontier (MC-9: both phases report progress).
+	const capacity = total + MAX_FRONTIER_POINTS;
 	const volatilities = new Float64Array(capacity);
 	const returns = new Float64Array(capacity);
 	const sharpes = new Float64Array(capacity);
@@ -660,8 +686,9 @@ export function runSimulation(
 			seen.add(key);
 			push(w);
 		}
-		if (onProgress && ((sim + 1) % progressEvery === 0 || sim === total - 1)) onProgress(sim + 1, total);
+		if (onProgress && ((sim + 1) % progressEvery === 0 || sim === total - 1)) onProgress(sim + 1, total, 'portfolios');
 	}
+	const frontierWeights = efficientFrontier(est, input.constraints, 24, input, (done, of) => onProgress?.(done, of, 'frontier'));
 	let frontier: number[] = [];
 	for (const w of frontierWeights) {
 		frontier.push(count);

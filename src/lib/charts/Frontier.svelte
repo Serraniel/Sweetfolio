@@ -215,10 +215,12 @@
 		}
 		ctx.globalAlpha = 1;
 
-		// frontier
+		// frontier: a thin, translucent line so nearby portfolios stay visible, with its
+		// portfolios drawn as dots on top
 		if (result.frontier.length > 1) {
 			ctx.strokeStyle = text;
-			ctx.lineWidth = 2;
+			ctx.lineWidth = 1.25;
+			ctx.globalAlpha = 0.5;
 			ctx.beginPath();
 			result.frontier.forEach((idx, k) => {
 				const x = sx(result.volatilities[idx]!);
@@ -226,6 +228,16 @@
 				if (k) ctx.lineTo(x, y);
 				else ctx.moveTo(x, y);
 			});
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		}
+		ctx.fillStyle = text;
+		ctx.strokeStyle = cssVar('--surface-solid');
+		ctx.lineWidth = 1;
+		for (const idx of result.frontier) {
+			ctx.beginPath();
+			ctx.arc(sx(result.volatilities[idx]!), sy(result.returns[idx]!), 2.75, 0, Math.PI * 2);
+			ctx.fill();
 			ctx.stroke();
 		}
 
@@ -446,8 +458,19 @@
 		background: linear-gradient(90deg, var(--chart-2), var(--chart-1));
 	}
 	.line {
+		position: relative;
 		width: 16px;
-		height: 2px;
+		height: 1px;
+		background: color-mix(in srgb, var(--text) 50%, transparent);
+	}
+	.line::after {
+		content: '';
+		position: absolute;
+		left: 5px;
+		top: -2.5px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
 		background: var(--text);
 	}
 	.diamond {

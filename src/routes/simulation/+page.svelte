@@ -56,7 +56,7 @@
 	async function run() {
 		if (!canRun) return;
 		sim.selected = null;
-		sim.progress = { done: 0, total: sim.count };
+		sim.progress = { done: 0, total: sim.count, phase: 'portfolios' };
 		sim.riskFreeRate = app.riskFreeRate;
 		const ids = selectedAssets.map((a) => a.id);
 		sim.run = runMonteCarlo(
@@ -68,7 +68,9 @@
 				minAssets: parsed.minAssets,
 				maxAssets: parsed.maxAssets
 			},
-			(done, total) => (sim.progress = { done, total })
+			(done, total, phase) => {
+				sim.progress = { done, total, phase };
+			}
 		);
 		try {
 			sim.result = await sim.run.promise;
@@ -240,11 +242,12 @@
 				<div class="stack" style="--gap: 6px">
 					<Progress value={sim.progress.done} max={sim.progress.total} label="Simulation progress" />
 					<div class="spread small">
-						<span class="muted num">{fmt.num(sim.progress.done, 0)} / {fmt.num(sim.progress.total, 0)}</span><Button
-							size="sm"
-							variant="ghost"
-							onclick={() => sim.run?.cancel()}>Cancel</Button
-						>
+						<span class="muted num"
+							>{#if sim.progress.phase === 'frontier'}Efficient frontier {fmt.pct(
+									sim.progress.done / sim.progress.total,
+									0
+								)}{:else}{fmt.num(sim.progress.done, 0)} / {fmt.num(sim.progress.total, 0)} portfolios{/if}</span
+						><Button size="sm" variant="ghost" onclick={() => sim.run?.cancel()}>Cancel</Button>
 					</div>
 				</div>
 			{:else}
