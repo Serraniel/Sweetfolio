@@ -144,3 +144,22 @@ test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
 	await page.getByRole('button', { name: 'Reset zoom' }).click();
 	await expect(page.getByRole('button', { name: 'Reset zoom' })).toBeHidden();
 });
+
+test('UI long portfolio names are truncated inside the card', async ({ page }) => {
+	await page.goto('/portfolios');
+	await page.getByRole('button', { name: 'New portfolio' }).first().click();
+	const d = page.getByRole('dialog');
+	await d.getByLabel('Name').fill('Sim: Investor B 41% / Deutsche Börse 25% / TotalEnergies (ehem. Total) 12%');
+	await d.getByLabel('Add asset').selectOption({ label: 'Alpha' });
+	await d.getByRole('button', { name: 'Add', exact: true }).click();
+	await d.getByRole('button', { name: 'Create' }).click();
+	await expect(page.getByRole('heading', { name: 'Backtest' })).toBeVisible();
+	await page.goto('/portfolios');
+	const card = page.locator('article').first();
+	await expect(card).toBeVisible();
+	const overflow = await card.evaluate((el) => {
+		const box = el.getBoundingClientRect();
+		return [...el.querySelectorAll('*')].some((c) => c.getBoundingClientRect().right > box.right + 0.5);
+	});
+	expect(overflow).toBe(false);
+});

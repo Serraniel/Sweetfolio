@@ -101,6 +101,8 @@
 	}
 	.body {
 		display: grid;
+		/* Without minmax(0, …) a long, non-wrapping title widens the card past its column. */
+		grid-template-columns: minmax(0, 1fr);
 		gap: 12px;
 		padding: var(--space-4);
 		color: inherit;
