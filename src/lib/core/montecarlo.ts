@@ -14,6 +14,11 @@ const MAX_FRONTIER_POINTS = 81;
 
 export type SimulationPhase = 'portfolios' | 'frontier';
 
+/** Rough worker memory per simulated portfolio: weights, three statistics, duplicate check. */
+export function estimateSimulationBytes(count: number, assets: number): number {
+	return Math.max(0, count) * (assets * 4 + 3 * 8 + 48);
+}
+
 export type Rng = () => number;
 
 /** Small, fast seedable PRNG (mulberry32) for reproducible tests. */
@@ -667,7 +672,24 @@ export function runSimulation(
 	const returns = new Float64Array(capacity);
 	const sharpes = new Float64Array(capacity);
 	const weights = new Float32Array(capacity * n);
-	const seen = new Set<string>();
+	// Duplicate check on a 53-bit hash of the grid steps. Sharded: one Set holds at most 2^24 entries.
+	const seen = Array.from({ length: 64 }, () => new Set<number>());
+	const isNew = (w: readonly number[]) => {
+		let h1 = 0x811c9dc5;
+		let h2 = 0x27d4eb2f;
+		for (let i = 0; i < n; i++) {
+			const step = Math.round(w[i]! * STEPS);
+			h1 = Math.imul(h1 ^ step, 0x9e3779b1);
+			h1 ^= h1 >>> 15;
+			h2 = Math.imul(h2 ^ (step + i * 0x45d9f3b), 0x85ebca77);
+			h2 ^= h2 >>> 13;
+		}
+		const shard = seen[h2 & 63]!;
+		const key = (h1 >>> 0) * 0x200000 + (h2 >>> 11);
+		if (shard.has(key)) return false;
+		shard.add(key);
+		return true;
+	};
 	let count = 0;
 	const push = (w: ArrayLike<number>) => {
 		const s = portfolioStats(w, est, input.riskFreeRate);
@@ -681,11 +703,7 @@ export function runSimulation(
 		// Vary the concentration so both diversified and concentrated portfolios appear.
 		const alpha = Math.exp(Math.log(0.15) + rng() * (Math.log(1.5) - Math.log(0.15)));
 		const w = plan ? generateSubsetWeights(plan, rng, alpha) : generateWeights(n, rng, input.constraints, alpha);
-		const key = w.map((x) => Math.round(x * 1000)).join(',');
-		if (!seen.has(key)) {
-			seen.add(key);
-			push(w);
-		}
+		if (isNew(w)) push(w);
 		if (onProgress && ((sim + 1) % progressEvery === 0 || sim === total - 1)) onProgress(sim + 1, total, 'portfolios');
 	}
 	const frontierWeights = efficientFrontier(est, input.constraints, 24, input, (done, of) => onProgress?.(done, of, 'frontier'));
@@ -696,12 +714,13 @@ export function runSimulation(
 	}
 	// The heuristic frontier can miss portfolios; take the efficient set of everything found.
 	if (plan) frontier = efficientIndices(volatilities.subarray(0, count), returns.subarray(0, count));
+	// Views instead of copies: halves the peak memory of large runs (the buffers are transferred).
 	return {
 		assetIds: ids,
-		volatilities: volatilities.slice(0, count),
-		returns: returns.slice(0, count),
-		sharpes: sharpes.slice(0, count),
-		weights: weights.slice(0, count * n),
+		volatilities: volatilities.subarray(0, count),
+		returns: returns.subarray(0, count),
+		sharpes: sharpes.subarray(0, count),
+		weights: weights.subarray(0, count * n),
 		count,
 		frontier,
 		window: est.window,
@@ -716,7 +735,9 @@ export function runSimulation(
 
 /** Indices of points not beaten by another point (more return at ≤ risk), ascending volatility. */
 function efficientIndices(volatilities: Float64Array, returns: Float64Array): number[] {
-	const order = Array.from(volatilities.keys()).sort((a, b) => volatilities[a]! - volatilities[b]! || returns[b]! - returns[a]!);
+	const order = new Uint32Array(volatilities.length);
+	for (let i = 0; i < order.length; i++) order[i] = i;
+	order.sort((a, b) => volatilities[a]! - volatilities[b]! || returns[b]! - returns[a]!);
 	const out: number[] = [];
 	let best = -Infinity;
 	for (const i of order)

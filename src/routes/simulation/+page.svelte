@@ -1,7 +1,14 @@
 <script lang="ts">
 	import type { Asset } from '#lib/domain/types.ts';
 	import { newPortfolio, cleanAllocations } from '#lib/domain/factories.ts';
-	import { bestIndex, dominatingIndices, seriesStats, validateConstraints, weightsAt } from '#lib/core/montecarlo.ts';
+	import {
+		bestIndex,
+		dominatingIndices,
+		estimateSimulationBytes,
+		seriesStats,
+		validateConstraints,
+		weightsAt
+	} from '#lib/core/montecarlo.ts';
 	import { daysBetween } from '#lib/core/dates.ts';
 	import { app } from '#lib/state/app.svelte.ts';
 	import { sim } from '#lib/state/simulation.svelte.ts';
@@ -38,7 +45,11 @@
 				)
 			: { ok: true, errors: [] }
 	);
-	const canRun = $derived(selectedAssets.length >= 2 && sim.count >= 100 && sim.count <= 100_000 && validation.ok);
+	// No upper limit (MC-1); large runs get a memory estimate instead.
+	const countError = $derived(Number.isInteger(sim.count) && sim.count >= 100 ? null : 'Enter a whole number of at least 100 portfolios.');
+	const memory = $derived(countError ? 0 : estimateSimulationBytes(sim.count, Math.max(2, selectedAssets.length)));
+	const canRun = $derived(selectedAssets.length >= 2 && !countError && validation.ok);
+	const formatBytes = (b: number) => (b >= 1e9 ? `${fmt.num(b / 1e9, 1)} GB` : `${fmt.num(b / 1e6, 0)} MB`);
 	$effect(() => {
 		for (const id of sim.assetIds) if (!sim.constraints[id]) sim.constraints[id] = { min: '', max: '' };
 	});
@@ -160,7 +171,7 @@
 		notify.success(`Saved “${p.name}”`, { label: 'Open', href: `/portfolios/${app.portfolioSlug(p.id)}` });
 	}
 
-	const PRESETS = [1_000, 10_000, 50_000, 100_000];
+	const PRESETS = [1_000, 10_000, 100_000, 1_000_000];
 </script>
 
 <PageHeader title="Monte Carlo simulation" subtitle="Generate random portfolios and explore the efficient frontier." />
@@ -170,10 +181,19 @@
 		<div class="stack">
 			<div>
 				<label class="label" for="mc-count">Number of portfolios</label>
-				<input id="mc-count" class="input num" type="number" min="100" max="100000" step="100" bind:value={sim.count} />
+				<input id="mc-count" class="input num" type="number" min="100" step="1000" bind:value={sim.count} />
 				<div class="row presets">
 					{#each PRESETS as p (p)}<button class:active={sim.count === p} onclick={() => (sim.count = p)}>{fmt.compact(p)}</button>{/each}
 				</div>
+				{#if countError}
+					<p class="error-text">{countError}</p>
+				{:else if sim.count > 1_000_000 || memory > 500e6}
+					<p class="notice xs count-note">
+						Large run: needs about {formatBytes(memory)} of browser memory and takes a while.{#if memory > 2e9}
+							Browsers often cannot provide that much; the run may fail or the tab may crash.{/if}
+						The frontier is calculated, not sampled, so more portfolios mainly make the cloud denser.
+					</p>
+				{/if}
 			</div>
 			<div>
 				<span class="label">Assets (at least 2)</span>
@@ -353,6 +373,9 @@
 		.layout {
 			grid-template-columns: 360px minmax(0, 1fr);
 		}
+	}
+	.count-note {
+		margin: 8px 0 0;
 	}
 	.presets {
 		margin-top: 8px;

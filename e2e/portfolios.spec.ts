@@ -108,8 +108,14 @@ test('ST-1/ST-4 strategy generates portfolios', async ({ page }) => {
 
 test('MC-1/MC-7 simulation runs and inspects a portfolio', async ({ page }) => {
 	await page.goto('/simulation');
-	await page.getByRole('button', { name: '1K' }).click();
 	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByLabel('Number of portfolios').fill('50');
+	await expect(page.getByText('at least 100 portfolios')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+	await page.getByLabel('Number of portfolios').fill('20000000');
+	await expect(page.getByText(/Large run: needs about .* GB/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeEnabled();
+	await page.getByRole('button', { name: '1K' }).click();
 	await page.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(page.getByRole('heading', { name: 'Efficient frontier' })).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByRole('heading', { name: 'Portfolio inspector' })).toBeVisible();

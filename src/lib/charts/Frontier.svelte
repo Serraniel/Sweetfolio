@@ -5,6 +5,7 @@
 	 * highlighting and tap-to-inspect via a spatial grid. Drag to zoom (mouse/pen),
 	 * double-click or "Reset zoom" to go back.
 	 */
+	import { untrack } from 'svelte';
 	import type { MonteCarloResult } from '#lib/domain/types.ts';
 	import { theme } from '#lib/state/theme.svelte.ts';
 	import * as fmt from '#lib/format.ts';
@@ -113,13 +114,20 @@
 		return () => ro.disconnect();
 	});
 
+	// Static layer (axes, points, frontier, markers), redrawn only when data, size, zoom or theme
+	// change. Hover and selection are drawn on top of a copy, so moving the mouse stays cheap
+	// even with millions of points.
+	let layer: HTMLCanvasElement | null = null;
+	let layerVersion = $state(0);
+
 	$effect(() => {
-		if (!canvas || width === 0) return;
+		if (width === 0) return;
 		void theme.resolved;
+		layer ??= document.createElement('canvas');
 		const dpr = window.devicePixelRatio || 1;
-		canvas.width = width * dpr;
-		canvas.height = height * dpr;
-		const ctx = canvas.getContext('2d')!;
+		layer.width = width * dpr;
+		layer.height = height * dpr;
+		const ctx = layer.getContext('2d')!;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.clearRect(0, 0, width, height);
 		const axis = cssVar('--chart-axis');
@@ -267,14 +275,34 @@
 			ctx.fillText(label, tx, y);
 		}
 
-		// selection / hover
+		ctx.restore();
+		untrack(() => layerVersion++);
+	});
+
+	$effect(() => {
+		void layerVersion;
+		if (!canvas || !layer || width === 0) return;
+		if (canvas.width !== layer.width || canvas.height !== layer.height) {
+			canvas.width = layer.width;
+			canvas.height = layer.height;
+		}
+		const ctx = canvas.getContext('2d')!;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.drawImage(layer, 0, 0);
+		const dpr = window.devicePixelRatio || 1;
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		ctx.save();
+		ctx.beginPath();
+		ctx.rect(PAD.l, PAD.t, width - PAD.l - PAD.r, height - PAD.t - PAD.b);
+		ctx.clip();
+		ctx.strokeStyle = cssVar('--text');
+		ctx.lineWidth = 2;
 		for (const [idx, ring] of [
 			[selected, 7],
 			[hover, 5]
 		] as const) {
 			if (idx === null || idx === undefined || idx >= result.count) continue;
-			ctx.strokeStyle = text;
-			ctx.lineWidth = 2;
 			ctx.beginPath();
 			ctx.arc(sx(result.volatilities[idx]!), sy(result.returns[idx]!), ring, 0, Math.PI * 2);
 			ctx.stroke();

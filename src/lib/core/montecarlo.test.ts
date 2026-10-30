@@ -6,6 +6,7 @@ import {
 	dominatingIndices,
 	efficientFrontier,
 	estimateInputs,
+	estimateSimulationBytes,
 	generateSubsetWeights,
 	generateWeights,
 	planSubsets,
@@ -281,6 +282,14 @@ describe('MC-6/MC-7 simulation', () => {
 			const best = Math.max(...s.frontier.filter((f) => s.volatilities[f]! <= s.volatilities[i]! + 1e-12).map((f) => s.returns[f]!));
 			expect(s.returns[i]!).toBeLessThanOrEqual(best + 1e-9);
 		}
+	});
+	it('keeps every distinct portfolio and estimates memory per portfolio', () => {
+		const big = runSimulation({ assets, count: 20_000, riskFreeRate: 0 }, seededRng(5));
+		const keys = new Set<string>();
+		for (let i = 0; i < big.count; i++) keys.add(Array.from(big.weights.subarray(i * 3, i * 3 + 3), (x) => Math.round(x * 200)).join());
+		// Only the frontier points (off the 0.5 % grid) may coincide after rounding.
+		expect(keys.size).toBeGreaterThanOrEqual(big.count - big.frontier.length);
+		expect(estimateSimulationBytes(1_000_000, 21)).toBe(1_000_000 * (21 * 4 + 72));
 	});
 	it('reports progress for the random portfolios first, then the frontier', () => {
 		const seen: string[] = [];
