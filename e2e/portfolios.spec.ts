@@ -180,3 +180,25 @@ test('UI long portfolio names are truncated inside the card', async ({ page }) =
 	});
 	expect(overflow).toBe(false);
 });
+
+test('MC-4 limits stay with their asset after an asset is deleted', async ({ page }) => {
+	await uploadCsv(page, [{ name: 'Gold.csv', content: germanCsv(800, 70, 0.0012, 5) }]);
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: 'Select all' }).click();
+	// Deleting a selected asset in the same session must not shift the per-asset limits.
+	await page.getByRole('link', { name: 'Assets' }).first().click();
+	await page.getByRole('link', { name: /Alpha/ }).first().click();
+	await page.getByRole('button', { name: 'Delete asset' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+	await page.getByRole('link', { name: 'Simulation' }).first().click();
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByText('Weight constraints').click();
+	await page.getByLabel('Maximum weight of Gold').fill('20');
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByRole('heading', { name: 'Portfolio inspector' })).toBeVisible({ timeout: 20_000 });
+	await page.getByRole('button', { name: 'Max return' }).click();
+	await expect(page.locator('.weights li').filter({ hasText: 'Gold' }).locator('.num')).toHaveText('20.0%');
+	await expect(page.getByText('The settings changed since this run')).toBeHidden();
+	await page.getByLabel('Maximum weight of Gold').fill('30');
+	await expect(page.getByText('The settings changed since this run')).toBeVisible();
+});

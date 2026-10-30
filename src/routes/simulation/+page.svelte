@@ -35,7 +35,13 @@
 		)
 	);
 	const selectedAssets = $derived(sim.assetIds.map((id) => app.assetById.get(id)).filter((a): a is Asset => !!a));
-	const parsed = $derived(sim.parsedConstraints());
+	const selectedIds = $derived(selectedAssets.map((a) => a.id));
+	const parsed = $derived(sim.parsedConstraints(selectedIds));
+	// Drop assets deleted since they were selected.
+	$effect(() => {
+		if (app.ready && sim.assetIds.some((id) => !app.assetById.has(id))) sim.assetIds = sim.assetIds.filter((id) => app.assetById.has(id));
+	});
+	const formKey = $derived(JSON.stringify({ ids: selectedIds, count: sim.count, parsed }));
 	const validation = $derived(
 		sim.useConstraints
 			? validateConstraints(
@@ -69,7 +75,8 @@
 		sim.selected = null;
 		sim.progress = { done: 0, total: sim.count, phase: 'portfolios' };
 		sim.riskFreeRate = app.riskFreeRate;
-		const ids = selectedAssets.map((a) => a.id);
+		const ids = selectedIds;
+		const key = formKey;
 		sim.run = runMonteCarlo(
 			{
 				assets: inputs(ids),
@@ -85,6 +92,7 @@
 		);
 		try {
 			sim.result = await sim.run.promise;
+			sim.resultKey = key;
 			sim.selected = bestIndex(sim.result, 'sharpe');
 		} catch (err) {
 			if (!(err instanceof DOMException && err.name === 'AbortError'))
@@ -299,6 +307,9 @@
 				></Card
 			>
 		{:else}
+			{#if sim.resultKey !== formKey}
+				<p class="notice small">The settings changed since this run. Run the simulation again to apply them.</p>
+			{/if}
 			{#if windowYears < 3}
 				<p class="notice small">
 					Estimates use only {fmt.num(windowYears, 1)} years of common history{#if windowLimits.start}

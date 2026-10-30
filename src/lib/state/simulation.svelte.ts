@@ -17,14 +17,20 @@ class SimulationState {
 	/** Defaults for all assets and limits on the number of held assets (MC-4). */
 	limits = $state({ minWeight: '', maxWeight: '', minAssets: '', maxAssets: '' });
 
-	/** Per-asset entries override the defaults; a per-asset minimum above 0 means always held. */
-	parsedConstraints(): { constraints: Array<WeightConstraint | undefined> } & AssetCountLimits {
-		if (!this.useConstraints) return { constraints: this.assetIds.map(() => undefined) };
+	/** Settings of the shown result, to tell when they no longer match the form. */
+	resultKey = $state('');
+
+	/**
+	 * Constraints aligned with `ids` (the assets actually simulated). Per-asset entries
+	 * override the defaults; a per-asset minimum above 0 means always held.
+	 */
+	parsedConstraints(ids: readonly string[]): { constraints: Array<WeightConstraint | undefined> } & AssetCountLimits {
+		if (!this.useConstraints) return { constraints: ids.map(() => undefined) };
 		const pct = (s: string) => (s.trim() === '' ? null : Number(s.replace(',', '.')) / 100);
 		const count = (s: string) => (s.trim() === '' ? undefined : Number(s));
 		const floor = pct(this.limits.minWeight);
 		const cap = pct(this.limits.maxWeight);
-		const constraints = this.assetIds.map((id) => {
+		const constraints = ids.map((id) => {
 			const c = this.constraints[id];
 			const min = c ? pct(c.min) : null;
 			const max = (c ? pct(c.max) : null) ?? cap ?? 1;
