@@ -242,4 +242,10 @@ test('CP-5 compare portfolios with each other and with assets', async ({ page })
 	await expect(page.getByText('Portfolio (backtest)').first()).toBeVisible();
 	await page.getByRole('button', { name: 'Remove Only Beta' }).click();
 	await expect(page).not.toHaveURL(/only-beta/);
+	// The log scale (CH-7) is offered on value / % charts, not on drawdowns, and is remembered.
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Log' }).click();
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-pressed', 'true');
+	await page.reload();
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-pressed', 'true');
 });
