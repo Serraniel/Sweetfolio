@@ -120,6 +120,8 @@ test('MC-1/MC-7 simulation runs and inspects a portfolio', async ({ page }) => {
 });
 
 test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
+	// Gamma ends earlier than the others, so it limits the common history.
+	await uploadCsv(page, [{ name: 'Gamma.csv', content: germanCsv(700, 70, 0.0003, 5) }]);
 	await page.goto('/simulation');
 	await page.getByRole('button', { name: '1K' }).click();
 	await page.getByRole('button', { name: 'Select all' }).click();
@@ -131,6 +133,7 @@ test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
 	await page.getByLabel('Minimum weight per held asset').fill('20');
 	await page.getByRole('button', { name: 'Run simulation' }).click();
 	await expect(page.getByText(/frontier approximated/)).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByText(/\(end of Gamma\)/)).toBeVisible();
 	const weights = page.locator('.weights li .num');
 	for (const w of await weights.allTextContents()) {
 		const v = Number.parseFloat(w.replace(',', '.'));

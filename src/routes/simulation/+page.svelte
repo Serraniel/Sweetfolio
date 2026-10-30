@@ -96,11 +96,23 @@
 		return stats ? { label: b.name, ...stats } : null;
 	});
 	const windowYears = $derived(result ? daysBetween(result.window.start, result.window.end) / 365.25 : 0);
-	const limitingAsset = $derived(
-		resultAssets
+	// Assets that cut the common history short: the latest start and the earliest end (null if all agree).
+	const windowLimits = $derived.by(() => {
+		const spans = resultAssets
 			.filter((a): a is Asset => !!a)
-			.reduce<Asset | null>((m, a) => (!m || (a.prices[0]?.date ?? '') > (m.prices[0]?.date ?? '') ? a : m), null)
-	);
+			.map((a) => {
+				const p = app.converted(a).prices;
+				return { name: a.name, first: p[0]?.date ?? '', last: p.at(-1)?.date ?? '' };
+			})
+			.filter((s) => s.first);
+		if (spans.length < 2) return { start: null, end: null };
+		const latestStart = spans.reduce((m, s) => (s.first > m.first ? s : m));
+		const earliestEnd = spans.reduce((m, s) => (s.last < m.last ? s : m));
+		return {
+			start: spans.some((s) => s.first < latestStart.first) ? latestStart.name : null,
+			end: spans.some((s) => s.last > earliestEnd.last) ? earliestEnd.name : null
+		};
+	});
 	const dominating = $derived(result && benchmark && showDominating ? new Set(dominatingIndices(result, benchmark)) : null);
 	const markers = $derived([
 		...(result?.assetStats ?? []).map((s, i) => ({
@@ -269,15 +281,17 @@
 		{:else}
 			{#if windowYears < 3}
 				<p class="notice small">
-					Estimates use only {fmt.num(windowYears, 1)} years of common history{#if limitingAsset}
-						(limited by {limitingAsset.name}){/if}. Results from short periods are unreliable.
+					Estimates use only {fmt.num(windowYears, 1)} years of common history{#if windowLimits.start}
+						(limited by {windowLimits.start}){/if}. Results from short periods are unreliable.
 				</p>
 			{/if}
 			<Card
 				title="Efficient frontier"
-				subtitle="{fmt.num(result.count, 0)} portfolios · estimated from {fmt.date(result.window.start)} to {fmt.date(
-					result.window.end
-				)}{result.frontierApproximate ? ' · frontier approximated (asset counts / held minimums)' : ''}"
+				subtitle="{fmt.num(result.count, 0)} portfolios · estimated from {fmt.date(result.window.start)}{windowLimits.start
+					? ` (start of ${windowLimits.start})`
+					: ''} to {fmt.date(result.window.end)}{windowLimits.end ? ` (end of ${windowLimits.end})` : ''}{result.frontierApproximate
+					? ' · frontier approximated (asset counts / held minimums)'
+					: ''}"
 			>
 				{#snippet actions()}
 					<label class="row xs"><input type="checkbox" bind:checked={colorBySharpe} />Color by Sharpe</label>
