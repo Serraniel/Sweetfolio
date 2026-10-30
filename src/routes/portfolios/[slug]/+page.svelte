@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { Transaction, TransactionType } from '#lib/domain/types.ts';
+	import { benchmarkCorrelation } from '#lib/core/correlation.ts';
 	import { drawdownSeries, maxDrawdown } from '#lib/core/metrics.ts';
 	import { encodePortfolio, shareUrl } from '#lib/sharing/codec.ts';
 	import { app } from '#lib/state/app.svelte.ts';
@@ -58,6 +59,17 @@
 	const metrics = asyncDerived(() => (prices.length > 1 ? calc.metrics(prices, app.riskFreeRate) : null));
 	const isBench = $derived(portfolio ? app.isBenchmark('portfolio', portfolio.id) : false);
 	const bench = $derived(app.benchmarkResolved && !isBench && tab === 'overview' ? app.benchmarkSeries() : null);
+	// Benchmark over the portfolio's dates, so metrics, drawdown and correlation compare like with like.
+	const benchWindow = $derived.by(() => {
+		if (!bench || prices.length < 2) return null;
+		const start = prices[0]!.date;
+		const end = prices.at(-1)!.date;
+		const w = bench.filter((p) => p.date >= start && p.date <= end);
+		return w.length > 1 ? w : null;
+	});
+	const benchMetrics = asyncDerived(() => (benchWindow ? calc.metrics(benchWindow, app.riskFreeRate) : null));
+	const benchCorrelation = $derived(benchWindow ? benchmarkCorrelation(prices, benchWindow) : null);
+	const benchName = $derived(app.benchmarkResolved?.name ?? 'Benchmark');
 	const constituents = $derived(
 		portfolio ? portfolio.allocations.map((a) => ({ alloc: a, asset: app.assetById.get(a.assetId) })).filter((c) => !!c.asset) : []
 	);
@@ -222,7 +234,15 @@
 						label="Portfolio backtest"
 					/>
 				</Card>
-				<Card title="Financial metrics"><MetricsTable metrics={metrics.value} loading={metrics.loading} /></Card>
+				<Card title="Financial metrics" subtitle={benchWindow ? `Second line: ${benchName} (benchmark) over the same dates` : undefined}
+					><MetricsTable
+						metrics={metrics.value}
+						loading={metrics.loading}
+						benchmark={benchMetrics.value}
+						benchmarkLabel={benchName}
+						correlation={benchCorrelation}
+					/></Card
+				>
 				<div class="two">
 					<Card title="Allocation">
 						<Donut
@@ -235,9 +255,17 @@
 							centerValue={String(constituents.length)}
 						/>
 					</Card>
-					<Card title="Drawdown" subtitle="Max {fmt.pct(maxDrawdown(prices))}">
+					<Card
+						title="Drawdown"
+						subtitle="Max {fmt.pct(maxDrawdown(prices))}{benchWindow ? ` · benchmark ${fmt.pct(maxDrawdown(benchWindow))}` : ''}"
+					>
 						<LineChart
-							series={[{ label: 'Drawdown', data: drawdownSeries(prices), fill: true, color: 'var(--chart-2)' }]}
+							series={[
+								{ label: 'Drawdown', data: drawdownSeries(prices), fill: true, color: 'var(--chart-2)' },
+								...(benchWindow
+									? [{ label: `${benchName} (benchmark)`, data: drawdownSeries(benchWindow), color: 'var(--silver)', width: 1 }]
+									: [])
+							]}
 							format="percent"
 							height={220}
 							label="Drawdown"

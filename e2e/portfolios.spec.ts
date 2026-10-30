@@ -34,6 +34,14 @@ test('PM-1/PM-2/PM-4 model portfolio backtest and benchmark', async ({ page }) =
 	await expect(page.getByText('Benchmark', { exact: true }).first()).toBeVisible();
 	await page.goto('/');
 	await expect(page.getByRole('heading', { name: 'Benchmark' })).toBeVisible();
+	// With another benchmark, the portfolio's metrics compare against it.
+	await page.goto('/assets');
+	await page.getByRole('link', { name: /Beta/ }).first().click();
+	await page.getByRole('button', { name: 'Set as benchmark' }).click();
+	await page.goto('/portfolios/sixty-forty');
+	await expect(page.getByText('Correlation with benchmark')).toBeVisible();
+	await expect(page.locator('table.metrics .bench').first()).not.toBeEmpty();
+	await expect(page.getByText(/Max .* · benchmark /)).toBeVisible();
 	expect(errors).toEqual([]);
 });
 
