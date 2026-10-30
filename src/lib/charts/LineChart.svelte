@@ -54,12 +54,14 @@
 
 	const lastDate = $derived(series.reduce((m, s) => (s.data.length && s.data.at(-1)!.date > m ? s.data.at(-1)!.date : m), ''));
 	const firstDate = $derived(series.reduce((m, s) => (s.data.length && (!m || s.data[0]!.date < m) ? s.data[0]!.date : m), ''));
-	const enabled = $derived(availableRanges(firstDate || undefined, lastDate || undefined));
+	// Latest start among the series: "Max" begins here so all lines are comparable.
+	const commonDate = $derived(series.reduce((m, s) => (s.data.length && s.data[0]!.date > m ? s.data[0]!.date : m), ''));
+	const enabled = $derived(availableRanges(commonDate || undefined, lastDate || undefined, firstDate || undefined));
 	const effectiveFormat = $derived(mode === 'relative' ? 'percent' : format);
 
 	/** Union of dates → aligned uPlot data, optionally rebased (relative mode). */
 	const prepared = $derived.by(() => {
-		const start = lastDate ? rangeStart(range, lastDate) : null;
+		const start = range === 'max' ? commonDate || null : lastDate ? rangeStart(range, lastDate) : null;
 		const sliced = series.map((s) => (start ? s.data.filter((p) => p.date >= start) : s.data));
 		const dates = [...new Set(sliced.flatMap((s) => s.map((p) => p.date)))].sort();
 		const index = new Map(dates.map((d, i) => [d, i]));
@@ -201,7 +203,7 @@
 			{#if showRange}
 				<Segmented
 					bind:value={range}
-					options={RANGES}
+					options={RANGES.filter((r) => r.value !== 'all' || enabled.includes('all'))}
 					label="Time range"
 					size="sm"
 					disabled={RANGES.map((r) => r.value).filter((r) => !enabled.includes(r))}
