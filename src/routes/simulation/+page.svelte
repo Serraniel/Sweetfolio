@@ -428,18 +428,6 @@
 					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'maxReturn'))}>Max return</Button>
 				</div>
 			</Card>
-			<Card title="Crisis test" subtitle="Optional: how selected portfolios would hold up in different types of crises">
-				<SimulationCrises
-					{result}
-					{benchmark}
-					test={crisisTest}
-					view={crisisView}
-					hidden={crisisHidden}
-					efficient={crisisEfficient}
-					inZoom={() => frontierRef?.indicesIn(zoomView) ?? []}
-					onpick={(i) => (sim.selected = i)}
-				/>
-			</Card>
 			{#if inspected}
 				<Card title="Portfolio inspector">
 					{#snippet actions()}
@@ -487,6 +475,18 @@
 					{/if}
 				</Card>
 			{/if}
+			<Card title="Crisis test" subtitle="Optional: how selected portfolios would hold up in different types of crises">
+				<SimulationCrises
+					{result}
+					{benchmark}
+					test={crisisTest}
+					view={crisisView}
+					hidden={crisisHidden}
+					efficient={crisisEfficient}
+					inZoom={() => frontierRef?.indicesIn(zoomView) ?? []}
+					onpick={(i) => (sim.selected = i)}
+				/>
+			</Card>
 		{/if}
 	</div>
 </div>
