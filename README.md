@@ -12,6 +12,7 @@ No account, no server, no tracking: all data lives in your browser's IndexedDB a
 - **Strategies** — hierarchical allocation trees (sunburst & icicle), generate model portfolios ("sleeves") from them.
 - **Portfolio tracking** — transactions (buy, sell, dividend, deposit, withdrawal, fees, taxes), FIFO cost basis, holdings & P&L, cash tracking, value history, drift analysis and rebalancing suggestions.
 - **Monte Carlo** — up to 100 000 random portfolios, optional min/max weight constraints, efficient frontier, benchmark comparison, save any point as a portfolio.
+- **Crisis tester** — test portfolios and simulated portfolios against 13 historical crises (1929 – 2022) with real prices and, before an asset's own history, proxies matched to what it invests in; compare with the benchmark and find portfolios that also hold up in crises.
 - **Currencies** — everything converted to your main currency; ECB exchange rates fetched automatically, custom rate CSVs supported.
 - **Import / export** — Sweetfolio backups, Portfolio Performance (XML import, CSV export), Parqet (CSV and Parqet Connect), Trade Republic / Scalable Capital / ING CSVs, AI export + local MCP server.
 - **Sharing** — portfolios, strategies and asset lists as compact links.

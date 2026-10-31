@@ -3,7 +3,8 @@
 	 * Efficient frontier scatter on canvas (MC-6, MC-7, CH-4): handles 100k points,
 	 * Sharpe colouring, frontier line, asset & benchmark markers, dominance
 	 * highlighting and tap-to-inspect via a spatial grid. Drag to zoom (mouse/pen),
-	 * double-click or "Reset zoom" to go back.
+	 * double-click or "Reset zoom" to go back. In select mode a drag reports a
+	 * range instead (crisis test, CR-7); crisis scores can colour the points.
 	 */
 	import { untrack } from 'svelte';
 	import type { MonteCarloResult } from '#lib/domain/types.ts';
@@ -27,7 +28,16 @@
 		onlyDominating = false,
 		selected = null,
 		onselect,
-		height = 420
+		height = 420,
+		scores = null,
+		colorByScore = false,
+		scoreLabel = (v: number) => fmt.pct(v, 1),
+		hide = null,
+		highlight = null,
+		selection = null,
+		selectMode = false,
+		onrange,
+		view = $bindable(null)
 	}: {
 		result: MonteCarloResult;
 		colorBySharpe?: boolean;
@@ -38,6 +48,19 @@
 		selected?: number | null;
 		onselect?: (index: number) => void;
 		height?: number;
+		/** Crisis score per portfolio (higher is better), NaN when not tested. */
+		scores?: Float64Array | null;
+		colorByScore?: boolean;
+		scoreLabel?: (v: number) => string;
+		/** 1 = hidden (crisis filters). */
+		hide?: Uint8Array | null;
+		/** Crisis-aware efficient portfolios, drawn as rings. */
+		highlight?: number[] | null;
+		/** Portfolios selected for the crisis test, outlined. */
+		selection?: number[] | null;
+		selectMode?: boolean;
+		onrange?: (range: { x0: number; x1: number; y0: number; y1: number }) => void;
+		view?: { x0: number; x1: number; y0: number; y1: number } | null;
 	} = $props();
 
 	let canvas: HTMLCanvasElement | undefined = $state();
@@ -45,16 +68,29 @@
 	let width = $state(0);
 	let hover = $state<number | null>(null);
 	const PAD = { l: 52, r: 14, t: 12, b: 34 };
-	let view = $state<{ x0: number; x1: number; y0: number; y1: number } | null>(null);
 	let drag = $state<{ x: number; y: number; x2: number; y2: number } | null>(null);
 	let dragged = $state(false);
 	const frontierSet = $derived(new Set(result.frontier));
-	const visible = (i: number) => !onlyDominating || !!dominating?.has(i) || frontierSet.has(i);
+	const visible = (i: number) => (!onlyDominating || !!dominating?.has(i) || frontierSet.has(i)) && !hide?.[i];
+	const scoreRange = $derived.by(() => {
+		if (!scores) return null;
+		let lo = Infinity,
+			hi = -Infinity;
+		for (let i = 0; i < scores.length; i++) {
+			const s = scores[i]!;
+			if (Number.isNaN(s)) continue;
+			if (s < lo) lo = s;
+			if (s > hi) hi = s;
+		}
+		return lo <= hi ? { lo, hi } : null;
+	});
+	const byScore = $derived(colorByScore && !!scoreRange);
 
 	$effect(() => {
 		void result;
 		void onlyDominating;
-		view = null;
+		void hide;
+		untrack(() => (view = null));
 	});
 
 	const auto = $derived.by(() => {
@@ -187,6 +223,8 @@
 		const buckets = 24;
 		const paths: Path2D[] = Array.from({ length: buckets }, () => new Path2D());
 		const domPath = new Path2D();
+		const untested = new Path2D();
+		const sRange = scoreRange ? scoreRange.hi - scoreRange.lo || 1 : 1;
 		for (let i = 0; i < result.count; i++) {
 			if (!visible(i)) continue;
 			const x = sx(result.volatilities[i]!);
@@ -196,6 +234,18 @@
 			const cell = grid.get(key);
 			if (cell) cell.push(i);
 			else grid.set(key, [i]);
+			if (byScore) {
+				const s = scores![i]!;
+				if (Number.isNaN(s)) {
+					untested.moveTo(x + r, y);
+					untested.arc(x, y, r, 0, Math.PI * 2);
+					continue;
+				}
+				const b = Math.min(buckets - 1, Math.floor(((s - scoreRange!.lo) / sRange) * buckets));
+				paths[b]!.moveTo(x + r, y);
+				paths[b]!.arc(x, y, r, 0, Math.PI * 2);
+				continue;
+			}
 			if (dominating?.has(i)) {
 				domPath.moveTo(x + r, y);
 				domPath.arc(x, y, r, 0, Math.PI * 2);
@@ -205,8 +255,13 @@
 			paths[b]!.moveTo(x + r, y);
 			paths[b]!.arc(x, y, r, 0, Math.PI * 2);
 		}
+		if (byScore) {
+			ctx.fillStyle = silver;
+			ctx.globalAlpha = 0.25;
+			ctx.fill(untested);
+		}
 		paths.forEach((p, b) => {
-			if (colorBySharpe) {
+			if (colorBySharpe || byScore) {
 				const t = b / (buckets - 1);
 				ctx.fillStyle = `color-mix(in srgb, ${teal} ${Math.round(t * 100)}%, ${pink})`;
 				ctx.globalAlpha = 0.55;
@@ -216,12 +271,29 @@
 			}
 			ctx.fill(p);
 		});
-		if (dominating?.size) {
+		if (dominating?.size && !byScore) {
 			ctx.globalAlpha = 0.9;
 			ctx.fillStyle = cssVar('--chart-4');
 			ctx.fill(domPath);
 		}
 		ctx.globalAlpha = 1;
+
+		// portfolios selected for the crisis test
+		if (selection?.length && !byScore) {
+			const sel = new Path2D();
+			for (const i of selection) {
+				if (!visible(i)) continue;
+				const x = sx(result.volatilities[i]!);
+				const y = sy(result.returns[i]!);
+				sel.moveTo(x + r + 1.5, y);
+				sel.arc(x, y, r + 1.5, 0, Math.PI * 2);
+			}
+			ctx.strokeStyle = cssVar('--chart-3');
+			ctx.globalAlpha = 0.6;
+			ctx.lineWidth = 1;
+			ctx.stroke(sel);
+			ctx.globalAlpha = 1;
+		}
 
 		// frontier: a thin, translucent line so nearby portfolios stay visible, with its
 		// portfolios drawn as dots on top
@@ -247,6 +319,20 @@
 			ctx.arc(sx(result.volatilities[idx]!), sy(result.returns[idx]!), 2.75, 0, Math.PI * 2);
 			ctx.fill();
 			ctx.stroke();
+		}
+
+		// crisis-aware efficient set
+		if (highlight?.length) {
+			ctx.strokeStyle = cssVar('--chart-3');
+			ctx.fillStyle = cssVar('--surface-solid');
+			ctx.lineWidth = 2;
+			for (const i of highlight) {
+				if (!visible(i)) continue;
+				ctx.beginPath();
+				ctx.arc(sx(result.volatilities[i]!), sy(result.returns[i]!), 4, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.stroke();
+			}
 		}
 
 		// markers
@@ -343,12 +429,27 @@
 		const d = drag;
 		drag = null;
 		if (!dragged || Math.abs(d.x2 - d.x) < 8 || Math.abs(d.y2 - d.y) < 8) return;
-		view = {
+		const range = {
 			x0: ix(Math.min(d.x, d.x2)),
 			x1: ix(Math.max(d.x, d.x2)),
 			y0: iy(Math.max(d.y, d.y2)),
 			y1: iy(Math.min(d.y, d.y2))
 		};
+		if (selectMode) onrange?.(range);
+		else view = range;
+	}
+
+	/** Visible portfolios inside a volatility × return range (or the current view). */
+	export function indicesIn(range: { x0: number; x1: number; y0: number; y1: number } | null = view): number[] {
+		const b = range ?? bounds;
+		const out: number[] = [];
+		for (let i = 0; i < result.count; i++) {
+			if (!visible(i)) continue;
+			const x = result.volatilities[i]!;
+			const y = result.returns[i]!;
+			if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) out.push(i);
+		}
+		return out;
 	}
 
 	function nearest(e: PointerEvent): number | null {
@@ -378,6 +479,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<canvas
 		bind:this={canvas}
+		class:select-mode={selectMode}
 		style="height: {height}px"
 		aria-hidden="true"
 		onpointerdown={startDrag}
@@ -414,14 +516,18 @@
 			<span>Return <b class="num">{fmt.pct(result.returns[hover]!)}</b></span>
 			<span>Vol. <b class="num">{fmt.pct(result.volatilities[hover]!)}</b></span>
 			<span>Sharpe <b class="num">{fmt.num(result.sharpes[hover]!)}</b></span>
+			{#if scores && !Number.isNaN(scores[hover]!)}<span>Crisis <b class="num">{scoreLabel(scores[hover]!)}</b></span>{/if}
 		</div>
 	{/if}
 	<div class="legend xs muted">
-		{#if colorBySharpe}<span class="grad"><i></i>Sharpe low → high</span>{/if}
+		{#if byScore}<span class="grad"><i></i>Crisis score worse → better</span><span><i class="dot untested"></i>Not crisis-tested</span
+			>{:else if colorBySharpe}<span class="grad"><i></i>Sharpe low → high</span>{/if}
+		{#if highlight?.length}<span><i class="dot ring"></i>Crisis-aware efficient ({highlight.length})</span>{/if}
+		{#if selection?.length && !byScore}<span><i class="dot sel"></i>Selected for crisis test ({selection.length})</span>{/if}
 		<span><i class="line"></i>Efficient frontier</span>
 		{#if markers.some((m) => m.kind === 'benchmark')}<span><i class="diamond"></i>Benchmark</span>{/if}
-		{#if dominating?.size}<span><i class="dot dom"></i>Beats benchmark ({dominating.size})</span>{/if}
-		<span class="zoom-hint">Drag to zoom, double-click to reset</span>
+		{#if dominating?.size && !byScore}<span><i class="dot dom"></i>Beats benchmark ({dominating.size})</span>{/if}
+		<span class="zoom-hint">{selectMode ? 'Drag to select a range for the crisis test' : 'Drag to zoom, double-click to reset'}</span>
 	</div>
 </div>
 
@@ -446,6 +552,9 @@
 		box-shadow: var(--shadow);
 		pointer-events: none;
 		white-space: nowrap;
+	}
+	canvas.select-mode {
+		cursor: cell;
 	}
 	.zoom-box {
 		position: absolute;
@@ -512,5 +621,22 @@
 		height: 8px;
 		border-radius: 50%;
 		background: var(--chart-4);
+	}
+	.untested {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--silver);
+		opacity: 0.5;
+	}
+	.ring,
+	.sel {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		border: 2px solid var(--chart-3);
+	}
+	.sel {
+		border-width: 1px;
 	}
 </style>

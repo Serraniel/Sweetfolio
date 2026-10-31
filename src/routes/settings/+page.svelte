@@ -11,6 +11,8 @@
 	import { todayISO } from '#lib/core/dates.ts';
 	import { app } from '#lib/state/app.svelte.ts';
 	import { jobs } from '#lib/state/jobs.svelte.ts';
+	import { crisis } from '#lib/state/crisis.svelte.ts';
+	import { PROXY_INDICES } from '#lib/core/proxies.ts';
 	import { theme } from '#lib/state/theme.svelte.ts';
 	import { notify } from '#lib/state/toasts.svelte.ts';
 	import { connectParqet, disconnectParqet, parqetConfigured } from '#lib/state/parqet.svelte.ts';
@@ -104,6 +106,7 @@
 	const tracked = $derived(app.portfolios.filter((p) => p.mode !== 'model'));
 	onMount(() => {
 		parqetConfigured().then((v) => (parqetAvailable = v));
+		void crisis.load();
 	});
 
 	function exportPP() {
@@ -142,7 +145,7 @@
 	<nav class="toc" aria-label="Settings sections">
 		<a href="#appearance">Appearance</a><a href="#calculations">Calculations</a><a href="#sources">Data sources</a><a href="#currency"
 			>Exchange rates</a
-		><a href="#data">Data</a><a href="#about">About</a>
+		><a href="#crisis-data">Crisis data</a><a href="#data">Data</a><a href="#about">About</a>
 	</nav>
 	<div class="stack" style="--gap: 20px">
 		<section id="appearance">
@@ -322,6 +325,38 @@
 						}}
 					/>
 				</div>
+			</Card>
+		</section>
+
+		<section id="crisis-data">
+			<Card title="Crisis data" subtitle="Long histories that let the crisis tester go back before your assets' own prices.">
+				{#snippet actions()}<Button size="sm" icon="download" loading={crisis.downloading} onclick={() => crisis.downloadIndices()}
+						>{crisis.indices.size ? 'Update' : 'Download'}</Button
+					>{/snippet}
+				<p class="small muted">
+					Index histories are downloaded from Onvista into this browser on request (a few MB) and are not part of backups. Bond and cash
+					proxies are modelled from US treasury yields, bundled from
+					<a href="https://fred.stlouisfed.org/" rel="external noopener" target="_blank">FRED, Federal Reserve Bank of St. Louis</a
+					>{crisis.rates ? '' : ' (loading…)'}.
+				</p>
+				<ul class="pairs">
+					{#each PROXY_INDICES as def (def.key)}
+						{@const d = crisis.indices.get(def.key)}
+						<li>
+							<span class="strong">{def.label}</span>
+							<span class="xs muted"
+								>{d
+									? `${fmt.date(d.prices[0]?.date)} – ${fmt.date(d.prices.at(-1)?.date)} · ${def.note}`
+									: `not downloaded · ${def.note}`}</span
+							>
+						</li>
+					{/each}
+				</ul>
+				{#if crisis.indices.size}
+					<div class="row">
+						<Button size="sm" variant="ghost" icon="trash" onclick={() => crisis.clearIndices()}>Delete downloaded histories</Button>
+					</div>
+				{/if}
 			</Card>
 		</section>
 

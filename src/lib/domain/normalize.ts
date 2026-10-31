@@ -6,12 +6,17 @@
 import { normalizeSeries } from '#lib/core/series.ts';
 import {
 	ASSET_CLASSIFICATIONS,
+	BOND_MATURITIES,
 	DEFAULT_SETTINGS,
+	EQUITY_STYLES,
+	EXPOSURE_CLASSES,
+	EXPOSURE_REGIONS,
 	TRANSACTION_TYPES,
 	type Asset,
 	type AssetClassification,
 	type BenchmarkRef,
 	type CurrencyRate,
+	type Exposure,
 	type Portfolio,
 	type PortfolioMode,
 	type RebalanceFrequency,
@@ -29,6 +34,21 @@ const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFi
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const strOrNull = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 const now = () => new Date().toISOString();
+
+const oneOf = <T extends string>(list: readonly T[], v: unknown, d: T): T => (list.includes(v as T) ? (v as T) : d);
+
+export function normalizeExposure(raw: unknown): Exposure | null {
+	if (!raw || typeof raw !== 'object') return null;
+	const e = raw as Loose;
+	return {
+		assetClass: oneOf(EXPOSURE_CLASSES, e.assetClass, 'unknown'),
+		region: oneOf(EXPOSURE_REGIONS, e.region, 'other'),
+		style: oneOf(EQUITY_STYLES, e.style, 'broad'),
+		maturity: oneOf(BOND_MATURITIES, e.maturity, 'intermediate'),
+		leverage: num(e.leverage, 1) || 1,
+		source: oneOf(['auto', 'guess', 'manual'] as const, e.source, 'auto')
+	};
+}
 
 export function normalizeAsset(raw: unknown): Asset {
 	const a = (raw ?? {}) as Loose;
@@ -54,7 +74,8 @@ export function normalizeAsset(raw: unknown): Asset {
 		rawCSVStoredAt: strOrNull(a.rawCSVStoredAt),
 		createdAt: str(a.createdAt, now()),
 		updatedAt: str(a.updatedAt, str(a.createdAt, now())),
-		lastRefreshedAt: strOrNull(a.lastRefreshedAt)
+		lastRefreshedAt: strOrNull(a.lastRefreshedAt),
+		exposure: normalizeExposure(a.exposure)
 	};
 }
 

@@ -7,7 +7,7 @@ import type { CorrelationMatrix, MetricsResult, MonteCarloResult, PricePoint } f
 import { computeCorrelationMatrix } from '#lib/core/correlation.ts';
 import { computeMetrics } from '#lib/core/metrics.ts';
 import type { SimulationPhase } from '#lib/core/montecarlo.ts';
-import type { CalcRequest, CalcResponse, MonteCarloMessage, MonteCarloRequest } from './protocol.ts';
+import type { CalcRequest, CalcResponse, CrisisTestMessage, CrisisTestRequest, MonteCarloMessage, MonteCarloRequest } from './protocol.ts';
 
 let calcWorker: Worker | null = null;
 let nextId = 1;
@@ -115,6 +115,41 @@ export function runMonteCarlo(
 		};
 	});
 	w.postMessage(req);
+	return {
+		promise,
+		cancel: () => {
+			w.terminate();
+			reject(new DOMException('Cancelled', 'AbortError'));
+		}
+	};
+}
+
+export interface CrisisTestRun {
+	promise: Promise<Float64Array>;
+	cancel: () => void;
+}
+
+/** Crisis test of simulated portfolios in a dedicated worker (CR-7). */
+export function runCrisisTest(req: CrisisTestRequest, onProgress: (done: number, total: number) => void): CrisisTestRun {
+	const w = new Worker(new URL('./crisis.worker.ts', import.meta.url), { type: 'module' });
+	let reject!: (e: Error) => void;
+	const promise = new Promise<Float64Array>((resolve, rej) => {
+		reject = rej;
+		w.onmessage = (e: MessageEvent<CrisisTestMessage>) => {
+			const m = e.data;
+			if (m.kind === 'progress') onProgress(m.done, m.total);
+			else {
+				w.terminate();
+				if (m.kind === 'result') resolve(m.outcomes);
+				else rej(new Error(m.error));
+			}
+		};
+		w.onerror = (e) => {
+			w.terminate();
+			rej(new Error(e.message || 'Crisis test failed'));
+		};
+	});
+	w.postMessage(req, [req.weights.buffer]);
 	return {
 		promise,
 		cancel: () => {

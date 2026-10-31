@@ -4,7 +4,10 @@
 	import { PERIOD_KEYS, type MetricsResult, type PeriodKey, type PeriodMetrics, type PricePoint } from '#lib/domain/types.ts';
 	import { availablePeriods, drawdownSeries } from '#lib/core/metrics.ts';
 	import { app } from '#lib/state/app.svelte.ts';
-	import { performanceSeries } from '#lib/state/portfolio-view.ts';
+	import { performanceSeries, trackedView } from '#lib/state/portfolio-view.ts';
+	import { crisis, type CrisisReport, type WeightedAsset } from '#lib/state/crisis.svelte.ts';
+	import { CRISIS_TYPE_SHORT, SCORE_LABELS } from '#lib/core/crisis.ts';
+	import type { RebalanceFrequency } from '#lib/domain/types.ts';
 	import { asyncDerived } from '#lib/state/async.svelte.ts';
 	import * as calc from '#lib/workers/client.ts';
 	import * as fmt from '#lib/format.ts';
@@ -16,6 +19,9 @@
 	import Button from '#lib/ui/Button.svelte';
 	import LineChart from '#lib/charts/LineChart.svelte';
 	import { colorAt } from '#lib/charts/palette.ts';
+	import CrisisSettings from '#lib/components/CrisisSettings.svelte';
+	import CrisisDataNotice from '#lib/components/CrisisDataNotice.svelte';
+	import { duration } from '#lib/components/CrisisTable.svelte';
 
 	// Assets in `slugs`, portfolios in `portfolios` (CP-1, CP-5).
 	const slugs = $derived((page.url.searchParams.get('slugs') ?? '').split(',').filter(Boolean));
@@ -34,6 +40,8 @@
 		currency: string;
 		isin: string | null;
 		wkn: string | null;
+		weights: WeightedAsset[];
+		rebalance: RebalanceFrequency;
 	}
 	const items = $derived<Item[]>([
 		...assets.map((a) => ({
@@ -46,7 +54,9 @@
 			type: a.classification.toUpperCase(),
 			currency: a.currency,
 			isin: a.isin,
-			wkn: a.wkn
+			wkn: a.wkn,
+			weights: [{ assetId: a.id, weight: 1 }],
+			rebalance: 'none' as const
 		})),
 		...portfolios.map((p) => {
 			const perf = performanceSeries(p);
@@ -60,7 +70,12 @@
 				type: perf.kind === 'backtest' ? 'Portfolio (backtest)' : 'Portfolio (time-weighted, actual)',
 				currency: app.settings.mainCurrency,
 				isin: null,
-				wkn: null
+				wkn: null,
+				// Tracked-only portfolios are tested with their current holdings.
+				weights: p.allocations.length
+					? crisis.portfolioWeights(p)
+					: trackedView(p).summary.holdings.map((h) => ({ assetId: h.assetId, weight: Math.max(0, h.currentValue) })),
+				rebalance: p.allocations.length ? (p.rebalance ?? 'none') : ('none' as const)
 			};
 		})
 	]);
@@ -99,6 +114,34 @@
 			if (idx === null || (row.better === 'high' ? v > vals[idx]! : v < vals[idx]!)) idx = i;
 		});
 		return idx;
+	}
+
+	// --- Crises (CR-6): one column per item plus the benchmark.
+	$effect(() => {
+		void crisis.load();
+	});
+	const bench = $derived(crisis.benchmarkWeights());
+	const crisisReports = $derived<CrisisReport[] | null>(
+		crisis.loaded && items.length ? items.map((i) => crisis.report(i.weights, i.rebalance)) : null
+	);
+	const crisisRows = $derived(
+		crisisReports
+			? crisisReports[0]!.rows
+					.map((row, r) => ({ row, cells: crisisReports.map((rep) => rep.rows[r]!.outcome), bench: row.benchmark }))
+					.filter((x) => x.cells.some((c) => c) && x.row.included)
+			: []
+	);
+	/** Tint from red (worst drawdown in the row) to green (best). */
+	function heat(value: number | undefined, row: { cells: Array<{ drawdown: number } | null>; bench: { drawdown: number } | null }): string {
+		if (value === undefined) return '';
+		const all = [...row.cells.map((c) => c?.drawdown), row.bench?.drawdown].filter((v): v is number => v !== undefined);
+		const lo = Math.min(...all);
+		const hi = Math.max(...all);
+		if (hi - lo < 0.005) return '';
+		const x = (value - lo) / (hi - lo);
+		return x >= 0.5
+			? `background: color-mix(in srgb, var(--positive) ${Math.round((x - 0.5) * 36)}%, transparent)`
+			: `background: color-mix(in srgb, var(--negative) ${Math.round((0.5 - x) * 36)}%, transparent)`;
 	}
 
 	function setItems(nextAssets: string[], nextPortfolios: string[]) {
@@ -230,6 +273,89 @@
 			/>
 		</Card>
 
+		<Card title="Crises" subtitle="Drawdown in each historical crisis; second line: time to get back to the previous high">
+			<CrisisDataNotice />
+			{#if !crisisReports}
+				<p class="small muted">Loading crisis data…</p>
+			{:else if !crisisRows.length}
+				<p class="small muted">None of the selection can be tested in any crisis with the available data.</p>
+			{:else}
+				<div class="scroll-x">
+					<table class="table crisis-table">
+						<thead>
+							<tr>
+								<th>Crisis</th>
+								{#each items as item, i (item.key)}<th class="right"
+										><span class="dot" style="background: {colorAt(i)}"></span>{item.name}</th
+									>{/each}
+								{#if bench}<th class="right muted">{bench.name} (benchmark)</th>{/if}
+							</tr>
+						</thead>
+						<tbody>
+							{#each crisisRows as x (x.row.crisis.id)}
+								<tr>
+									<th scope="row" class="metric"
+										>{x.row.crisis.name}<span class="xs muted block"
+											>{CRISIS_TYPE_SHORT[x.row.crisis.type]} · {x.row.crisis.start.slice(0, 4)}</span
+										></th
+									>
+									{#each x.cells as c, i (items[i]!.key)}
+										<td class="right num" style={heat(c?.drawdown, x)}
+											>{#if c}{fmt.pct(c.drawdown, 1)}<span class="xs muted block">{duration(c.recoveryDays)}</span>{:else}<span
+													class="xs muted">no data</span
+												>{/if}</td
+										>
+									{/each}
+									{#if bench}
+										<td class="right num muted" style={heat(x.bench?.drawdown, x)}
+											>{#if x.bench}{fmt.pct(x.bench.drawdown, 1)}<span class="xs block">{duration(x.bench.recoveryDays)}</span>{:else}<span
+													class="xs">no data</span
+												>{/if}</td
+										>
+									{/if}
+								</tr>
+							{/each}
+						</tbody>
+						<tfoot>
+							<tr>
+								<td>{SCORE_LABELS[crisis.prefs.score]}</td>
+								{#each crisisReports as rep, i (items[i]!.key)}<td class="right num"
+										>{Number.isFinite(rep.score)
+											? crisis.prefs.score === 'longestRecovery'
+												? duration(-rep.score * 365.25)
+												: fmt.pct(rep.score, 1)
+											: '–'}</td
+									>{/each}
+								{#if bench}<td class="right num muted"
+										>{Number.isFinite(crisisReports[0]!.benchmarkScore)
+											? crisis.prefs.score === 'longestRecovery'
+												? duration(-crisisReports[0]!.benchmarkScore * 365.25)
+												: fmt.pct(crisisReports[0]!.benchmarkScore, 1)
+											: '–'}</td
+									>{/if}
+							</tr>
+							{#if bench}
+								<tr>
+									<td>vs. benchmark</td>
+									{#each crisisReports as rep, i (items[i]!.key)}<td class="right"
+											>{#if rep.holdsUp === null}–{:else}<span class="verdict {rep.holdsUp ? 'ok' : 'bad'}"
+													>{rep.holdsUp ? 'Holds up' : `Worse in ${rep.worse}`}</span
+												>{/if}</td
+										>{/each}
+									<td></td>
+								</tr>
+							{/if}
+						</tfoot>
+					</table>
+				</div>
+				<p class="xs muted">
+					Scores and verdicts cover the crises that can be tested for each item and its benchmark; before an asset's own history, proxies
+					are used (see the portfolio or asset page for details).
+				</p>
+			{/if}
+			<div class="crisis-settings"><CrisisSettings /></div>
+		</Card>
+
 		<Card title="Details">
 			<div class="scroll-x">
 				<table class="table">
@@ -324,5 +450,27 @@
 	td.best {
 		font-weight: 700;
 		background: var(--accent-soft);
+	}
+	.block {
+		display: block;
+		font-weight: 400;
+	}
+	.verdict {
+		font-size: var(--text-xs);
+		font-weight: 650;
+		padding: 2px 8px;
+		border-radius: 999px;
+		white-space: nowrap;
+	}
+	.verdict.ok {
+		background: var(--accent-soft);
+		color: var(--positive);
+	}
+	.verdict.bad {
+		background: var(--negative-soft);
+		color: var(--negative);
+	}
+	.crisis-settings {
+		margin-top: var(--space-3);
 	}
 </style>

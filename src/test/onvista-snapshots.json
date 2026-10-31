@@ -1,0 +1,398 @@
+{
+	"DE000A0F5UF5": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares NASDAQ-100 UCITS ETF USD Dis. (DE)",
+			"isin": "DE000A0F5UF5"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien USA",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "NASDAQ 100",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"DE000A0S9GB0": {
+		"instrument": {
+			"entityType": "DERIVATIVE",
+			"name": "Xetra Gold ETC",
+			"isin": "DE000A0S9GB0"
+		},
+		"derivativesUnderlyingList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "Goldpreis",
+						"entityType": "PRECIOUS_METAL"
+					}
+				}
+			]
+		}
+	},
+	"DE000A27Z304": {
+		"instrument": {
+			"entityType": "DERIVATIVE",
+			"name": "Bitwise Physical Bitcoin ETP",
+			"isin": "DE000A27Z304"
+		},
+		"derivativesUnderlyingList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "Bitcoin (BTC) Kurs in US Dollar",
+						"entityType": "CRYPTO"
+					}
+				}
+			]
+		}
+	},
+	"FR0010755611": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "Amundi ETF Leveraged MSCI USA Daily UCITS ETF EUR Acc.",
+			"isin": "FR0010755611"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Sonstige Fonds",
+			"nameInvestmentFocus": "Spezialitäten",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Sonstige"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "MSCI USA LEVERAGED 2X DAILY (SHLE, UHD)",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B1FZS798": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares USD Treasury Bond 7-10 years UCITS ETF USD Dis.",
+			"isin": "IE00B1FZS798"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Rentenfonds",
+			"nameInvestmentFocus": "Renten USA Staatsanleihen",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Anleihen"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "U.S. TREASURIES 7-10 YRS (TRR, USD)",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B3F81R35": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares Core EUR Corporate Bond UCITS ETF Dis.",
+			"isin": "IE00B3F81R35"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Rentenfonds",
+			"nameInvestmentFocus": "Renten Unternehmensanleihen",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Anleihen"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "BLOOMBERG EURO CORPORATE BOND INDEX",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B3RBWM25": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "Vanguard FTSE All-World UCITS ETF USD Dis.",
+			"isin": "IE00B3RBWM25"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien International",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "FTSE All World",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B4L5Y983": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares Core MSCI World UCITS ETF USD Acc.",
+			"isin": "IE00B4L5Y983"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien International",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "MSCI World",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B53SZB19": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares NASDAQ-100 UCITS ETF USD Acc.",
+			"isin": "IE00B53SZB19"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien USA",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "NASDAQ 100",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00B5BMR087": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares Core S&P 500 UCITS ETF USD Acc.",
+			"isin": "IE00B5BMR087"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien USA",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "S&P 500",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00BKM4GZ66": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares Core MSCI Emerging Markets IMI UCITS ETF USD Acc.",
+			"isin": "IE00BKM4GZ66"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien Emerging Markets",
+			"fundsInvestmentRegion": {
+				"name": "Schwellenländer"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "MSCI Emerging Markets IMI ESG Screened (GDTR)",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00BSKRJZ44": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares USD Treasury Bond 20+ years UCITS ETF USD Dis.",
+			"isin": "IE00BSKRJZ44"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Rentenfonds",
+			"nameInvestmentFocus": "Renten Staatsanleihen",
+			"fundsInvestmentRegion": {
+				"name": "Nordamerika"
+			},
+			"etfType": {
+				"name": "Anleihen"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "ICE US Treasury 20+ Year Index (USD)",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00BYZK4552": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "iShares Automation & Robotics UCITS ETF USD Acc.",
+			"isin": "IE00BYZK4552"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Branchenfonds",
+			"nameInvestmentFocus": "Branche: Technologie & Telekom Aktien",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "STOXX GLOBAL AUTOM. & ROBOTICS INDEX (NET RETURN) (USD)",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"IE00BZ163G84": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "Vanguard EUR Corporate Bond UCITS ETF Dis.",
+			"isin": "IE00BZ163G84"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Rentenfonds",
+			"nameInvestmentFocus": "Renten Unternehmensanleihen",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Anleihen"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "BLOOMBERG EURO-AGGREGATE: CORPORATES INDEX",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"LU0274208692": {
+		"instrument": {
+			"entityType": "FUND",
+			"name": "Xtrackers MSCI World Swap UCITS ETF 1C USD Acc.",
+			"isin": "LU0274208692"
+		},
+		"fundsDetails": {
+			"nameTypeFund": "Aktienfonds",
+			"nameInvestmentFocus": "Aktien International",
+			"fundsInvestmentRegion": {
+				"name": "International"
+			},
+			"etfType": {
+				"name": "Aktien"
+			}
+		},
+		"fundsBenchmarkList": {
+			"list": [
+				{
+					"instrument": {
+						"name": "MSCI World",
+						"entityType": "INDEX"
+					}
+				}
+			]
+		}
+	},
+	"US0378331005": {
+		"instrument": {
+			"entityType": "STOCK",
+			"name": "Apple",
+			"isin": "US0378331005"
+		},
+		"company": {
+			"nameCountry": "USA",
+			"isoCountry": "US"
+		}
+	}
+}

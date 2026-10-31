@@ -6,6 +6,7 @@
 	import { drawdownSeries, maxDrawdown } from '#lib/core/metrics.ts';
 	import { encodePortfolio, shareUrl } from '#lib/sharing/codec.ts';
 	import { app } from '#lib/state/app.svelte.ts';
+	import { crisis } from '#lib/state/crisis.svelte.ts';
 	import { asyncDerived } from '#lib/state/async.svelte.ts';
 	import { notify } from '#lib/state/toasts.svelte.ts';
 	import { driftView, trackedHistory, trackedView } from '#lib/state/portfolio-view.ts';
@@ -22,6 +23,7 @@
 	import EmptyState from '#lib/ui/EmptyState.svelte';
 	import Icon from '#lib/ui/Icon.svelte';
 	import MetricsTable from '#lib/components/MetricsTable.svelte';
+	import PortfolioCrises from '#lib/components/PortfolioCrises.svelte';
 	import ShareButton from '#lib/components/ShareButton.svelte';
 	import PortfolioForm from '#lib/components/PortfolioForm.svelte';
 	import TransactionForm from '#lib/components/TransactionForm.svelte';
@@ -274,6 +276,14 @@
 				</div>
 			{/if}
 			{#if constituents.length}
+				<Card
+					title="Crises"
+					subtitle="How this allocation would have done in historical crises{portfolio.rebalance && portfolio.rebalance !== 'none'
+						? ` with ${portfolio.rebalance} rebalancing`
+						: ', bought and held'}"
+				>
+					<PortfolioCrises weights={crisis.portfolioWeights(portfolio)} rebalance={portfolio.rebalance ?? 'none'} name={portfolio.name} />
+				</Card>
 				<Card title="Constituents">
 					<div class="scroll-x">
 						<table class="table">
@@ -432,6 +442,15 @@
 						centerValue={fmt.money(s.totalValue, cur, { compact: true })}
 					/>
 				</Card>
+				{#if portfolio.mode === 'tracked'}
+					<Card title="Crises" subtitle="How the current holdings would have done in historical crises, bought and held">
+						<PortfolioCrises
+							weights={s.holdings.filter((h) => h.currentValue > 0).map((h) => ({ assetId: h.assetId, weight: h.currentValue }))}
+							rebalance="none"
+							name={portfolio.name}
+						/>
+					</Card>
+				{/if}
 			{/if}
 		</div>
 	{:else if tab === 'transactions'}
