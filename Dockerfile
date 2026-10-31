@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ---- Build ----
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 ARG APP_VERSION=0.0.0-dev
 COPY package.json package-lock.json ./
