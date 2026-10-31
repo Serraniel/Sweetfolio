@@ -1,5 +1,8 @@
 <script lang="ts">
-	/** Crisis test of one portfolio against the benchmark (CR-4 … CR-6). */
+	/**
+	 * Crisis test of one portfolio against the benchmark: crisis-type scenarios
+	 * (CR-8) by default, the replay of historical crises (CR-4 … CR-6) as a second tab.
+	 */
 	import type { RebalanceFrequency } from '#lib/domain/types.ts';
 	import { addDays } from '#lib/core/dates.ts';
 	import { CRISIS_BY_ID, SCORE_LABELS } from '#lib/core/crisis.ts';
@@ -9,6 +12,7 @@
 	import CrisisTable, { duration } from './CrisisTable.svelte';
 	import CrisisSettings from './CrisisSettings.svelte';
 	import CrisisDataNotice from './CrisisDataNotice.svelte';
+	import CrisisModelSwitch from './CrisisModelSwitch.svelte';
 
 	let { weights, rebalance, name }: { weights: WeightedAsset[]; rebalance: RebalanceFrequency; name: string } = $props();
 
@@ -17,34 +21,44 @@
 	});
 
 	const bench = $derived(crisis.benchmarkWeights());
-	const report = $derived(crisis.loaded && weights.length ? crisis.report(weights, rebalance) : null);
+	const scenarios = $derived(crisis.model === 'scenarios');
+	const report = $derived(weights.length && (scenarios || crisis.loaded) ? crisis.reportFor(crisis.model, weights, rebalance) : null);
 	let selected = $state<string | null>(null);
 	const selectedRow = $derived(report?.rows.find((r) => r.crisis.id === selected && r.outcome) ?? null);
 
 	const chart = $derived.by(() => {
 		if (!selectedRow) return null;
-		const c = CRISIS_BY_ID.get(selectedRow.crisis.id)!;
+		const c = CRISIS_BY_ID.get(selectedRow.crisis.id) ?? selectedRow.crisis;
 		const ends = [selectedRow.outcome?.recoveryDate, selectedRow.benchmark?.recoveryDate].map((d) => d ?? addDays(c.end, 3 * 365));
 		const until = addDays(
 			ends.reduce((a, b) => (a > b ? a : b), c.end),
 			120
 		);
-		const own = crisis.path(weights, rebalance, c, until);
-		const b = bench && selectedRow.benchmark ? crisis.path(bench.weights, bench.rebalance, c, until) : [];
+		const path = (w: WeightedAsset[], rb: RebalanceFrequency) =>
+			c.scenario ? crisis.scenarioPath(w, rb, c, until) : crisis.path(w, rb, c, until);
+		const own = path(weights, rebalance);
+		const b = bench && selectedRow.benchmark ? path(bench.weights, bench.rebalance) : [];
 		return { crisis: c, own, bench: b };
 	});
 
 	const scoreText = (v: number) => (crisis.prefs.score === 'longestRecovery' ? duration(-v * 365.25) : fmt.pct(v, 1));
 </script>
 
-<CrisisDataNotice />
+<CrisisModelSwitch />
+{#if !scenarios}<CrisisDataNotice />{/if}
 {#if !report}
 	<p class="small muted">Loading crisis data…</p>
 {:else if report.tested.length === 0}
 	<p class="small muted">
-		None of the selected crisis types can be tested with the available data{report.rows.some((r) => r.outcome)
-			? ''
-			: ' — the assets have no prices during any crisis and no proxy fits them'}.
+		{#if scenarios}
+			None of the selected crisis types can be tested{report.rows.some((r) => r.missing.length)
+				? `: it is unknown what ${[...new Set(report.rows.flatMap((r) => r.missing))].join(', ')} invest(s) in — set the exposure on the asset page`
+				: ''}.
+		{:else}
+			None of the selected crisis types can be tested with the available data{report.rows.some((r) => r.outcome)
+				? ''
+				: ' — the assets have no prices during any crisis and no proxy fits them'}.
+		{/if}
 	</p>
 {:else}
 	<div class="summary">
@@ -65,7 +79,10 @@
 	<CrisisTable {report} benchmarkLabel={bench?.name ?? null} bind:selected />
 	{#if chart && chart.own.length > 1}
 		<div class="chart">
-			<p class="small"><strong>{chart.crisis.name}</strong> <span class="muted">— {chart.crisis.description}</span></p>
+			<p class="small">
+				<strong>{chart.crisis.name}</strong> <span class="muted">— {chart.crisis.description}</span>
+				{#if chart.crisis.scenario}<span class="muted">Shown as if it started today.</span>{/if}
+			</p>
 			<LineChart
 				series={[
 					{ label: name, data: chart.own },

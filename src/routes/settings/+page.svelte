@@ -30,6 +30,7 @@
 	import FormatDialog from '#lib/components/FormatDialog.svelte';
 	import ImportWizard from '#lib/components/ImportWizard.svelte';
 	import ExportDialog from '#lib/components/ExportDialog.svelte';
+	import CrisisAssumptions from '#lib/components/CrisisAssumptions.svelte';
 
 	const s = $derived(app.settings);
 	let themePref = $state<ThemePreference>(theme.preference);
@@ -145,7 +146,9 @@
 	<nav class="toc" aria-label="Settings sections">
 		<a href="#appearance">Appearance</a><a href="#calculations">Calculations</a><a href="#sources">Data sources</a><a href="#currency"
 			>Exchange rates</a
-		><a href="#crisis-data">Crisis data</a><a href="#data">Data</a><a href="#about">About</a>
+		><a href="#crisis-assumptions">Crisis assumptions</a><a href="#crisis-data">Crisis data</a><a href="#data">Data</a><a href="#about"
+			>About</a
+		>
 	</nav>
 	<div class="stack" style="--gap: 20px">
 		<section id="appearance">
@@ -328,8 +331,14 @@
 			</Card>
 		</section>
 
+		<section id="crisis-assumptions">
+			<Card title="Crisis assumptions" subtitle="Used by the crisis types on portfolio, compare and simulation pages.">
+				<CrisisAssumptions />
+			</Card>
+		</section>
+
 		<section id="crisis-data">
-			<Card title="Crisis data" subtitle="Long histories that let the crisis tester go back before your assets' own prices.">
+			<Card title="Crisis data" subtitle="Long histories for the historical crises, going back before your assets' own prices.">
 				{#snippet actions()}<Button size="sm" icon="download" loading={crisis.downloading} onclick={() => crisis.downloadIndices()}
 						>{crisis.indices.size ? 'Update' : 'Download'}</Button
 					>{/snippet}
@@ -476,6 +485,7 @@
 <style>
 	.settings {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-4);
 	}
 	@media (min-width: 1100px) {

@@ -1,6 +1,7 @@
 # Data sources of the crisis tester
 
-The crisis tester (requirements CR-1 … CR-7) extends asset histories backwards with proxy series.
+The crisis-type scenarios (CR-8) need no data: they use assumed moves per asset kind, editable in Settings.
+The historical replay (CR-1 … CR-7) extends asset histories backwards with proxy series.
 
 ## Bundled with the app
 

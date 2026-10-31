@@ -236,7 +236,7 @@
 				benchmark: b,
 				verdict: b ? compareOutcome(outcome, b, crisis.prefs.tolerance) : null,
 				missing: [],
-				coverage: held.flatMap((a) => crisis.coverage(a, c) ?? []),
+				coverage: held.flatMap((a) => (c.scenario ? crisis.scenarioCoverage(a) : crisis.coverage(a, c)) ?? []),
 				included: types.has(c.type)
 			};
 		});
@@ -428,7 +428,7 @@
 					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'maxReturn'))}>Max return</Button>
 				</div>
 			</Card>
-			<Card title="Crisis test" subtitle="Optional: how selected portfolios would have done in historical crises">
+			<Card title="Crisis test" subtitle="Optional: how selected portfolios would hold up in different types of crises">
 				<SimulationCrises
 					{result}
 					{benchmark}

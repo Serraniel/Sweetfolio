@@ -70,6 +70,7 @@ test('CR-4/CR-5 portfolio crisis test with real prices and the benchmark', async
 		['Beta', '30']
 	]);
 	const card = page.locator('section.card', { hasText: 'How this allocation would have done' });
+	await card.getByRole('radio', { name: 'Historical crises' }).click();
 	await expect(card.getByRole('button', { name: 'Download crisis history' })).toBeVisible();
 	const covid = card.locator('tr', { hasText: 'Covid crash' });
 	await expect(covid).toBeVisible();
@@ -115,7 +116,8 @@ test('CR-1/CR-3 exposure editor and proxies from downloaded index history', asyn
 
 	// Black Monday is now testable for Alpha (proxy), not for Beta (no exposure).
 	await page.goto('/compare?slugs=alpha,beta');
-	const crises = page.locator('section.card', { hasText: 'Drawdown in each historical crisis' });
+	const crises = page.locator('section.card', { hasText: 'Drawdown per crisis' });
+	await crises.getByRole('radio', { name: 'Historical crises' }).click();
 	const row = crises.locator('tbody tr', { hasText: 'Black Monday' });
 	await expect(row.locator('td').nth(0)).toContainText('%');
 	await expect(row.locator('td').nth(1)).toHaveText('no data');
@@ -131,6 +133,7 @@ test('CR-7 crisis test of simulated portfolios', async ({ page }) => {
 	await expect(page.getByRole('button', { name: '2. Run crisis test' })).toBeDisabled();
 	await page.getByRole('button', { name: 'All', exact: true }).click();
 	await expect(page.getByText(/All portfolios: [\d,.]+ portfolios/)).toBeVisible();
+	await page.getByLabel('Model').selectOption('historical');
 	await page.getByRole('button', { name: '2. Run crisis test' }).click();
 	await expect(page.getByText(/Tested [\d,.]+ portfolios in 1 crises \(Covid crash\)/)).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByText(/Not tested \(no data for every asset\): Great Depression/)).toBeVisible();
@@ -144,7 +147,9 @@ test('CR-7 crisis test of simulated portfolios', async ({ page }) => {
 	await inspector.getByRole('button', { name: 'Save as portfolio' }).click();
 	await page.getByRole('link', { name: 'Open' }).click();
 	await expect(page).toHaveURL(/portfolios\/sim-/);
-	const row = page.locator('section.card', { hasText: 'How this allocation would have done' }).locator('tr', { hasText: 'Covid crash' });
+	const saved = page.locator('section.card', { hasText: 'How this allocation would have done' });
+	await saved.getByRole('radio', { name: 'Historical crises' }).click();
+	const row = saved.locator('tr', { hasText: 'Covid crash' });
 	const savedDrawdown = await cellNumber(row.locator('td').first());
 	expect(savedDrawdown).toBeLessThan(0);
 	// Weights are rounded to 0.1 % when saved.
@@ -154,4 +159,66 @@ test('CR-7 crisis test of simulated portfolios', async ({ page }) => {
 	await page.goBack();
 	await page.getByLabel('Only those that hold up like the benchmark').check();
 	await expect(page.getByLabel('Only those that hold up like the benchmark')).toBeChecked();
+});
+
+async function setExposure(page: Page, asset: string, cls: string, region?: string) {
+	await page.goto('/assets');
+	await page
+		.getByRole('link', { name: new RegExp(asset) })
+		.first()
+		.click();
+	await page.getByRole('button', { name: 'Edit exposure' }).click();
+	const d = page.getByRole('dialog');
+	await d.getByLabel('Invests in').selectOption(cls);
+	if (region) await d.getByLabel('Region').selectOption(region);
+	await d.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText('Set manually')).toBeVisible();
+}
+
+test('CR-8 crisis-type scenarios with editable assumptions', async ({ page }) => {
+	const errors = collectErrors(page);
+	await setBenchmark(page, 'Beta');
+	await createPortfolio(page, 'Stocks and gold', [
+		['Alpha', '70'],
+		['Beta', '30']
+	]);
+	const card = page.locator('section.card', { hasText: 'How this allocation would have done' });
+	// Names alone do not tell what Alpha and Beta invest in.
+	await expect(card.getByText(/unknown what Alpha, Beta invest/)).toBeVisible();
+
+	await setExposure(page, 'Alpha', 'equity', 'world');
+	await setExposure(page, 'Beta', 'gold');
+	await page.goto('/portfolios/stocks-and-gold');
+	await expect(card.locator('tbody tr')).toHaveCount(7);
+	const stagflation = card.locator('tr', { hasText: 'Stagflation' });
+	await expect(stagflation.getByText('Assumed')).toBeVisible();
+	await expect(stagflation.getByText('like 1973–74, 1980–82')).toBeVisible();
+	// The verdict says why; scenarios have no separate "until trough" column (it equals the drawdown).
+	await expect(stagflation.locator('.reason')).toHaveText(/drawdown|recover|within the tolerances/);
+	await expect(card.getByRole('columnheader', { name: 'Until trough' })).toHaveCount(0);
+	// 70 % equities (−45 %) and 30 % gold (+60 %): shallower than equities alone.
+	const before = await cellNumber(stagflation.locator('td').first());
+	expect(before).toBeGreaterThan(-45);
+	expect(before).toBeLessThan(0);
+	await card.getByRole('button', { name: 'Stagflation' }).click();
+	await expect(card.getByText('Shown as if it started today.')).toBeVisible();
+
+	// Harsher assumption for equities in stagflation deepens the drawdown.
+	await page.goto('/settings#crisis-assumptions');
+	await page.getByLabel('Equities in Stagflation, change in percent', { exact: true }).fill('-70');
+	await page.getByLabel('Equities in Stagflation, change in percent', { exact: true }).blur();
+	await expect(page.getByRole('button', { name: 'Reset to defaults' })).toBeEnabled();
+	await page.goto('/portfolios/stocks-and-gold');
+	await expect.poll(async () => cellNumber(stagflation.locator('td').first())).toBeLessThan(before - 5);
+
+	// The simulation tests all seven crisis types.
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByRole('heading', { name: 'Crisis test' })).toBeVisible({ timeout: 20_000 });
+	await page.getByRole('button', { name: 'Efficient frontier' }).click();
+	await page.getByRole('button', { name: '2. Run crisis test' }).click();
+	await expect(page.getByText(/Tested [\d,.]+ portfolios in 7 crisis types/)).toBeVisible({ timeout: 20_000 });
+	expect(errors).toEqual([]);
 });

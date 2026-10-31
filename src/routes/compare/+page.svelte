@@ -21,6 +21,7 @@
 	import { colorAt } from '#lib/charts/palette.ts';
 	import CrisisSettings from '#lib/components/CrisisSettings.svelte';
 	import CrisisDataNotice from '#lib/components/CrisisDataNotice.svelte';
+	import CrisisModelSwitch from '#lib/components/CrisisModelSwitch.svelte';
 	import { duration } from '#lib/components/CrisisTable.svelte';
 
 	// Assets in `slugs`, portfolios in `portfolios` (CP-1, CP-5).
@@ -122,7 +123,9 @@
 	});
 	const bench = $derived(crisis.benchmarkWeights());
 	const crisisReports = $derived<CrisisReport[] | null>(
-		crisis.loaded && items.length ? items.map((i) => crisis.report(i.weights, i.rebalance)) : null
+		items.length && (crisis.model === 'scenarios' || crisis.loaded)
+			? items.map((i) => crisis.reportFor(crisis.model, i.weights, i.rebalance))
+			: null
 	);
 	const crisisRows = $derived(
 		crisisReports
@@ -273,8 +276,9 @@
 			/>
 		</Card>
 
-		<Card title="Crises" subtitle="Drawdown in each historical crisis; second line: time to get back to the previous high">
-			<CrisisDataNotice />
+		<Card title="Crises" subtitle="Drawdown per crisis; second line: time to get back to the previous high">
+			<CrisisModelSwitch />
+			{#if crisis.model === 'historical'}<CrisisDataNotice />{/if}
 			{#if !crisisReports}
 				<p class="small muted">Loading crisis data…</p>
 			{:else if !crisisRows.length}
@@ -296,7 +300,9 @@
 								<tr>
 									<th scope="row" class="metric"
 										>{x.row.crisis.name}<span class="xs muted block"
-											>{CRISIS_TYPE_SHORT[x.row.crisis.type]} · {x.row.crisis.start.slice(0, 4)}</span
+											>{x.row.crisis.scenario
+												? `like ${x.row.crisis.examples}`
+												: `${CRISIS_TYPE_SHORT[x.row.crisis.type]} · ${x.row.crisis.start.slice(0, 4)}`}</span
 										></th
 									>
 									{#each x.cells as c, i (items[i]!.key)}
@@ -349,8 +355,9 @@
 					</table>
 				</div>
 				<p class="xs muted">
-					Scores and verdicts cover the crises that can be tested for each item and its benchmark; before an asset's own history, proxies
-					are used (see the portfolio or asset page for details).
+					{crisis.model === 'scenarios'
+						? 'Crisis types use the assumed behaviour of what each asset invests in (see the asset page), weighted like the portfolio.'
+						: "Scores and verdicts cover the crises that can be tested for each item and its benchmark; before an asset's own history, proxies are used (see the portfolio or asset page for details)."}
 				</p>
 			{/if}
 			<div class="crisis-settings"><CrisisSettings /></div>

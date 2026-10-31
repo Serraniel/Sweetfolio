@@ -32,7 +32,17 @@ import {
 	type Verdict
 } from '#lib/core/crisis.ts';
 import { exposureOf } from '#lib/core/exposure.ts';
-import { addDays } from '#lib/core/dates.ts';
+import { addDays, todayISO } from '#lib/core/dates.ts';
+import {
+	buildScenarioMatrix,
+	DEFAULT_ASSUMPTIONS,
+	KIND_LABELS,
+	normalizeAssumptions,
+	scenarioCrises,
+	scenarioKind,
+	type ScenarioAssumptions,
+	type ScenarioKind
+} from '#lib/core/scenarios.ts';
 import { convertPrices } from '#lib/core/currency.ts';
 import { longHistory } from '#lib/fetchers/onvista.ts';
 import * as repo from '#lib/storage/repo.ts';
@@ -40,6 +50,19 @@ import { app } from './app.svelte.ts';
 import { notify } from './toasts.svelte.ts';
 
 const PREFS_KEY = 'sweetfolio-crisis-prefs';
+const ASSUMPTIONS_KEY = 'sweetfolio-crisis-assumptions';
+
+function readAssumptions(): ScenarioAssumptions {
+	try {
+		const raw = localStorage.getItem(ASSUMPTIONS_KEY);
+		return raw ? normalizeAssumptions(JSON.parse(raw)) : DEFAULT_ASSUMPTIONS;
+	} catch {
+		return DEFAULT_ASSUMPTIONS;
+	}
+}
+
+/** Crisis-type scenarios (CR-8) or the replay of historical crises (CR-4). */
+export type CrisisModel = 'scenarios' | 'historical';
 
 export interface CrisisPrefs {
 	tolerance: CrisisTolerance;
@@ -72,7 +95,7 @@ function readPrefs(): CrisisPrefs {
 	}
 }
 
-export type SourceKind = 'real' | 'proxy';
+export type SourceKind = 'real' | 'proxy' | 'assumed';
 
 export interface AssetCoverage {
 	assetId: string;
@@ -117,6 +140,10 @@ class CrisisState {
 	loadError = $state<string | null>(null);
 	downloading = $state(false);
 	prefs = $state<CrisisPrefs>(readPrefs());
+	/** Assumed behaviour per crisis type and asset kind (per device). */
+	assumptions = $state.raw<ScenarioAssumptions>(readAssumptions());
+	/** Shown model on the portfolio and compare pages. */
+	model = $state<CrisisModel>('scenarios');
 
 	private loading: Promise<void> | null = null;
 	private seriesCache = new Map<
@@ -154,6 +181,121 @@ class CrisisState {
 		} catch {
 			/* storage unavailable */
 		}
+	}
+
+	saveAssumptions(a: ScenarioAssumptions) {
+		this.assumptions = normalizeAssumptions(a);
+		try {
+			localStorage.setItem(ASSUMPTIONS_KEY, JSON.stringify(this.assumptions));
+		} catch {
+			/* storage unavailable */
+		}
+	}
+
+	resetAssumptions() {
+		this.assumptions = DEFAULT_ASSUMPTIONS;
+		try {
+			localStorage.removeItem(ASSUMPTIONS_KEY);
+		} catch {
+			/* storage unavailable */
+		}
+	}
+
+	/** The scenario crises, starting today. */
+	scenarios(): Crisis[] {
+		return scenarioCrises(this.assumptions, todayISO());
+	}
+
+	/** Scenario kind and leverage of an asset, or null when its exposure is unknown. */
+	scenarioAsset(asset: Asset): { kind: ScenarioKind; leverage: number } | null {
+		const e = exposureOf(asset);
+		const kind = scenarioKind(e);
+		return kind ? { kind, leverage: e.leverage } : null;
+	}
+
+	scenarioCoverage(a: Asset): AssetCoverage | null {
+		const s = this.scenarioAsset(a);
+		if (!s) return null;
+		return {
+			assetId: a.id,
+			name: a.name,
+			kind: 'assumed',
+			proxies: [`${KIND_LABELS[s.kind]}${s.leverage !== 1 ? `, ${s.leverage}× daily` : ''}`],
+			approximate: false,
+			coarse: false
+		};
+	}
+
+	/** Scenario outcome of weighted assets (CR-8). */
+	scenarioOutcome(
+		weights: readonly WeightedAsset[],
+		rebalance: RebalanceFrequency,
+		scenario: Crisis
+	): { outcome: CrisisOutcome | null; missing: string[]; coverage: AssetCoverage[] } {
+		const known = weights.filter((w) => app.assetById.has(w.assetId));
+		const coverage: AssetCoverage[] = [];
+		const missing: string[] = [];
+		const kinds: Array<{ kind: ScenarioKind; leverage: number }> = [];
+		for (const w of known) {
+			const a = app.assetById.get(w.assetId)!;
+			const s = this.scenarioAsset(a);
+			if (!s) {
+				missing.push(a.name);
+				continue;
+			}
+			kinds.push(s);
+			coverage.push(this.scenarioCoverage(a)!);
+		}
+		if (missing.length || !kinds.length) return { outcome: null, missing, coverage };
+		const m = buildScenarioMatrix(scenario, kinds, this.assumptions);
+		const outcome = evaluateCrisis(
+			m,
+			rebalanceFlags(m.dates, rebalance),
+			known.map((w) => w.weight)
+		);
+		return { outcome, missing, coverage };
+	}
+
+	/** Scenario report of a weighted portfolio against the benchmark (CR-8). */
+	scenarioReport(weights: readonly WeightedAsset[], rebalance: RebalanceFrequency): CrisisReport {
+		const bench = this.benchmarkWeights();
+		const types = new Set(this.prefs.types);
+		const rows: CrisisRow[] = this.scenarios().map((s) => {
+			const own = this.scenarioOutcome(weights, rebalance, s);
+			const b = bench ? this.scenarioOutcome(bench.weights, bench.rebalance, s).outcome : null;
+			return {
+				crisis: s,
+				outcome: own.outcome,
+				benchmark: b,
+				verdict: own.outcome && b ? compareOutcome(own.outcome, b, this.prefs.tolerance) : null,
+				missing: own.missing,
+				coverage: own.coverage,
+				included: types.has(s.type)
+			};
+		});
+		return summarize(rows, this.prefs, !!bench);
+	}
+
+	reportFor(model: CrisisModel, weights: readonly WeightedAsset[], rebalance: RebalanceFrequency): CrisisReport {
+		return model === 'scenarios' ? this.scenarioReport(weights, rebalance) : this.report(weights, rebalance);
+	}
+
+	/** Scenario path (start = 100), for charts. */
+	scenarioPath(weights: readonly WeightedAsset[], rebalance: RebalanceFrequency, scenario: Crisis, until: ISODate): PricePoint[] {
+		const known = weights.filter((w) => app.assetById.has(w.assetId));
+		const kinds = known.map((w) => this.scenarioAsset(app.assetById.get(w.assetId)!));
+		if (!kinds.length || kinds.some((k) => !k)) return [];
+		const m = buildScenarioMatrix(scenario, kinds as Array<{ kind: ScenarioKind; leverage: number }>, this.assumptions);
+		let last = m.dates.length - 1;
+		while (last > m.endIndex && m.dates[last]! > until) last--;
+		const values = crisisPath(
+			m,
+			rebalanceFlags(m.dates, rebalance),
+			known.map((w) => w.weight),
+			0,
+			last
+		);
+		return Array.from(values, (v, i) => ({ date: m.dates[i]!, close: v * 100 }));
 	}
 
 	/** Downloads all proxy index histories from Onvista (CR-3). */

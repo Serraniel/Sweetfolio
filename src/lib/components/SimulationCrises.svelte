@@ -95,10 +95,18 @@
 		);
 		return cand.slice(0, 8);
 	});
+	const testedText = $derived(
+		test && view
+			? `Tested ${fmt.num(test.indices.length, 0)} portfolios in ${view.included.length} ${test.model === 'scenarios' ? 'crisis types' : 'crises'} (${test.crises
+					.filter((_, j) => view.included.includes(j))
+					.map((c) => c.name)
+					.join(', ')})`
+			: ''
+	);
 	const holdingUp = $derived(view && test?.benchmarkName ? test.indices.reduce((n, i) => n + (view.holds[i] === 1 ? 1 : 0), 0) : null);
 </script>
 
-<CrisisDataNotice />
+{#if simCrisis.model === 'historical'}<CrisisDataNotice />{/if}
 <div class="stack" style="--gap: 12px">
 	<div>
 		<span class="label">1. Select portfolios to test</span>
@@ -134,6 +142,11 @@
 		{/if}
 	</div>
 	<div class="row run">
+		<label class="xs muted" for="crisis-model">Model</label>
+		<select id="crisis-model" class="select" bind:value={simCrisis.model} disabled={!!simCrisis.progress}>
+			<option value="scenarios">Crisis types (assumed)</option>
+			<option value="historical">Historical crises</option>
+		</select>
 		<label class="xs muted" for="crisis-rb">Rebalancing</label>
 		<select id="crisis-rb" class="select" bind:value={simCrisis.rebalance} disabled={!!simCrisis.progress}>
 			<option value="monthly">Monthly</option>
@@ -153,28 +166,28 @@
 			<Button
 				variant="primary"
 				icon="target"
-				disabled={!simCrisis.selection?.length || !crisis.loaded}
+				disabled={!simCrisis.selection?.length || (simCrisis.model === 'historical' && !crisis.loaded)}
 				onclick={() => simCrisis.start(result)}>2. Run crisis test</Button
 			>
 		{/if}
 	</div>
 
 	{#if test && view}
-		{#if test.rebalance !== simCrisis.rebalance}
+		{#if test.rebalance !== simCrisis.rebalance || test.model !== simCrisis.model || (test.assumptions && test.assumptions !== crisis.assumptions)}
 			<p class="notice xs">
-				The test used {test.rebalance === 'none' ? 'buy & hold' : `${test.rebalance} rebalancing`}. Run it again to apply the new setting.
+				The test used {test.model === 'scenarios' ? 'crisis types' : 'historical crises'} with {test.rebalance === 'none'
+					? 'buy & hold'
+					: `${test.rebalance} rebalancing`}{test.assumptions && test.assumptions !== crisis.assumptions ? ' and older assumptions' : ''}.
+				Run it again to apply the current settings.
 			</p>
 		{/if}
 		<div class="results">
 			<p class="small">
-				Tested {fmt.num(test.indices.length, 0)} portfolios in {view.included.length} crises ({test.crises
-					.filter((_, j) => view.included.includes(j))
-					.map((c) => c.name)
-					.join(', ')}){#if holdingUp !== null}: <strong>{fmt.num(holdingUp, 0)}</strong> hold up like {test.benchmarkName}{/if}.
+				{testedText}{#if holdingUp !== null}: <strong>{fmt.num(holdingUp, 0)}</strong> hold up like {test.benchmarkName}{/if}.
 			</p>
 			{#if test.excluded.length}
 				<p class="xs muted">
-					Not tested (no data for every asset): {test.excluded
+					Not tested ({test.model === 'scenarios' ? 'unknown what an asset invests in' : 'no data for every asset'}): {test.excluded
 						.map((x) => `${x.crisis.name} (${x.missing.slice(0, 2).join(', ')}${x.missing.length > 2 ? ', …' : ''})`)
 						.join('; ')}.
 				</p>
@@ -235,8 +248,9 @@
 	{/if}
 	<CrisisSettings />
 	<p class="xs muted">
-		The crisis test replays each portfolio through historical crises with real prices and, before an asset's own history, with proxies.
-		Select a tested portfolio on the chart to see each crisis in the inspector.
+		Crisis types apply the assumed behaviour of each kind of asset (<a href="/settings#crisis-assumptions">editable in Settings</a>);
+		historical crises replay real prices and, before an asset's own history, proxies. Select a tested portfolio on the chart to see each
+		crisis in the inspector.
 	</p>
 </div>
 

@@ -18,12 +18,16 @@ import {
 import { addDays } from '#lib/core/dates.ts';
 import { runCrisisTest, type CrisisTestRun } from '#lib/workers/client.ts';
 import { app } from './app.svelte.ts';
-import { crisis, type CrisisPrefs } from './crisis.svelte.ts';
+import { crisis, type CrisisModel, type CrisisPrefs } from './crisis.svelte.ts';
+import { buildScenarioMatrix, type ScenarioAssumptions } from '#lib/core/scenarios.ts';
 import { notify } from './toasts.svelte.ts';
 
 export interface SimCrisisResult {
 	/** The simulation result the test belongs to. */
 	source: MonteCarloResult;
+	model: CrisisModel;
+	/** Assumptions the scenarios were built from (to tell when they changed). */
+	assumptions: ScenarioAssumptions | null;
 	rebalance: RebalanceFrequency;
 	crises: Crisis[];
 	excluded: Array<{ crisis: Crisis; missing: string[] }>;
@@ -115,6 +119,7 @@ class SimCrisisState {
 	result = $state.raw<SimCrisisResult | null>(null);
 	progress = $state<{ done: number; total: number } | null>(null);
 	run: CrisisTestRun | null = null;
+	model = $state<CrisisModel>('scenarios');
 	/** Rebalancing for the crisis test and saved portfolios. */
 	rebalance = $state<RebalanceFrequency>('monthly');
 	colorByScore = $state(true);
@@ -133,7 +138,8 @@ class SimCrisisState {
 	async start(source: MonteCarloResult) {
 		const indices = this.selection;
 		if (!indices?.length || this.run) return;
-		await crisis.load();
+		const model = this.model;
+		if (model === 'historical') await crisis.load();
 		const assets = source.assetIds.map((id) => app.assetById.get(id));
 		if (assets.some((a) => !a)) {
 			notify.error('An asset of this simulation was deleted. Run the simulation again first.');
@@ -144,14 +150,21 @@ class SimCrisisState {
 		const crises: Crisis[] = [];
 		const excluded: SimCrisisResult['excluded'] = [];
 		const matrices = [];
-		for (const c of CRISES) {
-			const missing = list.filter((a) => !crisis.coverage(a, c)).map((a) => a.name);
+		const assumptions = crisis.assumptions;
+		const kinds = list.map((a) => crisis.scenarioAsset(a));
+		for (const c of model === 'scenarios' ? crisis.scenarios() : CRISES) {
+			const missing =
+				model === 'scenarios'
+					? list.filter((_, i) => !kinds[i]).map((a) => a.name)
+					: list.filter((a) => !crisis.coverage(a, c)).map((a) => a.name);
 			const m = missing.length
 				? null
-				: buildCrisisMatrix(
-						list.map((a) => crisis.assetSeries(a).prices),
-						c
-					);
+				: model === 'scenarios'
+					? buildScenarioMatrix(c, kinds as Array<NonNullable<(typeof kinds)[number]>>, assumptions)
+					: buildCrisisMatrix(
+							list.map((a) => crisis.assetSeries(a).prices),
+							c
+						);
 			if (!m) {
 				excluded.push({ crisis: c, missing: missing.length ? missing : list.map((a) => a.name) });
 				continue;
@@ -161,14 +174,25 @@ class SimCrisisState {
 		}
 		if (!crises.length) {
 			this.result = null;
-			notify.error('No crisis can be tested: some assets have neither prices nor a proxy for any crisis window.');
+			notify.error(
+				model === 'scenarios'
+					? `No crisis type can be tested: it is unknown what ${excluded[0]?.missing.join(', ')} invest(s) in. Set the exposure on the asset page.`
+					: 'No crisis can be tested: some assets have neither prices nor a proxy for any crisis window.'
+			);
 			return;
 		}
 		const n = source.assetIds.length;
 		const weights = new Float32Array(indices.length * n);
 		indices.forEach((idx, k) => weights.set(source.weights.subarray(idx * n, idx * n + n), k * n));
 		const bench = crisis.benchmarkWeights();
-		const benchmark = crises.map((c) => (bench ? crisis.outcome(bench.weights, bench.rebalance, c).outcome : null));
+		const benchmark = crises.map((c) =>
+			bench
+				? (model === 'scenarios'
+						? crisis.scenarioOutcome(bench.weights, bench.rebalance, c)
+						: crisis.outcome(bench.weights, bench.rebalance, c)
+					).outcome
+				: null
+		);
 
 		this.progress = { done: 0, total: indices.length };
 		this.run = runCrisisTest({ matrices, weights, count: indices.length }, (done, total) => (this.progress = { done, total }));
@@ -176,6 +200,8 @@ class SimCrisisState {
 			const outcomes = await this.run.promise;
 			this.result = {
 				source,
+				model,
+				assumptions: model === 'scenarios' ? assumptions : null,
 				rebalance,
 				crises,
 				excluded,

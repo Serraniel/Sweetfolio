@@ -37,6 +37,10 @@ export interface Crisis {
 	/** Market trough. */
 	end: ISODate;
 	description: string;
+	/** Scenarios only: historical crises the assumptions are modelled on. */
+	examples?: string;
+	/** An assumed crisis type (CR-8) rather than a historical crisis. */
+	scenario?: boolean;
 }
 
 /** Windows are peak → trough of the S&P 500 (for 1993–94: of long treasuries). */
