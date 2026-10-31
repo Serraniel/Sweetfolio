@@ -1,509 +1,253 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import Card from '$lib/components/shared/Card.svelte';
-	import Button from '$lib/components/shared/Button.svelte';
-	import Modal from '$lib/components/shared/Modal.svelte';
-	import MetricsTable from '$lib/components/shared/MetricsTable.svelte';
-	import PriceChart from '$lib/charts/PriceChart.svelte';
-	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
-	import { assets, removeAsset, updateAsset } from '$lib/stores/assets';
-	import { encodeAssetList } from '$lib/sharing/codec';
-	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
-	import { settings } from '$lib/stores/settings';
-	import { currencies } from '$lib/stores/currencies';
-	import { benchmarkRef, benchmark, setBenchmark } from '$lib/stores/benchmark';
-	import { calculateMetrics } from '$lib/workers/manager';
-	import PriceDataSection from '$lib/components/PriceDataSection.svelte';
-	import { slugify } from '$lib/utils/slug';
-	import { ASSET_CLASSIFICATIONS, type AssetClassification, type MetricsResult, type CurrencyRate } from '$lib/types';
+	import { ASSET_CLASSIFICATIONS, COMMON_CURRENCIES, type PricePoint } from '#lib/domain/types.ts';
+	import { drawdownSeries, maxDrawdown } from '#lib/core/metrics.ts';
+	import { isValidISIN, isValidWKN } from '#lib/parsers/identifiers.ts';
+	import { encodeAssetList, shareUrl } from '#lib/sharing/codec.ts';
+	import { exportPortfolioPerformanceQuotes } from '#lib/io/pp-export.ts';
+	import { saveText, safeFileName } from '#lib/io/download.ts';
+	import { app } from '#lib/state/app.svelte.ts';
+	import { jobs } from '#lib/state/jobs.svelte.ts';
+	import { asyncDerived } from '#lib/state/async.svelte.ts';
+	import { notify } from '#lib/state/toasts.svelte.ts';
+	import * as calc from '#lib/workers/client.ts';
+	import * as fmt from '#lib/format.ts';
+	import { confirmAction } from '#lib/ui/confirm.svelte.ts';
+	import PageHeader from '#lib/ui/PageHeader.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Dialog from '#lib/ui/Dialog.svelte';
+	import EmptyState from '#lib/ui/EmptyState.svelte';
+	import MetricsTable from '#lib/components/MetricsTable.svelte';
+	import ShareButton from '#lib/components/ShareButton.svelte';
+	import PriceTable from '#lib/components/PriceTable.svelte';
+	import FormatDialog from '#lib/components/FormatDialog.svelte';
+	import LineChart from '#lib/charts/LineChart.svelte';
 
-	const slug = $derived(page.params.slug ?? '');
-	const asset = $derived($assets.find((a) => slugify(a.name) === slug));
-	const assetId = $derived(asset?.id ?? '');
-	const isCurrentBenchmark = $derived(
-		$benchmarkRef !== null && $benchmarkRef.type === 'asset' && $benchmarkRef.id === assetId
+	// Keep showing the same record while its slug changes after a rename.
+	let pinned = { slug: '', id: '' };
+	const asset = $derived(
+		app.assetBySlug(page.params.slug ?? '') ?? (pinned.slug === page.params.slug ? app.assetById.get(pinned.id) : undefined)
 	);
-
-	async function toggleBenchmark() {
-		if (isCurrentBenchmark) {
-			await setBenchmark(null);
-		} else {
-			await setBenchmark({ type: 'asset', id: assetId });
-		}
-	}
-
-	// Build chart series with benchmark overlay
-	const priceChartSeries = $derived.by(() => {
-		if (!asset) return [];
-		const series: Array<{ label: string; prices: typeof asset.prices; isBenchmark?: boolean }> = [
-			{ label: asset.name, prices: asset.prices }
-		];
-		const bm = $benchmark;
-		if (bm && bm.ref.id !== assetId && bm.prices.length > 0) {
-			series.push({ label: bm.name, prices: bm.prices, isBenchmark: true });
-		}
-		return series;
+	$effect(() => {
+		if (asset) pinned = { slug: page.params.slug ?? '', id: asset.id };
 	});
+	const conv = $derived(asset ? app.converted(asset) : null);
+	const prices = $derived(conv?.prices ?? []);
+	const metrics = asyncDerived(() => (prices.length > 1 ? calc.metrics(prices, app.riskFreeRate) : null));
+	const isBench = $derived(asset ? app.isBenchmark('asset', asset.id) : false);
+	const bench = $derived(app.benchmarkResolved && !isBench ? app.benchmarkSeries() : null);
+	const dd = $derived(drawdownSeries(prices));
+	const rawAvailable = $derived(!!asset?.rawCSV);
 
+	let editOpen = $state(false);
+	let reparseOpen = $state(false);
+	let form = $state({ name: '', isin: '', wkn: '', currency: 'EUR', classification: 'unknown' as (typeof ASSET_CLASSIFICATIONS)[number] });
+	const isinError = $derived(form.isin && !isValidISIN(form.isin) ? 'ISIN must be 12 characters with a valid check digit.' : null);
+	const wknError = $derived(form.wkn && !isValidWKN(form.wkn) ? 'WKN must be 6 letters/digits.' : null);
 
-	let metrics: MetricsResult | null = $state(null);
-	let metricsLoading = $state(false);
-
-	// Edit modal state
-	let showEditModal = $state(false);
-	let editName = $state('');
-	let editIsin = $state('');
-	let editWkn = $state('');
-	let editCurrency = $state('EUR');
-	let editClassification: AssetClassification = $state('unknown');
-	let editErrors: Record<string, string> = $state({});
-
-	const supportedCurrencies = ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'SEK', 'NOK', 'DKK'];
-
-	function openEditModal() {
+	function openEdit() {
 		if (!asset) return;
-		editName = asset.name;
-		editIsin = asset.isin ?? '';
-		editWkn = asset.wkn ?? '';
-		editCurrency = asset.currency;
-		editClassification = asset.classification;
-		editErrors = {};
-		showEditModal = true;
+		form = {
+			name: asset.name,
+			isin: asset.isin ?? '',
+			wkn: asset.wkn ?? '',
+			currency: asset.currency,
+			classification: asset.classification
+		};
+		editOpen = true;
 	}
 
-	function validateIsin(value: string): string | null {
-		if (!value) return null;
-		if (!/^[A-Za-z0-9]{12}$/.test(value)) return 'ISIN must be exactly 12 alphanumeric characters';
-		return null;
-	}
-
-	function validateWkn(value: string): string | null {
-		if (!value) return null;
-		if (!/^[A-Za-z0-9]{6}$/.test(value)) return 'WKN must be exactly 6 alphanumeric characters';
-		return null;
-	}
-
-	async function handleEditSave() {
-		if (!asset) return;
-
-		const errors: Record<string, string> = {};
-		if (!editName.trim()) errors.name = 'Name is required';
-		const isinError = validateIsin(editIsin.trim());
-		if (isinError) errors.isin = isinError;
-		const wknError = validateWkn(editWkn.trim());
-		if (wknError) errors.wkn = wknError;
-
-		if (Object.keys(errors).length > 0) {
-			editErrors = errors;
-			return;
-		}
-
-		const newName = editName.trim();
-		await updateAsset({
+	async function saveEdit() {
+		if (!asset || isinError || wknError || !form.name.trim()) return;
+		const id = asset.id;
+		await app.saveAsset({
 			...asset,
-			name: newName,
-			isin: editIsin.trim().toUpperCase() || null,
-			wkn: editWkn.trim().toUpperCase() || null,
-			currency: editCurrency,
-			classification: editClassification,
+			name: form.name.trim(),
+			isin: form.isin.trim().toUpperCase() || null,
+			wkn: form.wkn.trim().toUpperCase() || null,
+			currency: form.currency,
+			classification: form.classification,
 			updatedAt: new Date().toISOString()
 		});
-		showEditModal = false;
-
-		// Navigate to updated slug if name changed
-		const newSlug = slugify(newName);
-		if (newSlug !== slug) {
-			goto(`/assets/${newSlug}`, { replaceState: true });
-		}
+		editOpen = false;
+		const slug = app.assetSlug(id);
+		if (slug !== page.params.slug) await goto(`/assets/${slug}`, { replace: true });
+		void jobs.fetchCurrencyRates();
 	}
 
-	// Find currency conversion data if asset currency differs from main currency
-	function findCurrencyConversion(assetCurrency: string, mainCurrency: string, rates: CurrencyRate[]) {
-		if (assetCurrency === mainCurrency) return undefined;
-		const directPair = assetCurrency + mainCurrency;
-		const inversePair = mainCurrency + assetCurrency;
-		const rate = rates.find((r) => r.pair === directPair || r.pair === inversePair);
-		if (!rate) return undefined;
-		return {
-			currencyRate: rate,
-			sourceCurrency: assetCurrency,
-			targetCurrency: mainCurrency,
-		};
+	async function savePrices(p: PricePoint[]) {
+		if (asset) await app.saveAsset({ ...asset, prices: p, updatedAt: new Date().toISOString() });
 	}
 
-	// Compute metrics when asset changes
-	$effect(() => {
-		if (!asset || asset.prices.length < 2) {
-			metrics = null;
-			return;
-		}
-
-		metricsLoading = true;
-		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-		const mainCurrency = ($settings.mainCurrency as string) ?? 'EUR';
-		const conversion = findCurrencyConversion(asset.currency, mainCurrency, $currencies);
-		calculateMetrics(asset.id, asset.prices, riskFreeRate, conversion)
-			.then((result) => {
-				metrics = result;
-			})
-			.finally(() => {
-				metricsLoading = false;
-			});
-	});
-
-	const dateRange = $derived(
-		asset && asset.prices.length > 0
-			? `${asset.prices[0].date} \u2013 ${asset.prices[asset.prices.length - 1].date}`
-			: ''
-	);
-
-	// Toast notifications
-	let toasts: Array<{ id: number; message: string }> = $state([]);
-	let toastCounter = 0;
-
-	function showToast(message: string) {
-		const id = ++toastCounter;
-		toasts = [...toasts, { id, message }];
-		setTimeout(() => {
-			toasts = toasts.filter((t) => t.id !== id);
-		}, 4000);
-	}
-
-	const shareUrl = $derived.by(() => {
-		if (!asset?.isin) return '';
-		const hash = encodeAssetList([asset.isin]);
-		return `${window.location.origin}${window.location.pathname}${hash}`;
-	});
-
-	async function handleDelete() {
+	async function remove() {
 		if (!asset) return;
-		if (!confirm(`Delete "${asset.name}"? This cannot be undone.`)) return;
-		await removeAsset(asset.id);
-		goto('/assets');
+		const ok = await confirmAction({
+			title: 'Delete asset',
+			message: `Delete “${asset.name}”? It is also removed from portfolios, strategies and transactions.`,
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
+		const name = asset.name;
+		await app.deleteAsset(asset.id);
+		notify.show(`Deleted “${name}”`);
+		await goto('/assets');
+	}
+
+	function downloadCsv() {
+		if (asset) saveText(`${safeFileName(asset.name)}.csv`, exportPortfolioPerformanceQuotes(asset), 'text/csv');
 	}
 </script>
 
-<svelte:head>
-	<title>{asset ? `${asset.name} – Sweetfolio` : 'Asset not found – Sweetfolio'}</title>
-</svelte:head>
-
 {#if !asset}
-	<div class="asset-detail">
-		<Card padding="lg">
-			<div class="empty-state">
-				<h3>Asset not found</h3>
-				<p>This asset may have been deleted.</p>
-				<a href="/assets">Back to Assets</a>
-			</div>
+	<PageHeader title="Asset not found" back={{ href: '/assets', label: 'Assets' }} />
+	<Card><EmptyState icon="search" title="This asset does not exist">It may have been deleted or renamed.</EmptyState></Card>
+{:else}
+	<PageHeader title={asset.name} back={{ href: '/assets', label: 'Assets' }}>
+		{#snippet meta()}
+			<Badge tone="accent">{asset.classification.toUpperCase()}</Badge>
+			{#if asset.isin}<Badge><span class="mono">{asset.isin}</span></Badge>{/if}
+			{#if asset.wkn}<Badge>WKN <span class="mono">{asset.wkn}</span></Badge>{/if}
+			<Badge>{asset.currency}</Badge>
+			{#if isBench}<Badge tone="warning">Benchmark</Badge>{/if}
+		{/snippet}
+		{#snippet actions()}
+			{#if asset.isin || asset.wkn}<Button icon="refresh" size="sm" loading={jobs.refreshing} onclick={() => jobs.refreshAssets([asset])}
+					>Refresh</Button
+				>{/if}
+			<Button icon="star" size="sm" onclick={() => app.toggleBenchmark('asset', asset.id)}
+				>{isBench ? 'Unset benchmark' : 'Set as benchmark'}</Button
+			>
+			{#if asset.isin}<ShareButton url={shareUrl(encodeAssetList([asset.isin]))} title={asset.name} />{/if}
+			<Button icon="edit" size="sm" onclick={openEdit}>Edit</Button>
+			<Button icon="trash" size="sm" variant="ghost" onclick={remove} aria-label="Delete asset" />
+		{/snippet}
+	</PageHeader>
+
+	{#if conv?.status === 'missing'}
+		<p class="notice small">
+			No exchange rates for {asset.currency} → {app.settings.mainCurrency} yet — figures are shown in {asset.currency}.
+			<a href="/settings#currency">Exchange rates</a>
+		</p>
+	{/if}
+
+	<div class="stack" style="--gap: 20px">
+		{#if prices.length < 2}
+			<Card><EmptyState icon="assets" title="Not enough price data">Add prices below or refresh from the data source.</EmptyState></Card>
+		{:else}
+			<Card title="Price history" subtitle={conv?.status === 'converted' ? `Converted to ${app.settings.mainCurrency}` : undefined}>
+				<LineChart
+					series={[
+						{ label: asset.name, data: prices, fill: !bench },
+						...(bench ? [{ label: `${app.benchmarkResolved?.name} (benchmark)`, data: bench, dashed: true, color: 'var(--chart-2)' }] : [])
+					]}
+					format="currency"
+					currency={conv?.status === 'missing' ? asset.currency : app.settings.mainCurrency}
+					allowRelative
+					mode={bench ? 'relative' : 'value'}
+					label="Price history of {asset.name}"
+				/>
+			</Card>
+			<Card title="Financial metrics" subtitle="Periods without enough history are hidden">
+				<MetricsTable metrics={metrics.value} loading={metrics.loading} />
+			</Card>
+			<Card title="Drawdown" subtitle="Max drawdown {fmt.pct(maxDrawdown(prices))}">
+				<LineChart
+					series={[{ label: 'Drawdown', data: dd, fill: true, color: 'var(--chart-2)' }]}
+					format="percent"
+					height={200}
+					label="Drawdown chart"
+				/>
+			</Card>
+		{/if}
+
+		<Card title="Price data">
+			{#snippet actions()}
+				{#if rawAvailable}<Button size="sm" icon="file" onclick={() => (reparseOpen = true)}>Re-parse CSV</Button>{/if}
+				<Button size="sm" icon="download" onclick={downloadCsv} disabled={!asset.prices.length}>CSV</Button>
+			{/snippet}
+			<PriceTable {asset} onsave={savePrices} />
+			{#if asset.rawCSVStoredAt}<p class="xs muted">
+					Original CSV kept until {fmt.date(new Date(Date.parse(asset.rawCSVStoredAt) + 30 * 864e5).toISOString())}. Last refresh: {fmt.relativeTime(
+						asset.lastRefreshedAt
+					)}.
+				</p>{:else if asset.lastRefreshedAt}<p class="xs muted">Last refresh: {fmt.relativeTime(asset.lastRefreshedAt)}</p>{/if}
 		</Card>
 	</div>
-{:else}
-	<div class="asset-detail">
-		<header class="page-header">
-			<div class="page-header-row">
+
+	<Dialog bind:open={editOpen} title="Edit asset" size="sm">
+		<form
+			class="stack"
+			style="--gap: 12px"
+			onsubmit={(e) => {
+				e.preventDefault();
+				saveEdit();
+			}}
+			id="edit-asset"
+		>
+			<div><label class="label" for="ea-name">Name</label><input id="ea-name" class="input" bind:value={form.name} required /></div>
+			<div>
+				<label class="label" for="ea-isin">ISIN</label>
+				<input
+					id="ea-isin"
+					class="input mono"
+					bind:value={form.isin}
+					maxlength="12"
+					aria-invalid={!!isinError}
+					autocapitalize="characters"
+				/>
+				{#if isinError}<p class="error-text">{isinError}</p>{/if}
+			</div>
+			<div>
+				<label class="label" for="ea-wkn">WKN</label>
+				<input id="ea-wkn" class="input mono" bind:value={form.wkn} maxlength="6" aria-invalid={!!wknError} autocapitalize="characters" />
+				{#if wknError}<p class="error-text">{wknError}</p>{/if}
+			</div>
+			<div class="grid" style="--min: 140px">
 				<div>
-					<a href="/assets" class="back-link">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="15 18 9 12 15 6"/>
-						</svg>
-						Assets
-					</a>
-					<h1>
-						{asset.name}
-						{#if isCurrentBenchmark}
-							<span class="benchmark-badge">Benchmark</span>
-						{/if}
-					</h1>
+					<label class="label" for="ea-cur">Currency</label>
+					<select id="ea-cur" class="select" bind:value={form.currency}
+						>{#each [...new Set([form.currency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}</select
+					>
 				</div>
-				<div class="header-actions">
-					{#if asset.isin}
-						<ShareButton
-							url={shareUrl}
-							title={asset.name}
-							ontoast={showToast}
-						/>
-					{/if}
-					<Button variant={isCurrentBenchmark ? 'primary' : 'default'} size="sm" onclick={toggleBenchmark}>
-						{isCurrentBenchmark ? 'Remove Benchmark' : 'Set as Benchmark'}
-					</Button>
-					<Button variant="default" size="sm" onclick={openEditModal}>Edit</Button>
-					<Button variant="danger" size="sm" onclick={handleDelete}>Delete</Button>
+				<div>
+					<label class="label" for="ea-cls">Type</label>
+					<select id="ea-cls" class="select" bind:value={form.classification}
+						>{#each ASSET_CLASSIFICATIONS as c (c)}<option value={c}>{c.toUpperCase()}</option>{/each}</select
+					>
 				</div>
 			</div>
-		</header>
+		</form>
+		{#snippet footer()}
+			<Button variant="ghost" onclick={() => (editOpen = false)}>Cancel</Button>
+			<Button variant="primary" type="submit" form="edit-asset" disabled={!!isinError || !!wknError || !form.name.trim()}>Save</Button>
+		{/snippet}
+	</Dialog>
 
-		<section class="asset-meta">
-			<Card>
-				<div class="meta-grid">
-					<div class="meta-item">
-						<span class="meta-label">ISIN</span>
-						<span class="meta-value mono">{asset.isin ?? '\u2014'}</span>
-					</div>
-					<div class="meta-item">
-						<span class="meta-label">WKN</span>
-						<span class="meta-value mono">{asset.wkn ?? '\u2014'}</span>
-					</div>
-					<div class="meta-item">
-						<span class="meta-label">Currency</span>
-						<span class="meta-value">{asset.currency}</span>
-					</div>
-					<div class="meta-item">
-						<span class="meta-label">Data Points</span>
-						<span class="meta-value mono">{asset.prices.length.toLocaleString()}</span>
-					</div>
-					<div class="meta-item">
-						<span class="meta-label">Date Range</span>
-						<span class="meta-value">{dateRange || '\u2014'}</span>
-					</div>
-				</div>
-			</Card>
-		</section>
-
-		<section class="asset-metrics">
-			<h2>Financial Metrics</h2>
-			<Card>
-				{#if metricsLoading}
-					<p class="loading-text">Calculating metrics...</p>
-				{:else}
-					<MetricsTable metrics={metrics?.periods ?? {}} />
-				{/if}
-			</Card>
-		</section>
-
-		<section class="asset-charts">
-			{#if asset.prices.length > 0}
-				<h2>Price History</h2>
-				<Card padding="lg">
-					<PriceChart series={priceChartSeries} />
-				</Card>
-
-				<h2>Drawdown</h2>
-				<Card padding="lg">
-					<DrawdownChart prices={asset.prices} />
-				</Card>
-			{:else}
-				<Card padding="lg">
-					<div class="chart-placeholder">
-						<p>No price data available for charts.</p>
-					</div>
-				</Card>
-			{/if}
-		</section>
-
-		<PriceDataSection {asset} />
-
-		<Modal bind:open={showEditModal} title="Edit Asset">
-			<div class="edit-form">
-				<div class="form-field">
-					<label for="edit-name">Name</label>
-					<input id="edit-name" type="text" bind:value={editName} />
-					{#if editErrors.name}<span class="field-error">{editErrors.name}</span>{/if}
-				</div>
-				<div class="form-field">
-					<label for="edit-isin">ISIN</label>
-					<input id="edit-isin" type="text" bind:value={editIsin} placeholder="e.g. DE0005140008" maxlength="12" />
-					{#if editErrors.isin}<span class="field-error">{editErrors.isin}</span>{/if}
-				</div>
-				<div class="form-field">
-					<label for="edit-wkn">WKN</label>
-					<input id="edit-wkn" type="text" bind:value={editWkn} placeholder="e.g. 514000" maxlength="6" />
-					{#if editErrors.wkn}<span class="field-error">{editErrors.wkn}</span>{/if}
-				</div>
-				<div class="form-field">
-					<label for="edit-currency">Currency</label>
-					<select id="edit-currency" bind:value={editCurrency}>
-						{#each supportedCurrencies as c}
-							<option value={c}>{c}</option>
-						{/each}
-					</select>
-				</div>
-				<div class="form-field">
-					<label for="edit-classification">Classification</label>
-					<select id="edit-classification" bind:value={editClassification}>
-						{#each ASSET_CLASSIFICATIONS as cls}
-							<option value={cls}>{cls.toUpperCase()}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
-			{#snippet footer()}
-				<Button variant="ghost" onclick={() => showEditModal = false}>Cancel</Button>
-				<Button variant="primary" onclick={handleEditSave}>Save</Button>
-			{/snippet}
-		</Modal>
-	</div>
-{/if}
-
-{#if toasts.length > 0}
-	<div class="toast-container">
-		{#each toasts as toast (toast.id)}
-			<div class="toast">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
-					<polyline points="22 4 12 14.01 9 11.01"/>
-				</svg>
-				<span>{toast.message}</span>
-			</div>
-		{/each}
-	</div>
+	{#if asset.rawCSV}
+		<FormatDialog
+			bind:open={reparseOpen}
+			text={asset.rawCSV}
+			title="Re-parse CSV"
+			showMeta={false}
+			initialFormat={asset.formatConfig ?? undefined}
+			onconfirm={async ({ result }) => {
+				await app.saveAsset({ ...asset, prices: result.prices, formatConfig: result.format, updatedAt: new Date().toISOString() });
+				notify.success(`Re-parsed: ${result.prices.length} prices`);
+			}}
+		/>
+	{/if}
 {/if}
 
 <style>
-	.asset-detail {
-		max-width: 1100px;
-	}
-
-	.page-header {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.page-header-row {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--spacing-md);
-	}
-
-	.back-link {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--spacing-xs);
-		font-size: var(--font-size-sm);
-		color: var(--color-text-muted);
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.back-link:hover {
-		color: var(--color-accent);
-	}
-
-	.page-header h1 {
-		margin-bottom: 0;
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-	}
-
-	.benchmark-badge {
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		padding: 2px 8px;
-		border-radius: var(--radius-sm);
-		background: rgba(141, 208, 196, 0.15);
-		color: var(--color-accent);
-		white-space: nowrap;
-	}
-
-	.header-actions {
-		display: flex;
-		gap: var(--spacing-sm);
-		flex-shrink: 0;
-	}
-
-	.asset-meta {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.meta-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-		gap: var(--spacing-lg);
-	}
-
-	.meta-item {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-	}
-
-	.meta-label {
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-	}
-
-	.meta-value {
-		font-size: var(--font-size-base);
-		font-weight: 500;
-	}
-
-	.mono {
-		font-family: var(--font-mono);
-	}
-
-	.asset-metrics {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.asset-metrics h2,
-	.asset-charts h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.asset-charts {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-md);
-	}
-
-	.chart-placeholder {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: var(--spacing-md);
-		min-height: 300px;
-		color: var(--color-text-muted);
-		text-align: center;
-		font-size: var(--font-size-sm);
-	}
-
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--spacing-sm);
-		text-align: center;
-		padding: var(--spacing-xl) 0;
-		color: var(--color-text-muted);
-	}
-
-	.empty-state h3 {
-		color: var(--color-text-secondary);
-	}
-
-	.loading-text {
-		padding: var(--spacing-md);
-		color: var(--color-text-muted);
-		font-size: var(--font-size-sm);
-	}
-
-	.edit-form {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-lg);
-	}
-
-	.form-field {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-	}
-
-	.form-field > label {
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-		color: var(--color-text-secondary);
-	}
-
-	.field-error {
-		font-size: var(--font-size-xs);
-		color: var(--color-negative);
+	.notice {
+		padding: 10px 14px;
+		margin-bottom: var(--space-4);
+		border-radius: var(--radius);
+		background: var(--warning-soft);
+		color: var(--warning);
 	}
 </style>

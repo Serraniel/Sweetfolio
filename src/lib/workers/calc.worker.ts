@@ -1,60 +1,16 @@
-/**
- * Calculation Web Worker.
- * Handles 'calculate-metrics' and 'calculate-correlation' messages.
- */
+/// <reference lib="webworker" />
+import { computeCorrelationMatrix } from '#lib/core/correlation.ts';
+import { computeMetrics } from '#lib/core/metrics.ts';
+import type { CalcRequest, CalcResponse } from './protocol.ts';
 
-import type { CalcWorkerRequest, CalcWorkerResponse } from '$lib/types';
-import { computeAllMetrics } from '$lib/engine/metrics';
-import { computeCorrelationMatrix } from '$lib/engine/correlation';
-import { convertPrices } from '$lib/engine/currency';
-
-self.onmessage = (event: MessageEvent<CalcWorkerRequest>) => {
-  const msg = event.data;
-
-  try {
-    switch (msg.type) {
-      case 'calculate-metrics': {
-        const { assetId, riskFreeRate, currencyConversion } = msg.payload;
-        let { prices } = msg.payload;
-
-        // Apply currency conversion if provided
-        if (currencyConversion) {
-          const converted = convertPrices(
-            prices,
-            currencyConversion.currencyRate,
-            currencyConversion.sourceCurrency,
-            currencyConversion.targetCurrency,
-          );
-          if (converted) {
-            prices = converted;
-          }
-        }
-
-        const result = computeAllMetrics(assetId, prices, riskFreeRate);
-        const response: CalcWorkerResponse = {
-          type: 'metrics-result',
-          payload: { assetId, result },
-        };
-        self.postMessage(response);
-        break;
-      }
-
-      case 'calculate-correlation': {
-        const { assets } = msg.payload;
-        const matrix = computeCorrelationMatrix(assets);
-        const response: CalcWorkerResponse = {
-          type: 'correlation-result',
-          payload: matrix,
-        };
-        self.postMessage(response);
-        break;
-      }
-    }
-  } catch (error) {
-    const response: CalcWorkerResponse = {
-      type: 'error',
-      payload: { message: error instanceof Error ? error.message : String(error) },
-    };
-    self.postMessage(response);
-  }
+self.onmessage = (e: MessageEvent<CalcRequest>) => {
+	const req = e.data;
+	let res: CalcResponse;
+	try {
+		const result = req.kind === 'metrics' ? computeMetrics(req.prices, req.riskFreeRate) : computeCorrelationMatrix(req.series);
+		res = { id: req.id, ok: true, result };
+	} catch (err) {
+		res = { id: req.id, ok: false, error: err instanceof Error ? err.message : String(err) };
+	}
+	(self as unknown as Worker).postMessage(res);
 };

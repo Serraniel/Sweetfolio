@@ -3,24 +3,26 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+    open-pull-requests-limit: 10
     commit-message:
-      prefix: "build(deps)"
-      prefix-development: "build(deps-dev)"
+      prefix: deps
+      prefix-development: build(deps-dev)
     groups:
       minor-and-patch:
-        update-types:
-          - minor
-          - patch
-
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
     commit-message:
-      prefix: "ci"
+      prefix: ci
     groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
+      actions:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build(docker)

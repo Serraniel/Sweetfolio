@@ -1,693 +1,328 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import Card from '$lib/components/shared/Card.svelte';
-	import Button from '$lib/components/shared/Button.svelte';
-	import PriceChart from '$lib/charts/PriceChart.svelte';
-	import DrawdownChart from '$lib/charts/DrawdownChart.svelte';
-	import { assets } from '$lib/stores/assets';
-	import { settings } from '$lib/stores/settings';
-	import { currencies } from '$lib/stores/currencies';
-	import { calculateMetrics } from '$lib/workers/manager';
-	import { getAssetColor } from '$lib/charts/utils';
-	import {
-		formatPercent,
-		formatNumber,
-		getMetricValue as getMetric,
-		valueClass,
-		bestInRow as findBestInRow
-	} from '$lib/utils/comparison';
-	import type { Asset, MetricsResult, PeriodKey, CurrencyRate } from '$lib/types';
-	import { slugify } from '$lib/utils/slug';
+	import { PERIOD_KEYS, type MetricsResult, type PeriodKey, type PeriodMetrics, type PricePoint } from '#lib/domain/types.ts';
+	import { availablePeriods, drawdownSeries } from '#lib/core/metrics.ts';
+	import { app } from '#lib/state/app.svelte.ts';
+	import { performanceSeries } from '#lib/state/portfolio-view.ts';
+	import { asyncDerived } from '#lib/state/async.svelte.ts';
+	import * as calc from '#lib/workers/client.ts';
+	import * as fmt from '#lib/format.ts';
+	import PageHeader from '#lib/ui/PageHeader.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Segmented from '#lib/ui/Segmented.svelte';
+	import EmptyState from '#lib/ui/EmptyState.svelte';
+	import Icon from '#lib/ui/Icon.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import LineChart from '#lib/charts/LineChart.svelte';
+	import { colorAt } from '#lib/charts/palette.ts';
 
-	// Parse asset slugs from URL query params
-	const compareSlugs = $derived.by(() => {
-		const raw = page.url.searchParams.get('slugs') ?? '';
-		return raw.split(',').filter((s) => s.length > 0);
+	// Assets in `slugs`, portfolios in `portfolios` (CP-1, CP-5).
+	const slugs = $derived((page.url.searchParams.get('slugs') ?? '').split(',').filter(Boolean));
+	const portfolioSlugs = $derived((page.url.searchParams.get('portfolios') ?? '').split(',').filter(Boolean));
+	const assets = $derived(slugs.map((s) => app.assetBySlug(s)).filter((a): a is NonNullable<typeof a> => !!a));
+	const portfolios = $derived(portfolioSlugs.map((s) => app.portfolioBySlug(s)).filter((p): p is NonNullable<typeof p> => !!p));
+
+	interface Item {
+		key: string;
+		name: string;
+		href: string;
+		slug: string;
+		kind: 'asset' | 'portfolio';
+		prices: PricePoint[];
+		type: string;
+		currency: string;
+		isin: string | null;
+		wkn: string | null;
+	}
+	const items = $derived<Item[]>([
+		...assets.map((a) => ({
+			key: `a:${a.id}`,
+			name: a.name,
+			href: `/assets/${app.assetSlug(a.id)}`,
+			slug: app.assetSlug(a.id),
+			kind: 'asset' as const,
+			prices: app.converted(a).prices,
+			type: a.classification.toUpperCase(),
+			currency: a.currency,
+			isin: a.isin,
+			wkn: a.wkn
+		})),
+		...portfolios.map((p) => {
+			const perf = performanceSeries(p);
+			return {
+				key: `p:${p.id}`,
+				name: p.name,
+				href: `/portfolios/${app.portfolioSlug(p.id)}`,
+				slug: app.portfolioSlug(p.id),
+				kind: 'portfolio' as const,
+				prices: perf.prices,
+				type: perf.kind === 'backtest' ? 'Portfolio (backtest)' : 'Portfolio (time-weighted, actual)',
+				currency: app.settings.mainCurrency,
+				isin: null,
+				wkn: null
+			};
+		})
+	]);
+	// One entry per item (same order as `items`), null without enough history.
+	const metrics = asyncDerived(() =>
+		items.length
+			? Promise.all(items.map((i) => (i.prices.length > 1 ? calc.metrics(i.prices, app.riskFreeRate) : Promise.resolve(null))))
+			: null
+	);
+
+	const LABELS: Record<PeriodKey, string> = { '1y': '1Y', '3y': '3Y', '5y': '5Y', '10y': '10Y', '15y': '15Y', all: 'All' };
+	// A period is only comparable when every asset covers it (CP-2).
+	const common = $derived.by(() => {
+		const sets = items.map((i) => availablePeriods(i.prices));
+		return PERIOD_KEYS.filter((p) => sets.every((set) => set.has(p)));
 	});
-
-	// Resolve to actual assets
-	const compareAssets = $derived(
-		compareSlugs
-			.map((slug) => $assets.find((a) => slugify(a.name) === slug))
-			.filter((a): a is Asset => a !== undefined)
-	);
-
-	// Assets available to add (not already in comparison)
-	const availableAssets = $derived(
-		$assets.filter((a) => !compareSlugs.includes(slugify(a.name)))
-	);
-
-	// Update URL when assets change
-	function updateUrl(slugs: string[]) {
-		const params = new URLSearchParams();
-		if (slugs.length > 0) params.set('slugs', slugs.join(','));
-		goto(`/compare?${params.toString()}`, { replaceState: true, keepFocus: true });
-	}
-
-	function removeFromComparison(assetSlug: string) {
-		updateUrl(compareSlugs.filter((s) => s !== assetSlug));
-	}
-
-	let addAssetSlug = $state('');
-	function addToComparison() {
-		if (!addAssetSlug) return;
-		updateUrl([...compareSlugs, addAssetSlug]);
-		addAssetSlug = '';
-	}
-
-	// Build chart series for PriceChart
-	const priceChartSeries = $derived(
-		compareAssets.map((a) => ({
-			label: a.name,
-			prices: a.prices
-		}))
-	);
-
-	// Metrics computation
-	let metricsMap: Map<string, MetricsResult> = $state(new Map());
-	let metricsLoading = $state(false);
-
-	function findCurrencyConversion(assetCurrency: string, mainCurrency: string, rates: CurrencyRate[]) {
-		if (assetCurrency === mainCurrency) return undefined;
-		const directPair = assetCurrency + mainCurrency;
-		const inversePair = mainCurrency + assetCurrency;
-		const rate = rates.find((r) => r.pair === directPair || r.pair === inversePair);
-		if (!rate) return undefined;
-		return {
-			currencyRate: rate,
-			sourceCurrency: assetCurrency,
-			targetCurrency: mainCurrency
-		};
-	}
-
+	let period = $state<PeriodKey>('1y');
 	$effect(() => {
-		const assetsToCompute = compareAssets.filter((a) => a.prices.length >= 2);
-		if (assetsToCompute.length === 0) {
-			metricsMap = new Map();
-			return;
-		}
-
-		metricsLoading = true;
-		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-		const mainCurrency = ($settings.mainCurrency as string) ?? 'EUR';
-
-		Promise.all(
-			assetsToCompute.map((asset) => {
-				const conversion = findCurrencyConversion(asset.currency, mainCurrency, $currencies);
-				return calculateMetrics(asset.id, asset.prices, riskFreeRate, conversion);
-			})
-		)
-			.then((results) => {
-				const map = new Map<string, MetricsResult>();
-				for (const r of results) {
-					map.set(r.assetId, r);
-				}
-				metricsMap = map;
-			})
-			.finally(() => {
-				metricsLoading = false;
-			});
+		if (common.length && !common.includes(period)) period = common.includes('5y') ? '5y' : common[0]!;
 	});
 
-	// Metrics table configuration
-	const periods: PeriodKey[] = ['1y', '3y', '5y', '10y', '15y', 'all'];
-	let selectedPeriod: PeriodKey = $state('all');
-
-	// Disable periods where ALL compared assets have null metrics (insufficient data)
-	const disabledPeriods = $derived.by(() => {
-		const disabled = new Set<PeriodKey>();
-		for (const p of periods) {
-			if (p === 'all') continue;
-			const allNull = compareAssets.every((a) => {
-				const m = metricsMap.get(a.id);
-				return !m || m.periods[p] === null;
-			});
-			if (allNull) disabled.add(p);
-		}
-		return disabled;
-	});
-
-	// Reset to 'all' if the currently selected period becomes disabled
-	$effect(() => {
-		if (disabledPeriods.has(selectedPeriod)) {
-			selectedPeriod = 'all';
-		}
-	});
-
-	const metricRows = [
-		{ key: 'cumulativeReturn', label: 'Cumulative Return', format: formatPercent },
-		{ key: 'annualizedReturn', label: 'Annualized Return', format: formatPercent },
-		{ key: 'volatility', label: 'Volatility', format: formatPercent },
-		{ key: 'sharpeRatio', label: 'Sharpe Ratio', format: formatNumber },
-		{ key: 'maxDrawdown', label: 'Max Drawdown', format: formatPercent }
+	const ROWS: Array<{ key: keyof PeriodMetrics; label: string; better: 'high' | 'low' | 'none'; kind: 'pct' | 'num' }> = [
+		{ key: 'cumulativeReturn', label: 'Total return', better: 'high', kind: 'pct' },
+		{ key: 'annualizedReturn', label: 'Return p.a.', better: 'high', kind: 'pct' },
+		{ key: 'volatility', label: 'Volatility', better: 'low', kind: 'pct' },
+		{ key: 'sharpeRatio', label: 'Sharpe ratio', better: 'high', kind: 'num' },
+		{ key: 'maxDrawdown', label: 'Max drawdown', better: 'high', kind: 'pct' }
 	];
 
-	function getMetricValue(assetId: string, metricKey: string): number | undefined {
-		return getMetric(metricsMap, assetId, selectedPeriod, metricKey);
+	function best(row: (typeof ROWS)[number], all: Array<MetricsResult | null> | null): number | null {
+		if (!all || items.length < 2) return null;
+		const vals = all.map((m) => m?.[period]?.[row.key] as number | undefined);
+		let idx: number | null = null;
+		vals.forEach((v, i) => {
+			if (v === undefined) return;
+			if (idx === null || (row.better === 'high' ? v > vals[idx]! : v < vals[idx]!)) idx = i;
+		});
+		return idx;
 	}
 
-	function bestInRow(metricKey: string): string | null {
-		return findBestInRow(
-			compareAssets.map((a) => a.id),
-			metricKey,
-			metricsMap,
-			selectedPeriod
-		);
+	function setItems(nextAssets: string[], nextPortfolios: string[]) {
+		const q = new URLSearchParams();
+		if (nextAssets.length) q.set('slugs', nextAssets.join(','));
+		if (nextPortfolios.length) q.set('portfolios', nextPortfolios.join(','));
+		goto(`/compare?${q.toString().replaceAll('%2C', ',')}`, { replace: true, reset: false });
+	}
+	function remove(item: Item) {
+		if (item.kind === 'asset')
+			setItems(
+				slugs.filter((s) => s !== item.slug),
+				portfolioSlugs
+			);
+		else
+			setItems(
+				slugs,
+				portfolioSlugs.filter((s) => s !== item.slug)
+			);
+	}
+	let adding = $state('');
+	const addableAssets = $derived(app.assets.filter((a) => !assets.includes(a)).sort((a, b) => a.name.localeCompare(b.name)));
+	const addablePortfolios = $derived(
+		app.portfolios
+			.filter((p) => !portfolios.includes(p) && (p.allocations.length || app.transactionsOf(p.id).length))
+			.sort((a, b) => a.name.localeCompare(b.name))
+	);
+	function add() {
+		const [kind, id] = [adding.slice(0, 1), adding.slice(2)];
+		if (kind === 'a') setItems([...slugs, app.assetSlug(id)], portfolioSlugs);
+		else setItems(slugs, [...portfolioSlugs, app.portfolioSlug(id)]);
+		adding = '';
 	}
 </script>
 
-<svelte:head>
-	<title>Compare Assets – Sweetfolio</title>
-</svelte:head>
+<PageHeader
+	title="Compare"
+	back={assets.length || !portfolios.length ? { href: '/assets', label: 'Assets' } : { href: '/portfolios', label: 'Portfolios' }}
+	subtitle="Assets and portfolios side by side, in {app.settings
+		.mainCurrency}. Portfolios use their backtest, tracked ones their time-weighted return."
+/>
 
-<div class="compare-page">
-	<header class="page-header">
-		<div class="page-header-row">
-			<div>
-				<a href="/assets" class="back-link">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="15 18 9 12 15 6"/>
-					</svg>
-					Assets
-				</a>
-				<h1>Compare Assets</h1>
-				<p class="page-subtitle">Side-by-side comparison of financial metrics and charts</p>
+<div class="stack" style="--gap: 20px">
+	<Card>
+		<div class="chips">
+			{#each items as item, i (item.key)}
+				<span class="chip" style="--c: {colorAt(i)}">
+					<i></i>{#if item.kind === 'portfolio'}<Icon name="portfolio" size={14} />{/if}<a href={item.href} class="truncate">{item.name}</a>
+					<button aria-label="Remove {item.name}" onclick={() => remove(item)}><Icon name="x" size={14} /></button>
+				</span>
+			{/each}
+			<div class="row add">
+				<select class="select" bind:value={adding} aria-label="Add to comparison">
+					<option value="">Add asset or portfolio…</option>
+					{#if addableAssets.length}<optgroup label="Assets"
+							>{#each addableAssets as a (a.id)}<option value="a:{a.id}">{a.name}</option>{/each}</optgroup
+						>{/if}
+					{#if addablePortfolios.length}<optgroup label="Portfolios"
+							>{#each addablePortfolios as p (p.id)}<option value="p:{p.id}">{p.name}</option>{/each}</optgroup
+						>{/if}
+				</select>
+				<Button size="sm" icon="plus" disabled={!adding} onclick={add}>Add</Button>
 			</div>
 		</div>
-	</header>
+	</Card>
 
-	<!-- Asset selection controls -->
-	<section class="selection-section">
-		<Card>
-			<div class="selection-header">
-				<h3>Selected Assets ({compareAssets.length})</h3>
-				{#if availableAssets.length > 0}
-					<div class="add-asset-row">
-						<select class="add-asset-select" bind:value={addAssetSlug}>
-							<option value="">Add an asset...</option>
-							{#each availableAssets as a}
-								<option value={slugify(a.name)}>{a.name}</option>
-							{/each}
-						</select>
-						<Button variant="primary" size="sm" disabled={!addAssetSlug} onclick={addToComparison}>
-							Add
-						</Button>
-					</div>
-				{/if}
+	{#if items.length === 0}
+		<Card
+			><EmptyState icon="compare" title="Nothing to compare yet"
+				>Select two or more <a href="/assets">assets</a> or <a href="/portfolios">portfolios</a> and choose Compare, or add them above.</EmptyState
+			></Card
+		>
+	{:else}
+		<Card title="Financial metrics">
+			{#snippet actions()}
+				<Segmented
+					bind:value={period}
+					options={PERIOD_KEYS.map((p) => ({ value: p, label: LABELS[p] }))}
+					label="Period"
+					size="sm"
+					disabled={PERIOD_KEYS.filter((p) => !common.includes(p))}
+				/>
+			{/snippet}
+			<div class="scroll-x">
+				<table class="table">
+					<thead>
+						<tr>
+							<th>Metric</th>
+							{#each items as item, i (item.key)}<th class="right"><span class="dot" style="background: {colorAt(i)}"></span>{item.name}</th
+								>{/each}
+						</tr>
+					</thead>
+					<tbody>
+						{#each ROWS as row (row.key)}
+							{@const b = best(row, metrics.value)}
+							<tr>
+								<th scope="row" class="metric">{row.label}</th>
+								{#each items as item, i (item.key)}
+									{@const v = metrics.value?.[i]?.[period]?.[row.key] as number | undefined}
+									<td class="right num {row.key === 'volatility' ? '' : fmt.signClass(v)}" class:best={b === i}
+										>{row.kind === 'pct' ? fmt.pct(v) : fmt.num(v)}</td
+									>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</div>
-
-			{#if compareAssets.length === 0}
-				<p class="empty-hint">No assets selected. Go to <a href="/assets">Assets</a> to select assets for comparison.</p>
-			{:else}
-				<div class="selected-assets">
-					{#each compareAssets as asset, i}
-						<div class="asset-chip">
-							<span class="chip-color" style="background: {getAssetColor(i)}"></span>
-							<span class="chip-name">{asset.name}</span>
-							<span class="chip-meta">{asset.currency}</span>
-							<button
-								class="chip-remove"
-								onclick={() => removeFromComparison(slugify(asset.name))}
-								aria-label="Remove {asset.name} from comparison"
-							>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-									<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-								</svg>
-							</button>
-						</div>
-					{/each}
-				</div>
-			{/if}
+			{#if !common.length}<p class="small muted">The selection has no overlapping period with enough history.</p>{/if}
 		</Card>
-	</section>
 
-	{#if compareAssets.length >= 2}
-		<!-- Metrics comparison table -->
-		<section class="metrics-section">
-			<h2>Financial Metrics</h2>
-			<Card>
-				<div class="period-tabs">
-					{#each periods as p}
-						<button
-							class="period-tab"
-							class:active={selectedPeriod === p}
-							disabled={disabledPeriods.has(p)}
-							onclick={() => (selectedPeriod = p)}
+		<Card title="Performance" subtitle="Rebased to the start of the selected range">
+			<LineChart
+				series={items.map((s, i) => ({ label: s.name, data: s.prices, color: colorAt(i) }))}
+				mode="relative"
+				allowRelative
+				format="currency"
+				currency={app.settings.mainCurrency}
+				label="Performance comparison"
+			/>
+		</Card>
+
+		<Card title="Drawdowns">
+			<LineChart
+				series={items.map((s, i) => ({ label: s.name, data: drawdownSeries(s.prices), color: colorAt(i) }))}
+				format="percent"
+				height={220}
+				label="Drawdown comparison"
+			/>
+		</Card>
+
+		<Card title="Details">
+			<div class="scroll-x">
+				<table class="table">
+					<thead
+						><tr
+							><th>Detail</th>{#each items as item (item.key)}<th>{item.name}</th>{/each}</tr
+						></thead
+					>
+					<tbody>
+						<tr
+							><th scope="row" class="metric">Type</th>{#each items as item (item.key)}<td>{item.type}</td>{/each}</tr
 						>
-							{p === 'all' ? 'ALL' : p.toUpperCase()}
-						</button>
-					{/each}
-				</div>
-
-				{#if metricsLoading}
-					<p class="loading-text">Calculating metrics...</p>
-				{:else}
-					<div class="comparison-table-wrapper">
-						<table class="comparison-table">
-							<thead>
-								<tr>
-									<th class="metric-label-col">Metric</th>
-									{#each compareAssets as asset, i}
-										<th>
-											<span class="th-asset">
-												<span class="th-color" style="background: {getAssetColor(i)}"></span>
-												{asset.name}
-											</span>
-										</th>
-									{/each}
-								</tr>
-							</thead>
-							<tbody>
-								{#each metricRows as row}
-									{@const best = bestInRow(row.key)}
-									<tr>
-										<td class="metric-label">{row.label}</td>
-										{#each compareAssets as asset}
-											{@const val = getMetricValue(asset.id, row.key)}
-											<td
-												class="metric-value {valueClass(row.key, val)}"
-												class:best-value={asset.id === best}
-											>
-												{row.format(val)}
-											</td>
-										{/each}
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			</Card>
-		</section>
-
-		<!-- Price chart overlay -->
-		<section class="chart-section">
-			<h2>Price History</h2>
-			<Card padding="lg">
-				<PriceChart series={priceChartSeries} initialMode="relative" />
-			</Card>
-		</section>
-
-		<!-- Individual drawdown charts -->
-		<section class="chart-section">
-			<h2>Drawdowns</h2>
-			<div class="drawdown-grid">
-				{#each compareAssets as asset, i}
-					<Card padding="lg">
-						<div class="drawdown-header">
-							<span class="dd-color" style="background: {getAssetColor(i)}"></span>
-							<span class="dd-name">{asset.name}</span>
-						</div>
-						<DrawdownChart prices={asset.prices} label={asset.name} height={220} />
-					</Card>
-				{/each}
-			</div>
-		</section>
-
-		<!-- Asset metadata comparison -->
-		<section class="meta-section">
-			<h2>Asset Details</h2>
-			<Card>
-				<div class="comparison-table-wrapper">
-					<table class="comparison-table">
-						<thead>
-							<tr>
-								<th class="metric-label-col">Detail</th>
-								{#each compareAssets as asset, i}
-									<th>
-										<span class="th-asset">
-											<span class="th-color" style="background: {getAssetColor(i)}"></span>
-											{asset.name}
-										</span>
-									</th>
-								{/each}
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td class="metric-label">Classification</td>
-								{#each compareAssets as asset}
-									<td class="metric-value">{asset.classification.toUpperCase()}</td>
-								{/each}
-							</tr>
-							<tr>
-								<td class="metric-label">Currency</td>
-								{#each compareAssets as asset}
-									<td class="metric-value">{asset.currency}</td>
-								{/each}
-							</tr>
-							<tr>
-								<td class="metric-label">ISIN</td>
-								{#each compareAssets as asset}
-									<td class="metric-value mono">{asset.isin ?? '\u2014'}</td>
-								{/each}
-							</tr>
-							<tr>
-								<td class="metric-label">WKN</td>
-								{#each compareAssets as asset}
-									<td class="metric-value mono">{asset.wkn ?? '\u2014'}</td>
-								{/each}
-							</tr>
-							<tr>
-								<td class="metric-label">Data Points</td>
-								{#each compareAssets as asset}
-									<td class="metric-value mono">{asset.prices.length.toLocaleString()}</td>
-								{/each}
-							</tr>
-							<tr>
-								<td class="metric-label">Date Range</td>
-								{#each compareAssets as asset}
-									<td class="metric-value">
-										{#if asset.prices.length > 0}
-											{asset.prices[0].date} – {asset.prices[asset.prices.length - 1].date}
-										{:else}
-											—
-										{/if}
-									</td>
-								{/each}
-							</tr>
-						</tbody>
-					</table>
-				</div>
-			</Card>
-		</section>
-	{:else if compareAssets.length === 1}
-		<Card padding="lg">
-			<div class="empty-state">
-				<p>Add at least one more asset to start comparing.</p>
+						<tr
+							><th scope="row" class="metric">Currency</th>{#each items as item (item.key)}<td>{item.currency}</td>{/each}</tr
+						>
+						<tr
+							><th scope="row" class="metric">ISIN</th>{#each items as item (item.key)}<td class="mono">{item.isin ?? '–'}</td>{/each}</tr
+						>
+						<tr
+							><th scope="row" class="metric">WKN</th>{#each items as item (item.key)}<td class="mono">{item.wkn ?? '–'}</td>{/each}</tr
+						>
+						<tr
+							><th scope="row" class="metric">History</th>{#each items as item (item.key)}<td class="num"
+									>{fmt.date(item.prices[0]?.date)} – {fmt.date(item.prices.at(-1)?.date)}</td
+								>{/each}</tr
+						>
+						<tr
+							><th scope="row" class="metric">Data points</th>{#each items as item (item.key)}<td class="num">{item.prices.length}</td
+								>{/each}</tr
+						>
+					</tbody>
+				</table>
 			</div>
 		</Card>
 	{/if}
 </div>
 
 <style>
-	.compare-page {
-		max-width: 1200px;
-	}
-
-	.page-header {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.page-header h1 {
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.page-header-row {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: var(--spacing-md);
-	}
-
-	.page-subtitle {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-base);
-	}
-
-	.back-link {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--spacing-xs);
-		font-size: var(--font-size-sm);
-		color: var(--color-text-muted);
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.back-link:hover {
-		color: var(--color-accent);
-	}
-
-	/* Selection section */
-	.selection-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.selection-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--spacing-md);
-		margin-bottom: var(--spacing-md);
-		flex-wrap: wrap;
-	}
-
-	.selection-header h3 {
-		font-size: var(--font-size-base);
-		font-weight: 600;
-		margin: 0;
-	}
-
-	.add-asset-row {
-		display: flex;
-		gap: var(--spacing-sm);
-		align-items: center;
-	}
-
-	.add-asset-select {
-		padding: var(--spacing-xs) var(--spacing-sm);
-		font-size: var(--font-size-sm);
-		background: var(--color-bg-primary);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-primary);
-		min-width: 200px;
-	}
-
-	.add-asset-select:focus {
-		outline: none;
-		border-color: var(--color-accent);
-	}
-
-	.empty-hint {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-sm);
-	}
-
-	.empty-hint a {
-		color: var(--color-accent);
-	}
-
-	.selected-assets {
+	.chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--spacing-sm);
+		gap: 8px;
+		align-items: center;
 	}
-
-	.asset-chip {
+	.chip {
 		display: inline-flex;
 		align-items: center;
-		gap: var(--spacing-xs);
-		padding: var(--spacing-xs) var(--spacing-sm);
-		background: var(--color-bg-tertiary, rgba(255, 255, 255, 0.05));
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		font-size: var(--font-size-sm);
+		gap: 6px;
+		max-width: 100%;
+		padding: 4px 6px 4px 10px;
+		border-radius: 999px;
+		background: var(--surface-2);
+		font-size: var(--text-sm);
 	}
-
-	.chip-color {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-
-	.chip-name {
-		font-weight: 500;
-	}
-
-	.chip-meta {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-xs);
-	}
-
-	.chip-remove {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 20px;
-		height: 20px;
-		border-radius: 50%;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		transition: color var(--transition-fast), background var(--transition-fast);
-		background: transparent;
-		border: none;
-		padding: 0;
-	}
-
-	.chip-remove:hover {
-		color: var(--color-negative);
-		background: rgba(232, 23, 93, 0.1);
-	}
-
-	/* Period tabs */
-	.period-tabs {
-		display: flex;
-		gap: 4px;
-		margin-bottom: var(--spacing-md);
-		flex-wrap: wrap;
-	}
-
-	.period-tab {
-		padding: 4px 12px;
-		border: 1px solid var(--color-border);
-		border-radius: 4px;
-		background: transparent;
-		color: var(--color-text-primary);
-		cursor: pointer;
-		font-size: 12px;
-		font-family: system-ui, -apple-system, sans-serif;
-		transition: background 0.15s, color 0.15s;
-	}
-
-	.period-tab:hover {
-		background: var(--color-accent, #8dd0c4);
-		color: var(--color-bg-primary, #fff);
-	}
-
-	.period-tab.active {
-		background: var(--color-accent-deep, #1a8a8a);
-		color: #fff;
-		border-color: var(--color-accent-deep, #1a8a8a);
-	}
-
-	.period-tab:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-
-	/* Comparison table */
-	.comparison-table-wrapper {
-		overflow-x: auto;
-	}
-
-	.comparison-table {
-		font-size: var(--font-size-sm);
-		white-space: nowrap;
-	}
-
-	.comparison-table th {
-		font-weight: 600;
-		font-size: var(--font-size-xs);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-		padding: var(--spacing-sm) var(--spacing-md);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.comparison-table td {
-		padding: var(--spacing-sm) var(--spacing-md);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.metric-label-col {
-		text-align: left;
-	}
-
-	.metric-label {
-		font-weight: 500;
-		color: var(--color-text-secondary);
-	}
-
-	.metric-value {
-		text-align: right;
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-	}
-
-	.metric-value.positive {
-		color: var(--color-positive);
-	}
-
-	.metric-value.negative {
-		color: var(--color-negative);
-	}
-
-	.metric-value.best-value {
-		font-weight: 700;
-		background: rgba(141, 208, 196, 0.1);
-	}
-
-	.th-asset {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--spacing-xs);
-	}
-
-	.th-color {
+	.chip i {
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
+		background: var(--c);
 		flex-shrink: 0;
 	}
-
-	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
+	.chip a {
+		color: inherit;
+		font-weight: 550;
 	}
-
-	/* Sections */
-	.metrics-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.metrics-section h2,
-	.chart-section h2,
-	.meta-section h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.chart-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.meta-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	/* Drawdown grid */
-	.drawdown-grid {
+	.chip button {
+		border: none;
+		background: none;
+		color: var(--muted);
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-		gap: var(--spacing-md);
+		padding: 2px;
 	}
-
-	.drawdown-header {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		margin-bottom: var(--spacing-sm);
+	.add {
+		flex-wrap: nowrap;
 	}
-
-	.dd-color {
-		width: 10px;
-		height: 10px;
+	.add .select {
+		min-width: 160px;
+	}
+	.metric {
+		text-transform: none !important;
+		letter-spacing: 0 !important;
+		color: var(--text) !important;
+		font-size: var(--text-sm) !important;
+	}
+	.dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
 		border-radius: 50%;
-		flex-shrink: 0;
+		margin-right: 6px;
 	}
-
-	.dd-name {
-		font-weight: 600;
-		font-size: var(--font-size-sm);
-	}
-
-	.loading-text {
-		padding: var(--spacing-md);
-		color: var(--color-text-muted);
-		font-size: var(--font-size-sm);
-	}
-
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--spacing-sm);
-		text-align: center;
-		padding: var(--spacing-xl) 0;
-		color: var(--color-text-muted);
+	td.best {
+		font-weight: 700;
+		background: var(--accent-soft);
 	}
 </style>

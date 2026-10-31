@@ -1,37 +1,79 @@
+# Release flow (DE-3, DE-4):
+#  - every push to main updates the release-please PR and publishes an `edge` image
+#  - merging the release PR tags the release and publishes `latest`, `X`, `X.Y`, `X.Y.Z`
+# Both happen in one workflow because releases created with GITHUB_TOKEN don't
+# trigger other workflows.
 name: Release
 
 on:
-  schedule:
-    - cron: '0 0 * * *'
+  push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
 
 concurrency:
   group: release
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-
 jobs:
-  release:
+  release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      version: ${{ steps.rp.outputs.version }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
+  docker:
+    needs: release-please
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
-
-      - uses: actions/setup-node@v6
+      - name: Compute version
+        id: v
+        run: |
+          if [ "${{ needs.release-please.outputs.release_created }}" = "true" ]; then
+            echo "version=${{ needs.release-please.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            base=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            echo "version=${base#v}-edge.$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      - name: Run semantic-release
-        run: npx semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=edge
+            type=sha,prefix=edge-,format=short
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }},enable=${{ needs.release-please.outputs.release_created == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }},enable=${{ needs.release-please.outputs.release_created == 'true' }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.version }},enable=${{ needs.release-please.outputs.release_created == 'true' && !startsWith(needs.release-please.outputs.version, '0.') }}
+            type=raw,value=latest,enable=${{ needs.release-please.outputs.release_created == 'true' }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ steps.v.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

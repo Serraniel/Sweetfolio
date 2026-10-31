@@ -1,105 +1,37 @@
-# Development Guide
+# Development
 
-## Prerequisites
+## Requirements
 
-- Node.js 22+
-- npm
-
-## Setup
-
-```bash
-git clone https://github.com/serraniel/sweetfolio.git
-cd sweetfolio
-npm install
-npm run dev
-```
-
-The dev server starts at `http://localhost:5173` with hot module replacement.
+- Node.js ≥ 22.17, npm
+- For E2E tests: `npx playwright install chromium`
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start development server |
-| `npm run build` | Production build (static output) |
-| `npm run preview` | Preview the production build locally |
-| `npm test` | Run tests once |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run check` | Run svelte-check for type errors |
+| Command                                       | Purpose                                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `npm run dev`                                 | Dev server with HMR                                                            |
+| `npm run build` / `npm run preview`           | Production build in `build/` and local preview                                 |
+| `npm run check`                               | Type checking (svelte-check)                                                   |
+| `npm test` / `npm run test:watch`             | Unit tests (Vitest, fake IndexedDB, jsdom where needed)                        |
+| `npm run test:e2e`                            | Playwright on desktop Chrome and a Pixel 7 profile (builds and serves the app) |
+| `npm run format` / `format:check`             | Prettier                                                                       |
+| `npm run licenses:check` / `licenses:notices` | Licence allow list / regenerate `THIRD_PARTY_NOTICES.md`                       |
 
-## Project Structure
+The app version comes from `APP_VERSION`, else the latest git tag, else `package.json`.
 
-```
-src/
-  routes/                    SvelteKit pages
-    +layout.svelte           Root layout (theme provider, nav)
-    +page.svelte             / -- Dashboard
-    assets/
-      +page.svelte           /assets -- Asset list, upload
-      [id]/+page.svelte      /assets/:id -- Asset detail + metrics
-    portfolios/
-      +page.svelte           /portfolios -- Portfolio list, create
-      [id]/+page.svelte      /portfolios/:id -- Portfolio detail + backtest
-    simulation/
-      +page.svelte           /simulation -- Monte Carlo config + results
-    settings/
-      +page.svelte           /settings -- Currency, preferences
-  lib/
-    components/              Reusable UI components
-      layout/                Shell, Nav, ThemeToggle
-      shared/                Buttons, modals, file dropzone, tables
-      assets/                Asset-specific components
-      portfolios/            Portfolio-specific components
-      simulation/            Monte Carlo-specific components
-    charts/                  uPlot wrapper components
-    stores/                  Svelte stores (synced with IndexedDB)
-    engine/                  Financial calculation modules
-    workers/                 Web Workers for heavy computation
-    storage/                 IndexedDB layer
-    parsers/                 CSV parsing and format detection
-    utils/                   Shared utilities (dates, math, formatting)
-static/
-  favicon.svg
-```
+## Testing approach
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed data flow, worker protocol, and module interfaces.
+- `src/lib/core`, parsers, fetchers (mocked `fetch`), storage (fake-indexeddb, including upgrades from old schemas), import/export and sharing have unit tests.
+- E2E tests block all third-party network requests and cover the main user journeys, legacy-data upgrades and the mobile layout.
+- Test names start with the requirement ID from `docs/REQUIREMENTS.md`.
 
-## How to Add a New Page
+## Manual testing checklist
 
-1. Create a directory under `src/routes/` matching the desired URL path
-2. Add a `+page.svelte` file in that directory
-3. Add navigation entry in `src/lib/components/layout/Nav.svelte`
+Things that depend on external services and cannot run in CI:
 
-## How to Add a New Financial Metric
-
-1. Create a calculation module in `src/lib/engine/` (e.g., `src/lib/engine/newmetric.ts`)
-2. Export a pure function that takes price data and returns the computed metric
-3. Add the metric type to `MetricsResult` in `src/lib/types/`
-4. Register the calculation in the worker message handler in `src/lib/workers/calc.worker.ts`
-5. Display the result in the relevant UI component (e.g., `MetricsTable.svelte`)
-
-## How to Add a New Component
-
-1. Place shared/reusable components in `src/lib/components/shared/`
-2. Place feature-specific components in the appropriate subdirectory (e.g., `src/lib/components/assets/`)
-3. Use CSS custom properties for all colors -- never hardcode color values
-4. Components should work in both light and dark themes
-
-## Building for Production
-
-```bash
-npm run build
-```
-
-Output is written to `build/`. This is a static SPA that can be served by any web server. The included Dockerfile packages it with nginx.
-
-## Testing
-
-Tests use Vitest:
-
-```bash
-npm test              # Run once
-npm run test:watch    # Watch mode
-```
-
-Place test files next to the modules they test with a `.test.ts` suffix, or in a `__tests__` directory.
+- Asset lookup by ISIN/WKN/ticker against the live Onvista API (`eod_history`).
+- ECB exchange rates for a USD asset with main currency EUR and USD.
+- Parqet Connect (needs `parqetClientId` in `static/config.json` and a registered redirect URI `<origin>/callback`).
+- Importing a real Portfolio Performance XML file, a real Parqet CSV export and broker CSVs.
+- Opening the Portfolio Performance CSV export in Portfolio Performance.
+- Opening the app with data from a v0.5.x installation.

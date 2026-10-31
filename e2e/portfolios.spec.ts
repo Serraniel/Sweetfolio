@@ -1,0 +1,251 @@
+import { expect, test } from '@playwright/test';
+import { collectErrors, dismissHint, germanCsv, offline, uploadCsv } from './helpers.ts';
+
+test.beforeEach(async ({ page }) => {
+	await offline(page);
+	await dismissHint(page);
+	await uploadCsv(page, [
+		{ name: 'Alpha.csv', content: germanCsv(800, 100, 0.0005, 3) },
+		{ name: 'Beta.csv', content: germanCsv(800, 50, 0.0002, 9) }
+	]);
+});
+
+test('PM-1/PM-2/PM-4 model portfolio backtest and benchmark', async ({ page }) => {
+	const errors = collectErrors(page);
+	await page.goto('/portfolios');
+	await page.getByRole('button', { name: 'New portfolio' }).first().click();
+	const d = page.getByRole('dialog');
+	await d.getByLabel('Name').fill('Sixty Forty');
+	await d.getByLabel('Add asset').selectOption({ label: 'Alpha' });
+	await d.getByRole('button', { name: 'Add', exact: true }).click();
+	await d.getByLabel('Add asset').selectOption({ label: 'Beta' });
+	await d.getByRole('button', { name: 'Add', exact: true }).click();
+	await d.getByLabel('Weight of Alpha in percent').fill('60');
+	await d.getByLabel('Weight of Alpha in percent').blur();
+	await d.getByLabel('Weight of Beta in percent').fill('40');
+	await d.getByLabel('Weight of Beta in percent').blur();
+	await d.getByLabel('Rebalancing in backtest').selectOption('quarterly');
+	await d.getByRole('button', { name: 'Create' }).click();
+	await expect(page).toHaveURL(/portfolios\/sixty-forty/);
+	await expect(page.getByRole('heading', { name: 'Backtest' })).toBeVisible();
+	await expect(page.getByText('Rebalanced quarterly')).toBeVisible();
+	await expect(page.locator('table.metrics tbody td').first()).not.toHaveText('–');
+	await page.getByRole('button', { name: 'Set as benchmark' }).click();
+	await expect(page.getByText('Benchmark', { exact: true }).first()).toBeVisible();
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Benchmark' })).toBeVisible();
+	// With another benchmark, the portfolio's metrics compare against it.
+	await page.goto('/assets');
+	await page.getByRole('link', { name: /Beta/ }).first().click();
+	await page.getByRole('button', { name: 'Set as benchmark' }).click();
+	await page.goto('/portfolios/sixty-forty');
+	await expect(page.getByText('Correlation with benchmark')).toBeVisible();
+	await expect(page.locator('table.metrics .bench').first()).not.toBeEmpty();
+	await expect(page.getByText(/Max .* · benchmark /)).toBeVisible();
+	expect(errors).toEqual([]);
+});
+
+test('PT-3/PT-5/PT-7 tracked portfolio with cash', async ({ page }) => {
+	await page.goto('/portfolios');
+	await page.getByRole('button', { name: 'New portfolio' }).first().click();
+	const d = page.getByRole('dialog');
+	await d.getByLabel('Name').fill('Depot');
+	await d.getByRole('radio', { name: 'Tracked', exact: true }).click();
+	await d.getByLabel('Track cash').check();
+	await d.getByRole('button', { name: 'Create' }).click();
+	await expect(page.getByText('No open positions')).toBeVisible();
+
+	await page.getByRole('radio', { name: 'Transactions' }).click();
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	let tx = page.getByRole('dialog');
+	await tx.getByRole('radio', { name: 'Deposit' }).click();
+	await tx.getByLabel('Date').fill('2019-01-02');
+	await tx.getByLabel('Amount').fill('5000');
+	await tx.getByRole('button', { name: 'Save' }).click();
+
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	tx = page.getByRole('dialog');
+	await tx.getByLabel('Date').fill('2019-01-03');
+	await tx.getByLabel('Asset').selectOption({ label: 'Alpha' });
+	await tx.getByLabel('Quantity').fill('10');
+	await tx.getByLabel('Price per unit').fill('100');
+	await tx.getByLabel('Fee').fill('1');
+	await tx.getByRole('button', { name: 'Save' }).click();
+
+	// Overselling is rejected (PT-3)
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	tx = page.getByRole('dialog');
+	await tx.getByRole('radio', { name: 'Sell' }).click();
+	await tx.getByLabel('Date').fill('2019-02-01');
+	await tx.getByLabel('Asset').selectOption({ label: 'Alpha' });
+	await tx.getByLabel('Quantity').fill('20');
+	await tx.getByLabel('Price per unit').fill('100');
+	await expect(tx.getByText('You only hold 10 units')).toBeVisible();
+	await expect(tx.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await tx.getByRole('button', { name: 'Cancel' }).click();
+
+	await page.getByRole('radio', { name: 'Holdings' }).click();
+	await expect(page.locator('table.holdings')).toContainText('Alpha');
+	await expect(page.getByText('Cash', { exact: true }).first()).toBeVisible();
+	await expect(page.getByText(/3[.,]999/).first()).toBeVisible();
+
+	// Tracked portfolios are compared by their time-weighted return (CP-5).
+	await page.goto('/compare?portfolios=depot&slugs=alpha');
+	await expect(page.getByText('Portfolio (time-weighted, actual)')).toBeVisible();
+	await expect(page.locator('table').first().locator('tbody tr').first().locator('td').nth(1)).not.toHaveText('–');
+});
+
+test('ST-1/ST-4 strategy generates portfolios', async ({ page }) => {
+	await page.goto('/strategies');
+	await page.getByRole('button', { name: 'New strategy' }).first().click();
+	await page.getByRole('dialog').getByLabel('Name').fill('Core');
+	await page.getByRole('dialog').getByRole('button', { name: 'Create' }).click();
+	await expect(page).toHaveURL(/strategies\/core/);
+	await page.getByRole('button', { name: 'Asset' }).first().click();
+	await page.getByLabel('Asset to add').selectOption({ label: 'Alpha' });
+	await page.getByRole('button', { name: 'Asset' }).first().click();
+	await page.getByLabel('Asset to add').selectOption({ label: 'Beta' });
+	await expect(page.getByText(/Children sum to/)).toBeVisible();
+	await page.getByRole('button', { name: 'Normalize all' }).click();
+	await expect(page.getByText(/Children sum to/)).toHaveCount(0);
+	await expect(page.getByText('Saved')).toBeVisible();
+	await page.getByRole('button', { name: 'Generate portfolios' }).click();
+	await page.getByRole('dialog').getByRole('radio', { name: 'One portfolio' }).click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: /Generate/ })
+		.click();
+	await expect(page.getByRole('heading', { name: 'Generated portfolios' })).toBeVisible();
+	await expect(page.getByText('In sync')).toBeVisible();
+});
+
+test('MC-1/MC-7 simulation runs and inspects a portfolio', async ({ page }) => {
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByLabel('Number of portfolios').fill('50');
+	await expect(page.getByText('at least 100 portfolios')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+	await page.getByLabel('Number of portfolios').fill('20000000');
+	await expect(page.getByText(/Large run: needs about .* GB/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeEnabled();
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByRole('heading', { name: 'Efficient frontier' })).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByRole('heading', { name: 'Portfolio inspector' })).toBeVisible();
+	await page.getByRole('button', { name: 'Min volatility' }).click();
+	await page.getByRole('button', { name: 'Save as portfolio' }).click();
+	await page.getByRole('link', { name: 'Open' }).click();
+	await expect(page).toHaveURL(/portfolios\/sim-/);
+	// Saved like the simulation values it: with the weights kept (MC-8).
+	await expect(page.getByText('Rebalanced monthly')).toBeVisible();
+});
+
+test('MC-4 limits for all assets and chart zoom', async ({ page }) => {
+	// Gamma ends earlier than the others, so it limits the common history.
+	await uploadCsv(page, [{ name: 'Gamma.csv', content: germanCsv(700, 70, 0.0003, 5) }]);
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByText('Weight constraints').click();
+	await page.getByLabel('Minimum number of assets').fill('9');
+	await expect(page.getByText(/At least 9 assets required/)).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run simulation' })).toBeDisabled();
+	await page.getByLabel('Minimum number of assets').fill('2');
+	await page.getByLabel('Minimum weight per held asset').fill('20');
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByText(/frontier approximated/)).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByText(/\(end of Gamma\)/)).toBeVisible();
+	const weights = page.locator('.weights li .num');
+	for (const w of await weights.allTextContents()) {
+		const v = Number.parseFloat(w.replace(',', '.'));
+		expect(v === 0 || v >= 20).toBe(true);
+	}
+	const box = (await page.locator('.frontier canvas').boundingBox())!;
+	await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+	await page.mouse.down();
+	await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 5 });
+	await page.mouse.up();
+	await page.getByRole('button', { name: 'Reset zoom' }).click();
+	await expect(page.getByRole('button', { name: 'Reset zoom' })).toBeHidden();
+});
+
+test('UI long portfolio names are truncated inside the card', async ({ page }) => {
+	await page.goto('/portfolios');
+	await page.getByRole('button', { name: 'New portfolio' }).first().click();
+	const d = page.getByRole('dialog');
+	await d.getByLabel('Name').fill('Sim: Investor B 41% / Deutsche Börse 25% / TotalEnergies (ehem. Total) 12%');
+	await d.getByLabel('Add asset').selectOption({ label: 'Alpha' });
+	await d.getByRole('button', { name: 'Add', exact: true }).click();
+	await d.getByRole('button', { name: 'Create' }).click();
+	await expect(page.getByRole('heading', { name: 'Backtest' })).toBeVisible();
+	await page.goto('/portfolios');
+	const card = page.locator('article').first();
+	await expect(card).toBeVisible();
+	const overflow = await card.evaluate((el) => {
+		const box = el.getBoundingClientRect();
+		return [...el.querySelectorAll('*')].some((c) => c.getBoundingClientRect().right > box.right + 0.5);
+	});
+	expect(overflow).toBe(false);
+});
+
+test('MC-4 limits stay with their asset after an asset is deleted', async ({ page }) => {
+	await uploadCsv(page, [{ name: 'Gold.csv', content: germanCsv(800, 70, 0.0012, 5) }]);
+	await page.goto('/simulation');
+	await page.getByRole('button', { name: 'Select all' }).click();
+	// Deleting a selected asset in the same session must not shift the per-asset limits.
+	await page.getByRole('link', { name: 'Assets' }).first().click();
+	await page.getByRole('link', { name: /Alpha/ }).first().click();
+	await page.getByRole('button', { name: 'Delete asset' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+	await page.getByRole('link', { name: 'Simulation' }).first().click();
+	await page.getByRole('button', { name: '1K' }).click();
+	await page.getByText('Weight constraints').click();
+	await page.getByLabel('Maximum weight of Gold').fill('20');
+	await page.getByRole('button', { name: 'Run simulation' }).click();
+	await expect(page.getByRole('heading', { name: 'Portfolio inspector' })).toBeVisible({ timeout: 20_000 });
+	await page.getByRole('button', { name: 'Max return' }).click();
+	await expect(page.locator('.weights li').filter({ hasText: 'Gold' }).locator('.num')).toHaveText('20.0%');
+	await expect(page.getByText('The settings changed since this run')).toBeHidden();
+	await page.getByLabel('Maximum weight of Gold').fill('30');
+	await expect(page.getByText('The settings changed since this run')).toBeVisible();
+});
+
+test('CP-5 compare portfolios with each other and with assets', async ({ page }) => {
+	for (const [name, asset] of [
+		['Only Alpha', 'Alpha'],
+		['Only Beta', 'Beta']
+	] as const) {
+		await page.goto('/portfolios');
+		await page.getByRole('button', { name: 'New portfolio' }).first().click();
+		const d = page.getByRole('dialog');
+		await d.getByLabel('Name').fill(name);
+		await d.getByLabel('Add asset').selectOption({ label: asset });
+		await d.getByRole('button', { name: 'Add', exact: true }).click();
+		await d.getByRole('button', { name: 'Create' }).click();
+		await expect(page.getByRole('heading', { name: 'Backtest' })).toBeVisible();
+	}
+	await page.goto('/portfolios');
+	await page.getByLabel('Select Only Alpha for comparison').check();
+	await expect(page.getByRole('button', { name: 'Compare' })).toBeDisabled();
+	await page.getByLabel('Select Only Beta for comparison').check();
+	await page.getByRole('button', { name: 'Compare' }).click();
+	await expect(page).toHaveURL(/compare\?portfolios=/);
+	await page.getByLabel('Add to comparison').selectOption({ label: 'Alpha' });
+	await page.getByRole('button', { name: 'Add', exact: true }).click();
+	await expect(page).toHaveURL(/slugs=alpha/);
+	const table = page.locator('table').first();
+	await expect(table.locator('thead th')).toHaveText(['Metric', 'Alpha', 'Only Alpha', 'Only Beta']);
+	// A portfolio holding only Alpha performs exactly like Alpha.
+	const totals = table.locator('tbody tr').first().locator('td');
+	await expect(totals.nth(0)).not.toHaveText('–');
+	await expect(totals.nth(1)).toHaveText((await totals.nth(0).textContent())!);
+	await expect(page.getByText('Portfolio (backtest)').first()).toBeVisible();
+	await page.getByRole('button', { name: 'Remove Only Beta' }).click();
+	await expect(page).not.toHaveURL(/only-beta/);
+	// The log scale (CH-7) is offered on value / % charts, not on drawdowns, and is remembered.
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveCount(1);
+	await page.getByRole('button', { name: 'Log' }).click();
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-pressed', 'true');
+	await page.reload();
+	await expect(page.getByRole('button', { name: 'Log' })).toHaveAttribute('aria-pressed', 'true');
+});

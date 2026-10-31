@@ -1,62 +1,30 @@
 # Contributing to Sweetfolio
 
-Thanks for your interest in contributing to Sweetfolio. This document covers the process and conventions.
+## Setup
 
-## Development Setup
+Node.js ≥ 22.17 and npm.
 
 ```bash
-git clone https://github.com/serraniel/sweetfolio.git
-cd sweetfolio
-npm install
+npm ci
 npm run dev
 ```
 
-Requirements: Node.js 22+, npm. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full details.
+## Before opening a PR
 
-## Code Style
+```bash
+npm run format       # Prettier
+npm run check        # svelte-check / TypeScript
+npm test             # unit tests
+npm run test:e2e     # Playwright (installs need: npx playwright install chromium)
+```
 
-- **TypeScript** throughout -- no plain JavaScript files
-- **Svelte 5** with runes syntax
-- **CSS custom properties** for all colors and theming -- no CSS framework
-- Keep dependencies minimal; propose new ones in the PR description with justification
+CI runs all of these plus a licence check and a Docker build.
 
-## Commit Conventions
+## Conventions
 
-This project uses [conventional commits](https://www.conventionalcommits.org/) for automated semantic versioning via semantic-release.
-
-Format: `<type>(<scope>): <description>`
-
-Common types:
-- `feat` -- new feature (triggers minor version bump)
-- `fix` -- bug fix (triggers patch version bump)
-- `docs` -- documentation changes
-- `refactor` -- code restructuring without behavior change
-- `test` -- adding or updating tests
-- `chore` -- build, CI, tooling changes
-
-Breaking changes: add `BREAKING CHANGE:` in the commit body or use `!` after the type (e.g., `feat!: ...`). This triggers a major version bump.
-
-## Pull Request Process
-
-1. Fork the repository and create a branch from `main`
-2. Make your changes with conventional commit messages
-3. Ensure all tests pass: `npm test`
-4. Run type checking: `npm run check`
-5. Open a PR against `main` with a clear description of the changes
-
-PRs are automatically built and tested via GitHub Actions. A maintainer will review your changes.
-
-## Architecture
-
-The app is fully client-side. All computation runs in Web Workers, data is stored in IndexedDB, and the build output is a static SPA served by nginx.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture overview including project structure, data flow, worker protocol, and module interfaces.
-
-## Key Conventions
-
-- Financial calculations go in `src/lib/engine/`
-- Heavy computation must run in Web Workers (`src/lib/workers/`)
-- All chart components use uPlot and live in `src/lib/charts/`
-- UI components are organized by feature domain under `src/lib/components/`
-- Svelte stores sync with IndexedDB and live in `src/lib/stores/`
-- Theming uses CSS custom properties on `:root` with a `data-theme` attribute for light/dark switching
+- **Conventional commits / PR titles** (`feat(scope): …`, `fix: …`, `perf: …`, `deps: …`, `refactor: …`, …). PRs are squash-merged, so the PR title becomes the commit and drives the changelog. `!` marks breaking changes.
+- **Releases** are automated with [release-please](https://github.com/googleapis/release-please): it maintains a release PR with the next version and changelog; merging it publishes the release and Docker images. Every push to `main` publishes an `edge` image.
+- **Requirements** live in `docs/REQUIREMENTS.md` with IDs (e.g. `PT-4`). Reference the ID in tests (`describe('PT-4 …')`) and keep the document up to date when behaviour changes.
+- **Pure logic first**: calculations go into `src/lib/core` (no DOM, no Svelte) with unit tests; UI only composes them.
+- **Dependencies**: keep them minimal. Runtime dependencies must use a licence from the allow list in `scripts/licenses.mjs`.
+- Imports use the `#lib/…` alias with explicit `.ts` extensions.

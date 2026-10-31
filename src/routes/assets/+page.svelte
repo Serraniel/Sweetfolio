@@ -1,1102 +1,480 @@
 <script lang="ts">
-	import Card from '$lib/components/shared/Card.svelte';
-	import Button from '$lib/components/shared/Button.svelte';
-	import FileDropzone from '$lib/components/shared/FileDropzone.svelte';
-	import FormatConfigModal from '$lib/components/shared/FormatConfigModal.svelte';
-	import { assets, addAsset, removeAsset } from '$lib/stores/assets';
-	import { validateISIN, validateWKN, validateTicker, fetchByISIN, fetchByWKN, fetchByTicker, type ScraperResult } from '$lib/scraper/index';
-	import { encodeAssetList } from '$lib/sharing/codec';
-	import ShareButton from '$lib/components/sharing/ShareButton.svelte';
-	import { detectFormat, isFormatConfident } from '$lib/parsers/format-detection';
-	import { parseCSV } from '$lib/parsers/normalization';
-	import { parseCSVRows } from '$lib/parsers/csv';
-	import { settings } from '$lib/stores/settings';
-	import { autoFetchCurrencyRates } from '$lib/stores/currency-auto-fetch';
-	import { benchmarkRef, setBenchmark } from '$lib/stores/benchmark';
-	import { resolveAssetFromFilename } from '$lib/utils/resolve-asset';
-	import { computeAssetHealth, type AssetHealthMetrics } from '$lib/engine/data-quality';
-	import { slugify } from '$lib/utils/slug';
 	import { goto } from '$app/navigation';
-	import { ASSET_CLASSIFICATIONS } from '$lib/types';
-	import type { DetectedFormat, AssetClassification } from '$lib/types';
+	import { ASSET_CLASSIFICATIONS, COMMON_CURRENCIES, type Asset, type AssetClassification } from '#lib/domain/types.ts';
+	import { newAsset } from '#lib/domain/factories.ts';
+	import { computeAssetHealth, type AssetHealth } from '#lib/core/data-quality.ts';
+	import { detectIdentifier } from '#lib/parsers/identifiers.ts';
+	import { fetchAny } from '#lib/fetchers/market-data.ts';
+	import type { InstrumentData } from '#lib/fetchers/types.ts';
+	import { encodeAssetList, shareUrl } from '#lib/sharing/codec.ts';
+	import { app } from '#lib/state/app.svelte.ts';
+	import { jobs } from '#lib/state/jobs.svelte.ts';
+	import { notify } from '#lib/state/toasts.svelte.ts';
+	import { assetFromParse, importPriceFiles, type PendingFile } from '#lib/state/asset-import.ts';
+	import { confirmAction } from '#lib/ui/confirm.svelte.ts';
+	import * as fmt from '#lib/format.ts';
+	import PageHeader from '#lib/ui/PageHeader.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Icon from '#lib/ui/Icon.svelte';
+	import EmptyState from '#lib/ui/EmptyState.svelte';
+	import FileDrop from '#lib/components/FileDrop.svelte';
+	import FormatDialog from '#lib/components/FormatDialog.svelte';
+	import ShareButton from '#lib/components/ShareButton.svelte';
 
-	// Comparison selection state
-	let selectedForCompare: Set<string> = $state(new Set());
+	// --- Lookup (AM-7)
+	let lookup = $state('');
+	let fetching = $state(false);
+	let lookupError = $state<string | null>(null);
+	let found = $state<InstrumentData | null>(null);
+	let draft = $state({ name: '', currency: 'EUR', classification: 'unknown' as AssetClassification });
+	const idType = $derived(detectIdentifier(lookup));
+	const idHint = $derived(
+		!lookup.trim()
+			? 'ISIN, WKN or crypto ticker (e.g. IE00B4L5Y983, A0RPWH, BTC)'
+			: idType === 'isin'
+				? 'Valid ISIN'
+				: idType === 'wkn'
+					? 'Valid WKN'
+					: idType === 'ticker'
+						? 'Crypto ticker'
+						: 'Not a valid identifier'
+	);
+	const existingMatch = $derived(
+		found ? app.assets.find((a) => (found?.isin && a.isin === found.isin) || (found?.wkn && a.wkn === found.wkn)) : null
+	);
 
-	function toggleCompareSelection(assetId: string) {
-		const next = new Set(selectedForCompare);
-		if (next.has(assetId)) {
-			next.delete(assetId);
-		} else {
-			next.add(assetId);
-		}
-		selectedForCompare = next;
-	}
-
-	function goToCompare() {
-		if (selectedForCompare.size < 2) return;
-		const slugs = Array.from(selectedForCompare)
-			.map((id) => {
-				const asset = $assets.find((a) => a.id === id);
-				return asset ? slugify(asset.name) : '';
-			})
-			.filter((s) => s.length > 0)
-			.join(',');
-		goto(`/compare?slugs=${encodeURIComponent(slugs)}`);
-	}
-
-	function isBenchmark(assetId: string): boolean {
-		const ref = $benchmarkRef;
-		return ref !== null && ref.type === 'asset' && ref.id === assetId;
-	}
-
-	async function toggleBenchmark(assetId: string) {
-		if (isBenchmark(assetId)) {
-			await setBenchmark(null);
-		} else {
-			await setBenchmark({ type: 'asset', id: assetId });
-		}
-	}
-
-	let showFormatModal = $state(false);
-	let csvPreview: string[][] = $state([]);
-	let detectedFormat: DetectedFormat = $state({
-		delimiter: ',',
-		decimalSeparator: '.',
-		dateFormat: 'YYYY-MM-DD',
-		hasHeader: true,
-		dateColumn: 0,
-		closeColumn: 1
-	});
-	let rawText = $state('');
-	let importFileName = $state('');
-	let assetName = $state('');
-	let assetCurrency = $state('EUR');
-	let assetClassification: AssetClassification = $state('unknown');
-	let classificationFilter: AssetClassification | 'all' = $state('all');
-	let assetIsin: string | null = $state(null);
-	let assetWkn: string | null = $state(null);
-
-	// Toast notifications for auto-import feedback
-	let toasts: Array<{ id: number; message: string }> = $state([]);
-	let toastCounter = 0;
-
-	function showToast(message: string) {
-		const id = ++toastCounter;
-		toasts = [...toasts, { id, message }];
-		setTimeout(() => {
-			toasts = toasts.filter((t) => t.id !== id);
-		}, 4000);
-	}
-
-	const autoImportEnabled = $derived($settings.autoImportMode !== false);
-	const autoResolveEnabled = $derived($settings.autoResolveNames !== false);
-	let resolving = $state(false);
-
-	// Identifier lookup state
-	let lookupInput = $state('');
-	let lookupFetching = $state(false);
-	let lookupError: string | null = $state(null);
-	let lookupResult: ScraperResult | null = $state(null);
-	let lookupEditName = $state('');
-	let lookupEditCurrency = $state('');
-	let lookupEditClassification: AssetClassification = $state('unknown');
-	let fetchedIdentifier: string | null = $state(null);
-	let fetchedIdentifierType: IdentifierType = $state(null);
-
-	type IdentifierType = 'isin' | 'wkn' | 'ticker' | null;
-
-	const lookupIdentifierType: IdentifierType = $derived.by(() => {
-		const v = lookupInput.trim().toUpperCase();
-		if (v.length === 0) return null;
-		if (validateISIN(v)) return 'isin';
-		if (validateWKN(v)) return 'wkn';
-		if (validateTicker(v)) return 'ticker';
-		return null;
-	});
-
-	const lookupValid = $derived(lookupIdentifierType !== null);
-	const lookupHint = $derived.by(() => {
-		const v = lookupInput.trim();
-		if (v.length === 0) return '';
-		if (lookupIdentifierType === 'isin') return 'Valid ISIN';
-		if (lookupIdentifierType === 'wkn') return 'Valid WKN';
-		if (lookupIdentifierType === 'ticker') return 'Crypto ticker';
-		return 'Not a valid ISIN, WKN, or crypto ticker';
-	});
-
-	async function handleLookup() {
-		const identifier = lookupInput.trim().toUpperCase();
-		if (!lookupValid || lookupFetching) return;
-
-		lookupFetching = true;
+	async function doLookup(e?: Event) {
+		e?.preventDefault();
+		if (!idType || fetching) return;
+		fetching = true;
 		lookupError = null;
-		lookupResult = null;
-		fetchedIdentifier = identifier;
-		fetchedIdentifierType = lookupIdentifierType;
-
-		try {
-			const outcome =
-				fetchedIdentifierType === 'isin' ? await fetchByISIN(identifier)
-				: fetchedIdentifierType === 'wkn' ? await fetchByWKN(identifier)
-				: await fetchByTicker(identifier);
-
-			if (outcome.success) {
-				lookupResult = outcome.data;
-				lookupEditName = outcome.data.name ?? identifier;
-				lookupEditCurrency = outcome.data.currency ?? 'EUR';
-				lookupEditClassification = outcome.data.classification ?? 'unknown';
-			} else {
-				lookupError = outcome.error.message;
-			}
-		} catch {
-			lookupError = 'An unexpected error occurred. Please try again or upload a CSV file instead.';
-		} finally {
-			lookupFetching = false;
+		found = null;
+		const outcome = await fetchAny(lookup, app.settings);
+		fetching = false;
+		if (!outcome.ok) {
+			lookupError = outcome.error;
+			return;
 		}
+		found = outcome.data;
+		draft = {
+			name: outcome.data.name ?? lookup.toUpperCase(),
+			currency: outcome.data.currency ?? 'EUR',
+			classification: outcome.data.classification ?? 'unknown'
+		};
 	}
 
-	async function handleLookupConfirm() {
-		if (!lookupResult || !fetchedIdentifier) return;
-
-		const asset = {
-			id: crypto.randomUUID(),
-			name: lookupEditName || fetchedIdentifier,
-			isin: fetchedIdentifierType === 'isin' ? fetchedIdentifier : null,
-			wkn: fetchedIdentifierType === 'wkn' ? fetchedIdentifier : null,
-			currency: lookupEditCurrency,
-			classification: lookupEditClassification,
-			prices: $state.snapshot(lookupResult.prices),
-			formatConfig: null,
-			rawCSV: null,
-			rawCSVStoredAt: null,
-			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString(),
+	async function saveLookup() {
+		if (!found) return;
+		const id = lookup.trim().toUpperCase();
+		const a = newAsset({
+			name: draft.name.trim() || id,
+			isin: found.isin ?? (idType === 'isin' ? id : null),
+			wkn: found.wkn ?? (idType === 'wkn' ? id : null),
+			currency: draft.currency,
+			classification: draft.classification,
+			prices: found.prices,
 			lastRefreshedAt: new Date().toISOString()
-		};
-
-		await addAsset(asset);
-		autoFetchCurrencyRates();
-		showToast(`Imported "${asset.name}" (${asset.prices.length} data points)`);
-		handleLookupCancel();
-	}
-
-	function handleLookupCancel() {
-		lookupInput = '';
-		lookupResult = null;
-		lookupError = null;
-		lookupEditName = '';
-		lookupEditCurrency = '';
-		lookupEditClassification = 'unknown';
-		fetchedIdentifier = null;
-		fetchedIdentifierType = null;
-	}
-
-	// Queue for multi-file import
-	let pendingFiles: File[] = $state([]);
-	let currentFileIndex = $state(0);
-	let totalFiles = $state(0);
-
-	// Derive display list from store with health metrics
-	const assetList = $derived(
-		$assets.map((a) => {
-			const health = computeAssetHealth(a.prices);
-			return {
-				id: a.id,
-				name: a.name,
-				isin: a.isin,
-				currency: a.currency,
-				classification: a.classification ?? 'unknown',
-				dataPoints: a.prices.length,
-				dateRange:
-					a.prices.length > 0
-						? `${a.prices[0].date} \u2013 ${a.prices[a.prices.length - 1].date}`
-						: '',
-				health
-			};
-		})
-	);
-
-	const filteredAssetList = $derived(
-		classificationFilter === 'all'
-			? assetList
-			: assetList.filter((a) => a.classification === classificationFilter)
-	);
-
-	function handleFiles(files: FileList) {
-		if (files.length === 0) return;
-
-		const fileArray = Array.from(files);
-
-		if (autoImportEnabled) {
-			processFilesWithAutoImport(fileArray);
-		} else {
-			pendingFiles = fileArray;
-			currentFileIndex = 0;
-			totalFiles = fileArray.length;
-			loadFileIntoModal(fileArray[0]);
-		}
-	}
-
-	function readFileAsText(file: File): Promise<string> {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => resolve(reader.result as string);
-			reader.onerror = () => reject(reader.error);
-			reader.readAsText(file);
 		});
+		await app.saveAsset(a);
+		notify.success(`Added “${a.name}”`, { label: 'Open', href: `/assets/${app.assetSlug(a.id)}` });
+		found = null;
+		lookup = '';
+		void jobs.fetchCurrencyRates();
 	}
 
-	async function processFilesWithAutoImport(files: File[]) {
-		const ambiguousFiles: File[] = [];
+	// --- CSV upload (AM-1, AM-3)
+	let queue = $state<PendingFile[]>([]);
+	let queueIndex = $state(0);
+	let queueTotal = $state(0);
+	let formatOpen = $state(false);
+	const currentFile = $derived(queue[0] ?? null);
 
-		for (const file of files) {
-			const text = await readFileAsText(file);
-			const fmt = detectFormat(text);
-
-			if (isFormatConfident(text, fmt)) {
-				let name = file.name.replace(/\.csv$/i, '');
-				let isin: string | null = null;
-				let wkn: string | null = null;
-				let currency = assetCurrency;
-
-				if (autoResolveEnabled) {
-					const resolved = await resolveAssetFromFilename(file.name);
-					if (resolved) {
-						name = resolved.name;
-						isin = resolved.isin;
-						wkn = resolved.wkn;
-						if (resolved.currency) currency = resolved.currency;
-					}
-				}
-
-				const result = parseCSV(text, fmt);
-
-				const asset = {
-					id: crypto.randomUUID(),
-					name,
-					isin,
-					wkn,
-					currency,
-					classification: 'unknown' as AssetClassification,
-					prices: result.prices,
-					formatConfig: result.detectedFormat,
-					rawCSV: text,
-					rawCSVStoredAt: new Date().toISOString(),
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					lastRefreshedAt: null
-				};
-
-				await addAsset(asset);
-				showToast(`Imported "${name}" (${result.prices.length} data points)`);
-			} else {
-				ambiguousFiles.push(file);
-			}
+	async function onFiles(files: File[]) {
+		const { imported, pending } = await importPriceFiles(files);
+		for (const a of imported) notify.success(`Imported “${a.name}” (${a.prices.length} prices)`);
+		if (pending.length) {
+			queue = pending;
+			queueIndex = 0;
+			queueTotal = pending.length;
+			formatOpen = true;
 		}
-
-		autoFetchCurrencyRates();
-
-		// Queue ambiguous files for manual configuration
-		if (ambiguousFiles.length > 0) {
-			pendingFiles = ambiguousFiles;
-			currentFileIndex = 0;
-			totalFiles = ambiguousFiles.length;
-			loadFileIntoModal(ambiguousFiles[0]);
-		}
+		if (imported.length) void jobs.fetchCurrencyRates();
 	}
 
-	async function loadFileIntoModal(file: File) {
-		importFileName = file.name.replace(/\.csv$/i, '');
-		assetName = importFileName;
-
-		rawText = await readFileAsText(file);
-		const fmt = detectFormat(rawText);
-		detectedFormat = fmt;
-		csvPreview = parseCSVRows(rawText, fmt.delimiter).slice(0, 10);
-		showFormatModal = true;
-
-		// Resolve asset name from ISIN/WKN in filename (non-blocking)
-		assetIsin = null;
-		assetWkn = null;
-		if (autoResolveEnabled) {
-			resolving = true;
-			resolveAssetFromFilename(file.name)
-				.then((resolved) => {
-					if (resolved && showFormatModal) {
-						assetName = resolved.name;
-						assetIsin = resolved.isin;
-						assetWkn = resolved.wkn;
-						if (resolved.currency) assetCurrency = resolved.currency;
-					}
-				})
-				.finally(() => {
-					resolving = false;
-				});
-		}
+	function nextFile() {
+		queue = queue.slice(1);
+		queueIndex++;
+		if (queue.length) setTimeout(() => (formatOpen = true), 50);
+		else void jobs.fetchCurrencyRates();
 	}
 
-	async function handleImportConfirm() {
-		const result = parseCSV(rawText, detectedFormat);
+	// --- List (AM-5)
+	let filter = $state<AssetClassification | 'all'>('all');
+	let search = $state('');
+	let sort = $state<'name' | 'return' | 'volatility' | 'points' | 'updated'>('name');
+	let selected = $state<string[]>([]);
 
-		const asset = {
-			id: crypto.randomUUID(),
-			name: assetName || importFileName,
-			isin: assetIsin,
-			wkn: assetWkn,
-			currency: assetCurrency,
-			classification: assetClassification,
-			prices: result.prices,
-			formatConfig: result.detectedFormat,
-			rawCSV: rawText,
-			rawCSVStoredAt: new Date().toISOString(),
-			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString(),
-			lastRefreshedAt: null
+	const healthCache = new WeakMap<Asset, AssetHealth>();
+	function health(a: Asset): AssetHealth {
+		let h = healthCache.get(a);
+		if (!h) healthCache.set(a, (h = computeAssetHealth(a.prices)));
+		return h;
+	}
+
+	const classes = $derived(ASSET_CLASSIFICATIONS.filter((c) => app.assets.some((a) => a.classification === c)));
+	const rows = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		const list = app.assets.filter(
+			(a) =>
+				(filter === 'all' || a.classification === filter) &&
+				(!q || a.name.toLowerCase().includes(q) || a.isin?.toLowerCase().includes(q) || a.wkn?.toLowerCase().includes(q))
+		);
+		const by: Record<typeof sort, (a: Asset, b: Asset) => number> = {
+			name: (a, b) => a.name.localeCompare(b.name),
+			return: (a, b) => health(b).annualizedReturn - health(a).annualizedReturn,
+			volatility: (a, b) => health(a).volatility - health(b).volatility,
+			points: (a, b) => b.prices.length - a.prices.length,
+			updated: (a, b) => b.updatedAt.localeCompare(a.updatedAt)
 		};
-
-		await addAsset(asset);
-		autoFetchCurrencyRates();
-
-		showFormatModal = false;
-		rawText = '';
-		csvPreview = [];
-		assetName = '';
-		assetClassification = 'unknown';
-		assetIsin = null;
-		assetWkn = null;
-
-		// Process next file in the queue
-		currentFileIndex++;
-		if (currentFileIndex < pendingFiles.length) {
-			loadFileIntoModal(pendingFiles[currentFileIndex]);
-		} else {
-			pendingFiles = [];
-			currentFileIndex = 0;
-			totalFiles = 0;
-		}
-	}
-
-	const sharableIsins = $derived(
-		$assets
-			.filter((a) => a.isin)
-			.map((a) => a.isin as string)
-	);
-
-	async function handleShareAsset(isin: string, name: string) {
-		const hash = encodeAssetList([isin]);
-		const url = `${window.location.origin}${window.location.pathname}${hash}`;
-		try {
-			await navigator.clipboard.writeText(url);
-			showToast(`Link for "${name}" copied`);
-		} catch {
-			showToast('Could not copy to clipboard');
-		}
-	}
-
-	const shareAllUrl = $derived.by(() => {
-		if (sharableIsins.length === 0) return '';
-		const hash = encodeAssetList(sharableIsins);
-		return `${window.location.origin}${window.location.pathname}${hash}`;
+		return list.sort(by[sort]);
 	});
+	const selectedIsins = $derived(selected.map((id) => app.assetById.get(id)?.isin).filter((x): x is string => !!x));
 
-	async function handleDelete(id: string) {
-		if (!confirm('Delete this asset? This cannot be undone.')) return;
-		await removeAsset(id);
+	function toggle(id: string) {
+		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+	}
+
+	async function remove(a: Asset) {
+		const ok = await confirmAction({
+			title: 'Delete asset',
+			message: `Delete “${a.name}”? It is also removed from portfolios, strategies and transactions.`,
+			confirmLabel: 'Delete',
+			danger: true
+		});
+		if (!ok) return;
+		await app.deleteAsset(a.id);
+		selected = selected.filter((x) => x !== a.id);
+		notify.show(`Deleted “${a.name}”`);
 	}
 </script>
 
-<svelte:head>
-	<title>Assets – Sweetfolio</title>
-</svelte:head>
+<PageHeader title="Assets" subtitle="Price histories for securities, funds and crypto.">
+	{#snippet actions()}
+		{#if app.assets.some((a) => a.isin || a.wkn)}
+			<Button icon="refresh" loading={jobs.refreshing} onclick={() => jobs.refreshAssets(app.assets.filter((a) => a.isin || a.wkn))}
+				>Refresh all</Button
+			>
+		{/if}
+	{/snippet}
+</PageHeader>
 
-<div class="assets-page">
-	<header class="page-header">
-		<div class="page-header-row">
-			<div>
-				<h1>Assets</h1>
-				<p class="page-subtitle">Manage your uploaded securities data</p>
-			</div>
-			{#if $assets.length > 0}
-				<div class="header-actions">
-					<span title={sharableIsins.length === 0 ? 'No assets have an ISIN — only assets with ISINs can be shared via URL' : `Share ${sharableIsins.length} asset(s) with ISINs`}>
-						<ShareButton
-							url={shareAllUrl}
-							title="Sweetfolio Assets"
-							disabled={sharableIsins.length === 0}
-							ontoast={showToast}
-						/>
-					</span>
-				</div>
-			{/if}
-		</div>
-	</header>
-
-	<section class="upload-section">
-		<FileDropzone onfiles={handleFiles} />
-	</section>
-
-	<section class="lookup-section">
-		<Card>
-			<div class="lookup-header">
-				<h3>Or look up by identifier</h3>
-				<p class="lookup-subtitle">Fetch historical price data by ISIN or WKN from Onvista</p>
-			</div>
-
-			<div class="lookup-input-row">
-				<div class="lookup-field">
+<div class="stack" style="--gap: 20px">
+	<div class="add-grid">
+		<Card title="Look up by identifier">
+			<form class="stack" style="--gap: 10px" onsubmit={doLookup}>
+				<div class="lookup-row">
 					<input
-						type="text"
-						class="lookup-input"
-						placeholder="Enter ISIN, WKN or crypto ticker..."
-						bind:value={lookupInput}
-						disabled={lookupFetching}
-						onkeydown={(e) => { if (e.key === 'Enter' && lookupValid) handleLookup(); }}
+						class="input"
+						bind:value={lookup}
+						placeholder="ISIN, WKN or ticker"
+						aria-label="Identifier"
+						aria-describedby="lookup-hint"
+						autocapitalize="characters"
+						autocomplete="off"
+						spellcheck="false"
+						aria-invalid={!!lookup.trim() && !idType}
 					/>
-					{#if lookupHint}
-						<span class="lookup-hint" class:valid={lookupValid} class:invalid={!lookupValid}>
-							{lookupHint}
-						</span>
-					{/if}
+					<Button type="submit" variant="primary" icon="search" loading={fetching} disabled={!idType}>Fetch</Button>
 				</div>
-				<Button
-					variant="primary"
-					disabled={!lookupValid || lookupFetching}
-					onclick={handleLookup}
-				>
-					{#if lookupFetching}
-						Fetching...
-					{:else}
-						Fetch
-					{/if}
-				</Button>
-			</div>
-
-			{#if lookupError}
-				<div class="lookup-error">
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<circle cx="12" cy="12" r="10"/>
-						<line x1="15" y1="9" x2="9" y2="15"/>
-						<line x1="9" y1="9" x2="15" y2="15"/>
-					</svg>
-					<span>{lookupError}</span>
-				</div>
-			{/if}
-
-			{#if lookupResult}
-				<div class="lookup-preview">
-					<div class="preview-grid">
-						<label class="preview-label">
-							Name
-							<input
-								type="text"
-								class="preview-input"
-								bind:value={lookupEditName}
-							/>
-						</label>
-						<label class="preview-label">
-							Currency
-							<input
-								type="text"
-								class="preview-input preview-input--short"
-								bind:value={lookupEditCurrency}
-							/>
-						</label>
-						<label class="preview-label">
-							Classification
-							<select class="preview-input preview-input--short" bind:value={lookupEditClassification}>
-								{#each ASSET_CLASSIFICATIONS as cls}
-									<option value={cls}>{cls.toUpperCase()}</option>
-								{/each}
+				<p id="lookup-hint" class="hint" class:pos={!!idType}>{idHint}</p>
+				{#if lookupError}<p class="error-text">{lookupError}</p>{/if}
+			</form>
+			{#if found}
+				<div class="preview stack" style="--gap: 10px">
+					<div class="row" style="--gap: 6px">
+						<Badge tone="accent">{found.prices.length} prices</Badge>
+						<Badge>{fmt.date(found.prices[0]?.date)} – {fmt.date(found.prices.at(-1)?.date)}</Badge>
+						<Badge>via {found.source}</Badge>
+					</div>
+					{#if existingMatch}<p class="small warn">Already in your library as “{existingMatch.name}”.</p>{/if}
+					<div class="grid" style="--min: 150px">
+						<div><label class="label" for="lk-name">Name</label><input id="lk-name" class="input" bind:value={draft.name} /></div>
+						<div>
+							<label class="label" for="lk-cur">Currency</label>
+							<select id="lk-cur" class="select" bind:value={draft.currency}>
+								{#each [...new Set([draft.currency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}
 							</select>
-						</label>
-						<div class="preview-meta">
-							<span class="mono">{fetchedIdentifier}</span>
-							<span class="muted">{lookupResult.prices.length.toLocaleString()} data points</span>
-							{#if lookupResult.prices.length >= 2}
-								<span class="muted">
-									{lookupResult.prices[0].date} – {lookupResult.prices[lookupResult.prices.length - 1].date}
-								</span>
-							{/if}
-							<span class="muted">Source: {lookupResult.source}</span>
+						</div>
+						<div>
+							<label class="label" for="lk-cls">Type</label>
+							<select id="lk-cls" class="select" bind:value={draft.classification}>
+								{#each ASSET_CLASSIFICATIONS as c (c)}<option value={c}>{c.toUpperCase()}</option>{/each}
+							</select>
 						</div>
 					</div>
-					<div class="preview-actions">
-						<Button variant="primary" onclick={handleLookupConfirm}>Add Asset</Button>
-						<Button variant="ghost" onclick={handleLookupCancel}>Cancel</Button>
+					<div class="row">
+						<Button variant="primary" icon="plus" onclick={saveLookup}>Add asset</Button>
+						<Button variant="ghost" onclick={() => (found = null)}>Cancel</Button>
 					</div>
 				</div>
 			{/if}
 		</Card>
-	</section>
+		<Card title="Upload CSV">
+			<FileDrop onfiles={onFiles} hint="Date + close price columns. EU and US formats are detected automatically." />
+		</Card>
+	</div>
 
-	<section class="asset-list">
-		{#if assetList.length === 0}
-			<Card padding="lg">
-				<div class="empty-state">
-					<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-					</svg>
-					<h3>No assets yet</h3>
-					<p>Upload a CSV file with historical price data to get started.</p>
-				</div>
-			</Card>
-		{:else}
-			<div class="asset-list-toolbar">
-				{#if selectedForCompare.size >= 2}
-					<Button variant="primary" size="sm" onclick={goToCompare}>
-						Compare {selectedForCompare.size} Assets
-					</Button>
-				{:else if selectedForCompare.size > 0}
-					<span class="compare-hint">Select at least 2 assets to compare</span>
-				{/if}
-				<select class="classification-filter" bind:value={classificationFilter}>
+	{#if app.assets.length === 0}
+		<Card>
+			<EmptyState icon="assets" title="No assets yet">Look up an ISIN above or upload price history CSV files to get started.</EmptyState>
+		</Card>
+	{:else}
+		<Card padded={false}>
+			<div class="toolbar">
+				<input class="input search" type="search" placeholder="Search name, ISIN, WKN" bind:value={search} aria-label="Search assets" />
+				<select class="select" bind:value={filter} aria-label="Filter by type">
 					<option value="all">All types</option>
-					{#each ASSET_CLASSIFICATIONS as cls}
-						<option value={cls}>{cls.toUpperCase()}</option>
-					{/each}
+					{#each classes as c (c)}<option value={c}>{c.toUpperCase()}</option>{/each}
+				</select>
+				<select class="select" bind:value={sort} aria-label="Sort by">
+					<option value="name">Name</option>
+					<option value="return">Return</option>
+					<option value="volatility">Volatility</option>
+					<option value="points">Data points</option>
+					<option value="updated">Recently updated</option>
 				</select>
 			</div>
-			<Card>
-				<div class="table-wrapper">
-					<table class="asset-table">
-						<thead>
-							<tr>
-								<th class="compare-col" title="Select for comparison">
-									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/>
-										<polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/>
-										<line x1="4" y1="4" x2="9" y2="9"/>
-									</svg>
-								</th>
-								<th class="bm-col" title="Set as benchmark for comparison">Benchmark</th>
-								<th>Name</th>
-								<th>Type</th>
-								<th>ISIN</th>
-								<th>Currency</th>
-								<th class="num-col">Return</th>
-								<th class="num-col">Volatility</th>
-								<th class="num-col">Data Points</th>
-								<th>Date Range</th>
-								<th></th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each filteredAssetList as asset}
-								<tr class:benchmark-row={isBenchmark(asset.id)} class:has-warnings={asset.health.warnings.length > 0}>
-									<td class="compare-col">
-										<input
-											type="checkbox"
-											class="compare-checkbox"
-											checked={selectedForCompare.has(asset.id)}
-											onchange={() => toggleCompareSelection(asset.id)}
-											aria-label="Select {asset.name} for comparison"
-										/>
-									</td>
-									<td class="bm-col">
-										<button
-											class="bm-toggle"
-											class:active={isBenchmark(asset.id)}
-											onclick={() => toggleBenchmark(asset.id)}
-											aria-label={isBenchmark(asset.id)
-												? `${asset.name} is the current benchmark. Click to remove.`
-												: `Set ${asset.name} as benchmark`}
-										>
-											{#if isBenchmark(asset.id)}
-												<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-													<circle cx="12" cy="12" r="10"/>
-												</svg>
-											{:else}
-												<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-													<circle cx="12" cy="12" r="10"/>
-												</svg>
-											{/if}
-										</button>
-									</td>
-									<td>
-										<span class="asset-name-cell">
-											<a href="/assets/{slugify(asset.name)}" class="asset-name">{asset.name}</a>
-											{#if asset.health.warnings.length > 0}
-												<span class="warning-badge" title={asset.health.warnings.map((w) => w.message).join('\n')}>
-													<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-														<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-														<line x1="12" y1="9" x2="12" y2="13"/>
-														<line x1="12" y1="17" x2="12.01" y2="17"/>
-													</svg>
-													{asset.health.warnings.length}
-												</span>
-											{/if}
-										</span>
-									</td>
-									<td>
-										<span class="classification-badge classification-{asset.classification}">
-											{asset.classification.toUpperCase()}
-										</span>
-									</td>
-									<td class="mono">{asset.isin ?? '\u2014'}</td>
-									<td>{asset.currency}</td>
-									<td class="mono num-col" class:metric-negative={asset.health.annualizedReturn < -0.1}>
-										{asset.dataPoints >= 2 ? (asset.health.annualizedReturn * 100).toFixed(1) + '%' : '\u2014'}
-									</td>
-									<td class="mono num-col" class:metric-warning={asset.health.volatility > 0.8}>
-										{asset.dataPoints >= 2 ? (asset.health.volatility * 100).toFixed(1) + '%' : '\u2014'}
-									</td>
-									<td class="mono num-col">{asset.dataPoints.toLocaleString()}</td>
-									<td class="muted">{asset.dateRange}</td>
-									<td class="action-col">
-									{#if asset.isin}
-										<Button variant="ghost" size="sm" onclick={() => handleShareAsset(asset.isin, asset.name)}>
-											<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-												<circle cx="18" cy="5" r="3"/>
-												<circle cx="6" cy="12" r="3"/>
-												<circle cx="18" cy="19" r="3"/>
-												<line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-												<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-											</svg>
-										</Button>
-									{/if}
-									<Button variant="ghost" size="sm" onclick={() => handleDelete(asset.id)}>
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<polyline points="3 6 5 6 21 6"/>
-											<path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-										</svg>
-									</Button>
-								</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+			{#if selected.length}
+				<div class="selection">
+					<span class="small"><b>{selected.length}</b> selected</span>
+					<div class="row">
+						<Button
+							size="sm"
+							variant="primary"
+							icon="compare"
+							disabled={selected.length < 2}
+							onclick={() => goto(`/compare?slugs=${selected.map((id) => app.assetSlug(id)).join(',')}`)}>Compare</Button
+						>
+						<ShareButton
+							url={shareUrl(encodeAssetList(selectedIsins))}
+							title="Shared assets"
+							disabled={!selectedIsins.length}
+							reason="Only assets with an ISIN can be shared"
+						/>
+						<Button size="sm" variant="ghost" onclick={() => (selected = [])}>Clear</Button>
+					</div>
 				</div>
-			</Card>
-		{/if}
-	</section>
-
-	<FormatConfigModal
-		bind:open={showFormatModal}
-		bind:detectedFormat
-		preview={csvPreview}
-		onconfirm={handleImportConfirm}
-		bind:assetName
-		bind:assetCurrency
-		bind:assetClassification
-		title={totalFiles > 1 ? `CSV Import (${currentFileIndex + 1} of ${totalFiles})` : 'CSV Import Configuration'}
-	/>
+			{/if}
+			<ul class="asset-list">
+				{#each rows as a (a.id)}
+					{@const h = health(a)}
+					<li class:sel={selected.includes(a.id)}>
+						<input type="checkbox" checked={selected.includes(a.id)} onchange={() => toggle(a.id)} aria-label="Select {a.name}" />
+						<a class="main" href="/assets/{app.assetSlug(a.id)}">
+							<span class="name truncate">{a.name}</span>
+							<span class="meta xs muted">
+								<Badge>{a.classification.toUpperCase()}</Badge>
+								{#if a.isin}<span class="mono">{a.isin}</span>{/if}
+								<span>{a.currency}</span>
+								<span>{a.prices.length} pts</span>
+								{#if a.prices.length}<span class="hide-sm">{fmt.date(a.prices[0]?.date)} – {fmt.date(a.prices.at(-1)?.date)}</span>{/if}
+							</span>
+						</a>
+						<div class="figs">
+							<span class="num {fmt.signClass(h.annualizedReturn)}" title="Annualized log return">{fmt.pct(h.annualizedReturn, 1)}</span>
+							<span class="num xs muted" title="Volatility">σ {fmt.pct(h.volatility, 0)}</span>
+						</div>
+						<div class="acts">
+							{#if h.warnings.length}<span class="warn-icon" title={h.warnings.map((w) => w.message).join('\n')}
+									><Icon name="alert" size={16} /></span
+								>{/if}
+							<button
+								class="icon-btn"
+								class:on={app.isBenchmark('asset', a.id)}
+								aria-pressed={app.isBenchmark('asset', a.id)}
+								title="Benchmark"
+								aria-label="Use {a.name} as benchmark"
+								onclick={() => app.toggleBenchmark('asset', a.id)}><Icon name="star" size={16} /></button
+							>
+							<button class="icon-btn" title="Delete" aria-label="Delete {a.name}" onclick={() => remove(a)}
+								><Icon name="trash" size={16} /></button
+							>
+						</div>
+					</li>
+				{:else}
+					<li class="none muted small">No assets match your filters.</li>
+				{/each}
+			</ul>
+		</Card>
+	{/if}
 </div>
 
-{#if toasts.length > 0}
-	<div class="toast-container">
-		{#each toasts as toast (toast.id)}
-			<div class="toast">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
-					<polyline points="22 4 12 14.01 9 11.01"/>
-				</svg>
-				<span>{toast.message}</span>
-			</div>
-		{/each}
-	</div>
+{#if currentFile}
+	<FormatDialog
+		bind:open={formatOpen}
+		text={currentFile.text}
+		fileName={currentFile.name}
+		queue={{ index: queueIndex, total: queueTotal }}
+		onconfirm={async ({ result, name, currency, classification }) => {
+			const a = assetFromParse(result, currentFile.text, { name, currency, classification });
+			await app.saveAsset(a);
+			notify.success(`Imported “${a.name}” (${a.prices.length} prices)`);
+			nextFile();
+		}}
+		onskip={nextFile}
+	/>
 {/if}
 
 <style>
-	.assets-page {
-		max-width: 1100px;
+	.add-grid {
+		display: grid;
+		gap: var(--space-4);
 	}
-
-	.page-header {
-		margin-bottom: var(--spacing-xl);
+	@media (min-width: 1000px) {
+		.add-grid {
+			grid-template-columns: 3fr 2fr;
+		}
 	}
-
-	.page-header h1 {
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.page-header-row {
+	.lookup-row {
 		display: flex;
-		align-items: flex-start;
+		gap: 8px;
+	}
+	.lookup-row .input {
+		font-family: var(--mono);
+		text-transform: uppercase;
+	}
+	.preview {
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--border);
+	}
+	.warn {
+		color: var(--warning);
+	}
+	.toolbar {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+		padding: var(--space-4);
+		border-bottom: 1px solid var(--border);
+	}
+	.toolbar .search {
+		grid-column: 1 / -1;
+	}
+	@media (min-width: 640px) {
+		.toolbar {
+			grid-template-columns: 1fr 160px 170px;
+		}
+		.toolbar .search {
+			grid-column: auto;
+		}
+	}
+	.selection {
+		display: flex;
+		align-items: center;
 		justify-content: space-between;
-		gap: var(--spacing-md);
-	}
-
-	.page-subtitle {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-base);
-	}
-
-	.header-actions {
-		display: flex;
-		gap: var(--spacing-sm);
-		flex-shrink: 0;
-	}
-
-	.upload-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.empty-state {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: var(--spacing-sm);
-		text-align: center;
-		padding: var(--spacing-xl) 0;
-		color: var(--color-text-muted);
-	}
-
-	.empty-state h3 {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-lg);
-	}
-
-	.empty-state p {
-		font-size: var(--font-size-sm);
-	}
-
-	.table-wrapper {
-		overflow-x: auto;
-	}
-
-	.asset-table {
-		font-size: var(--font-size-sm);
-	}
-
-	.asset-table th {
-		font-weight: 600;
-		font-size: var(--font-size-xs);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.asset-table td {
-		border-bottom: 1px solid var(--color-border);
-		vertical-align: middle;
-	}
-
-	.asset-name {
-		font-weight: 500;
-	}
-
-	.mono {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-	}
-
-	.muted {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-xs);
-	}
-
-	.bm-col {
-		width: 40px;
-		text-align: center;
-		padding-left: var(--spacing-sm);
-		padding-right: 0;
-	}
-
-	.bm-toggle {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		color: var(--color-text-muted);
-		transition: color var(--transition-fast), background var(--transition-fast);
-	}
-
-	.bm-toggle:hover {
-		color: var(--color-accent);
-		background: rgba(141, 208, 196, 0.1);
-	}
-
-	.bm-toggle.active {
-		color: var(--color-accent);
-	}
-
-	.benchmark-row {
-		background: rgba(141, 208, 196, 0.05);
-	}
-
-	.num-col {
-		text-align: right;
-	}
-
-	.asset-name-cell {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-xs);
-	}
-
-	.warning-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		color: var(--color-warning, #e6a817);
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		cursor: help;
-	}
-
-	.warning-badge svg {
-		flex-shrink: 0;
-	}
-
-	.metric-negative {
-		color: var(--color-negative, #e55);
-	}
-
-	.metric-warning {
-		color: var(--color-warning, #e6a817);
-	}
-
-	.has-warnings td:first-child {
-		border-left: 2px solid var(--color-warning, #e6a817);
-	}
-
-	:global(.toast-container) {
-		position: fixed;
-		bottom: var(--spacing-lg);
-		right: var(--spacing-lg);
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-		z-index: 1000;
-	}
-
-	:global(.toast) {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		padding: var(--spacing-sm) var(--spacing-md);
-		background: var(--color-bg-secondary);
-		border: 1px solid var(--color-accent);
-		border-radius: var(--radius-md);
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-		font-size: var(--font-size-sm);
-		color: var(--color-text-primary);
-		animation: toast-slide-in 0.3s ease-out;
-		backdrop-filter: blur(12px);
-	}
-
-	:global(.toast svg) {
-		color: var(--color-accent);
-		flex-shrink: 0;
-	}
-
-	@keyframes toast-slide-in {
-		from {
-			opacity: 0;
-			transform: translateY(12px);
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.lookup-section {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.lookup-header {
-		margin-bottom: var(--spacing-md);
-	}
-
-	.lookup-header h3 {
-		font-size: var(--font-size-base);
-		font-weight: 600;
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.lookup-subtitle {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-sm);
-	}
-
-	.lookup-input-row {
-		display: flex;
-		gap: var(--spacing-sm);
-		align-items: flex-start;
-	}
-
-	.lookup-field {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-	}
-
-	.lookup-input {
-		width: 100%;
-		padding: var(--spacing-sm) var(--spacing-md);
-		font-size: var(--font-size-sm);
-		font-family: var(--font-mono);
-		background: var(--color-bg-primary);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-primary);
-		letter-spacing: 0.05em;
-		transition: border-color var(--transition-fast);
-	}
-
-	.lookup-input:focus {
-		outline: none;
-		border-color: var(--color-accent);
-	}
-
-	.lookup-input:disabled {
-		opacity: 0.6;
-	}
-
-	.lookup-hint {
-		font-size: var(--font-size-xs);
-	}
-
-	.lookup-hint.valid {
-		color: var(--color-accent);
-	}
-
-	.lookup-hint.invalid {
-		color: var(--color-text-muted);
-	}
-
-	.lookup-error {
-		display: flex;
-		align-items: flex-start;
-		gap: var(--spacing-sm);
-		margin-top: var(--spacing-md);
-		padding: var(--spacing-sm) var(--spacing-md);
-		background: rgba(232, 23, 93, 0.08);
-		border: 1px solid rgba(232, 23, 93, 0.2);
-		border-radius: var(--radius-sm);
-		color: var(--color-negative, #e55);
-		font-size: var(--font-size-sm);
-	}
-
-	.lookup-error svg {
-		flex-shrink: 0;
-		margin-top: 1px;
-	}
-
-	.lookup-preview {
-		margin-top: var(--spacing-md);
-		padding-top: var(--spacing-md);
-		border-top: 1px solid var(--color-border);
-	}
-
-	.preview-grid {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.preview-label {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-		font-size: var(--font-size-xs);
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-muted);
-	}
-
-	.preview-input {
-		padding: var(--spacing-xs) var(--spacing-sm);
-		font-size: var(--font-size-sm);
-		background: var(--color-bg-primary);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-primary);
-	}
-
-	.preview-input:focus {
-		outline: none;
-		border-color: var(--color-accent);
-	}
-
-	.preview-input--short {
-		max-width: 120px;
-	}
-
-	.preview-meta {
-		display: flex;
+		gap: 8px;
 		flex-wrap: wrap;
-		gap: var(--spacing-sm) var(--spacing-md);
-		font-size: var(--font-size-sm);
+		padding: 10px var(--space-4);
+		background: var(--accent-soft);
 	}
-
-	.preview-actions {
-		display: flex;
-		gap: var(--spacing-sm);
+	.asset-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
 	}
-
-	.classification-badge {
-		display: inline-block;
-		padding: 2px 8px;
-		border-radius: var(--radius-sm);
-		font-size: var(--font-size-xs);
+	.asset-list li {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		grid-template-areas: 'cb main figs' 'cb main acts';
+		align-items: center;
+		gap: 2px 12px;
+		padding: 12px var(--space-4);
+		border-bottom: 1px solid var(--border);
+	}
+	@media (min-width: 640px) {
+		.asset-list li {
+			grid-template-columns: auto minmax(0, 1fr) auto auto;
+			grid-template-areas: 'cb main figs acts';
+		}
+	}
+	.asset-list li:last-child {
+		border-bottom: none;
+	}
+	.asset-list li.sel {
+		background: var(--accent-soft);
+	}
+	input[type='checkbox'] {
+		grid-area: cb;
+	}
+	.main {
+		grid-area: main;
+		display: grid;
+		gap: 3px;
+		color: inherit;
+		text-decoration: none;
+		min-width: 0;
+	}
+	.main:hover .name {
+		color: var(--accent);
+	}
+	.name {
 		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		background: var(--color-bg-tertiary, rgba(255,255,255,0.05));
-		color: var(--color-text-secondary);
 	}
-
-	.classification-stock { color: var(--color-accent); background: rgba(141, 208, 196, 0.1); }
-	.classification-etf { color: #7db3ff; background: rgba(125, 179, 255, 0.1); }
-	.classification-etn { color: #7db3ff; background: rgba(125, 179, 255, 0.08); }
-	.classification-etc { color: #7db3ff; background: rgba(125, 179, 255, 0.06); }
-	.classification-fund { color: #c49bff; background: rgba(196, 155, 255, 0.1); }
-	.classification-bond { color: #ffd700; background: rgba(255, 215, 0, 0.1); }
-	.classification-certificate { color: #ff9b7d; background: rgba(255, 155, 125, 0.1); }
-	.classification-crypto { color: #f7931a; background: rgba(247, 147, 26, 0.1); }
-	.classification-commodity { color: #d4a574; background: rgba(212, 165, 116, 0.1); }
-	.classification-unknown { color: var(--color-text-muted); }
-
-	.compare-col {
-		width: 40px;
-		text-align: center;
-		padding-left: var(--spacing-sm);
-		padding-right: 0;
-	}
-
-	.compare-col svg {
-		color: var(--color-text-muted);
-	}
-
-	.compare-checkbox {
-		width: 16px;
-		height: 16px;
-		accent-color: var(--color-accent-deep, #1a8a8a);
-		cursor: pointer;
-	}
-
-	.compare-hint {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-muted);
-	}
-
-	.asset-list-toolbar {
+	.meta {
 		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+	@media (max-width: 640px) {
+		.hide-sm {
+			display: none;
+		}
+	}
+	.figs {
+		grid-area: figs;
+		display: grid;
+		justify-items: end;
+		font-weight: 600;
+	}
+	.acts {
+		grid-area: acts;
+		display: flex;
+		gap: 2px;
 		justify-content: flex-end;
 		align-items: center;
-		gap: var(--spacing-sm);
-		margin-bottom: var(--spacing-sm);
 	}
-
-	.action-col {
-		white-space: nowrap;
+	.icon-btn {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border: none;
+		border-radius: 50%;
+		background: none;
+		color: var(--muted);
 	}
-
-	.classification-filter {
-		padding: var(--spacing-xs) var(--spacing-sm);
-		font-size: var(--font-size-sm);
-		background: var(--color-bg-primary);
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		color: var(--color-text-primary);
+	.icon-btn:hover {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+	.icon-btn.on {
+		color: var(--chart-4);
+	}
+	.icon-btn.on :global(svg) {
+		fill: currentColor;
+	}
+	.warn-icon {
+		color: var(--warning);
+		display: grid;
+		padding: 0 4px;
+	}
+	.none {
+		display: block !important;
+		text-align: center;
+		padding: var(--space-5) !important;
 	}
 </style>

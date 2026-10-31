@@ -1,386 +1,173 @@
 /**
- * Onvista price data fetcher.
- *
- * Fetches historical price data from the Onvista API (api.onvista.de).
- * CORS is fully supported, no API key required.
- *
- * Flow:
- * 1. Search by ISIN or WKN to find the instrument
- * 2. Get snapshot for the instrument to obtain idNotation and metadata
- * 3. Fetch end-of-day history using idNotation for daily prices
+ * Onvista public API (SC-1, SC-2). CORS-enabled, no key.
+ * search → snapshot (idNotation, metadata) → eod_history (daily closes).
  */
+import type { AssetClassification, PricePoint } from '#lib/domain/types.ts';
+import { instantToBerlinDate } from '#lib/core/dates.ts';
+import { normalizeSeries } from '#lib/core/series.ts';
+import { getJSON, type RequestOptions } from './http.ts';
+import type { InstrumentData, InstrumentInfo } from './types.ts';
 
-import type { PricePoint, AssetClassification } from '$lib/types';
-import type { FetchOutcome, FetchResult } from './types';
+export const ONVISTA_BASE = 'https://api.onvista.de/api/v1';
 
-const BASE_URL = 'https://api.onvista.de/api/v1';
-
-// --- Onvista API response types ---
-
-interface SearchFacetResult {
-  instrument?: {
-    entityType: string;
-    entityValue: string;
-    isin: string;
-    name: string;
-  } | null;
-  facets: Array<{
-    type: string;
-    results: Array<{
-      entityType: string;
-      entityValue: string;
-      isin: string;
-      name: string;
-    }> | null;
-  }>;
+interface SearchHit {
+	entityType: string;
+	entityValue: string;
+	isin?: string;
+	name: string;
 }
 
-interface SnapshotRawResponse {
-  // Nested format (current API)
-  instrument?: { name?: string; isin?: string; wkn?: string };
-  quote?: { isoCurrency?: string };
-  chart?: { idNotation?: number };
-  // Flat format (legacy/fallback)
-  idNotation?: number;
-  isoCurrency?: string;
-  name?: string;
-  isin?: string;
-  wkn?: string;
+interface SearchResponse {
+	instrument?: SearchHit | null;
+	facets?: Array<{ type: string; results: SearchHit[] | null }>;
 }
 
 interface SnapshotResponse {
-  idNotation: number;
-  isoCurrency: string;
-  name: string;
-  isin?: string;
-  wkn?: string;
+	instrument?: { name?: string; isin?: string; wkn?: string; entityType?: string };
+	quote?: { isoCurrency?: string };
+	chart?: { idNotation?: number };
+	idNotation?: number;
+	isoCurrency?: string;
+	name?: string;
+	isin?: string;
+	wkn?: string;
 }
 
-interface EodHistoryResponse {
-  datetimeLast: number[];
-  last: number[];
+interface HistoryResponse {
+	datetimeLast?: number[];
+	last?: number[];
 }
 
-// --- Internal helpers ---
+const TYPE_PATHS: Record<string, string> = {
+	FUND: 'funds',
+	STOCK: 'stocks',
+	BOND: 'bonds',
+	INDEX: 'indices',
+	DERIVATIVE: 'derivatives',
+	ETF: 'etfs',
+	COMMODITY: 'commodities',
+	PRECIOUS_METAL: 'precious_metals',
+	CURRENCY: 'currencies',
+	CRYPTO: 'crypto'
+};
 
-/** Map Onvista entity types to API path segments. */
-function entityTypePath(entityType: string): string {
-  const map: Record<string, string> = {
-    FUND: 'funds',
-    STOCK: 'stocks',
-    BOND: 'bonds',
-    INDEX: 'indices',
-    DERIVATIVE: 'derivatives',
-    ETF: 'etfs',
-    COMMODITY: 'commodities',
-    PRECIOUS_METAL: 'precious_metals',
-    CURRENCY: 'currencies',
-    CRYPTO: 'crypto',
-  };
-  return map[entityType] ?? entityType.toLowerCase();
+const CLASSIFICATIONS: Record<string, AssetClassification> = {
+	STOCK: 'stock',
+	ETF: 'etf',
+	FUND: 'fund',
+	BOND: 'bond',
+	COMMODITY: 'commodity',
+	PRECIOUS_METAL: 'commodity',
+	DERIVATIVE: 'certificate',
+	CRYPTO: 'crypto'
+};
+
+export function classificationFor(entityType: string): AssetClassification {
+	return CLASSIFICATIONS[entityType] ?? 'unknown';
 }
 
-/** Map Onvista entity types to our asset classification. */
-function mapEntityTypeToClassification(entityType: string): AssetClassification {
-  const map: Record<string, AssetClassification> = {
-    STOCK: 'stock',
-    ETF: 'etf',
-    FUND: 'fund',
-    BOND: 'bond',
-    COMMODITY: 'commodity',
-    PRECIOUS_METAL: 'commodity',
-    DERIVATIVE: 'certificate',
-    CRYPTO: 'crypto',
-  };
-  return map[entityType] ?? 'unknown';
+export async function search(query: string, opts?: RequestOptions): Promise<SearchResponse> {
+	return getJSON<SearchResponse>(`${ONVISTA_BASE}/instruments/search/facet?perType=10&searchValue=${encodeURIComponent(query)}`, opts);
 }
 
-/** Convert a unix timestamp (seconds or milliseconds) to YYYY-MM-DD. */
-function unixToISODate(timestamp: number): string {
-  // Onvista uses millisecond timestamps when value > 10^12
-  const ms = timestamp > 1e12 ? timestamp : timestamp * 1000;
-  const d = new Date(ms);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+export async function findInstrument(query: string, opts?: RequestOptions): Promise<SearchHit | null> {
+	const data = await search(query, opts);
+	if (data.instrument) return data.instrument;
+	const q = query.toUpperCase();
+	const all = (data.facets ?? []).flatMap((f) => f.results ?? []);
+	return all.find((h) => h.isin?.toUpperCase() === q) ?? all[0] ?? null;
 }
 
-/** Format a Date as YYYY-MM-DD for query parameters. */
-function formatDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+export async function findCrypto(ticker: string, opts?: RequestOptions): Promise<SearchHit | null> {
+	const data = await search(ticker, opts);
+	const crypto = (data.facets ?? []).find((f) => f.type === 'CRYPTO')?.results ?? [];
+	const t = ticker.toUpperCase();
+	return (
+		crypto.find((h) => h.entityValue.toUpperCase().startsWith(t)) ??
+		crypto[0] ??
+		(data.instrument?.entityType === 'CRYPTO' ? data.instrument : null)
+	);
 }
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Onvista API error: ${response.status} ${response.statusText}`);
-  }
-  return response.json() as Promise<T>;
+function readSnapshot(raw: SnapshotResponse) {
+	return {
+		idNotation: raw.chart?.idNotation ?? raw.idNotation ?? 0,
+		currency: raw.quote?.isoCurrency ?? raw.isoCurrency ?? null,
+		name: raw.instrument?.name ?? raw.name ?? null,
+		isin: raw.instrument?.isin ?? raw.isin ?? null,
+		wkn: raw.instrument?.wkn ?? raw.wkn ?? null
+	};
 }
 
-// --- Public API ---
-
-/**
- * Search Onvista for an instrument by ISIN or WKN.
- * Returns the first matching result's entity type and value, or null if not found.
- */
-export async function searchInstrument(
-  query: string,
-): Promise<{ entityType: string; entityValue: string; isin: string; name: string } | null> {
-  const url = `${BASE_URL}/instruments/search/facet?perType=10&searchValue=${encodeURIComponent(query)}`;
-  const data = await fetchJSON<SearchFacetResult>(url);
-
-  // Prefer direct instrument match (exact ISIN/WKN hit)
-  if (data.instrument) {
-    return {
-      entityType: data.instrument.entityType,
-      entityValue: data.instrument.entityValue,
-      isin: data.instrument.isin,
-      name: data.instrument.name,
-    };
-  }
-
-  // Fall back to first result from any facet
-  for (const facet of data.facets ?? []) {
-    if (facet.results && facet.results.length > 0) {
-      return facet.results[0];
-    }
-  }
-
-  return null;
+export async function snapshot(hit: SearchHit, opts?: RequestOptions) {
+	const path = TYPE_PATHS[hit.entityType] ?? hit.entityType.toLowerCase();
+	const id = hit.entityType === 'CRYPTO' || !hit.isin ? encodeURIComponent(hit.entityValue) : `ISIN:${encodeURIComponent(hit.isin)}`;
+	return readSnapshot(await getJSON<SnapshotResponse>(`${ONVISTA_BASE}/${path}/${id}/snapshot`, opts));
 }
 
-/**
- * Get a snapshot for an instrument, returning idNotation and metadata.
- */
-export async function getSnapshot(
-  entityType: string,
-  isin: string,
-): Promise<SnapshotResponse> {
-  const typePath = entityTypePath(entityType);
-  const url = `${BASE_URL}/${typePath}/ISIN:${encodeURIComponent(isin)}/snapshot`;
-  const raw = await fetchJSON<SnapshotRawResponse>(url);
-
-  const idNotation = raw.chart?.idNotation ?? raw.idNotation ?? 0;
-  const isoCurrency = raw.quote?.isoCurrency ?? raw.isoCurrency ?? 'EUR';
-  const name = raw.instrument?.name ?? raw.name ?? '';
-  const resolvedIsin = raw.instrument?.isin ?? raw.isin;
-  const wkn = raw.instrument?.wkn ?? raw.wkn;
-
-  return { idNotation, isoCurrency, name, isin: resolvedIsin, wkn };
+export function toPricePoints(data: HistoryResponse): PricePoint[] {
+	const ts = data.datetimeLast ?? [];
+	const last = data.last ?? [];
+	if (ts.length !== last.length) return [];
+	const out: PricePoint[] = [];
+	for (let i = 0; i < ts.length; i++) {
+		const close = last[i];
+		if (close == null || !Number.isFinite(close) || close <= 0) continue;
+		const t = ts[i]!;
+		out.push({ date: instantToBerlinDate(t > 1e12 ? t : t * 1000), close });
+	}
+	return normalizeSeries(out);
 }
 
-/**
- * Fetch daily end-of-day price history for an instrument.
- *
- * Uses Onvista's `eod_history` endpoint. Onvista retired the previously used
- * `chart_history` endpoint (`resolution=1D&startDate=…&endDate=…`), which broke
- * historical price fetching by ISIN/WKN. The `eod_history` endpoint takes a
- * `range` (here `MAX` for the full available history) together with a `startDate`
- * floor. The JSON response shape (parallel `datetimeLast` / `last` arrays) is
- * unchanged between the two endpoints.
- *
- * Defaults to fetching all available data (from 2000-01-01, a floor well before
- * any tradable instrument's inception).
- */
-export async function getChartHistory(
-  entityType: string,
-  entityValue: string,
-  idNotation: number,
-  startDate?: Date,
-): Promise<PricePoint[]> {
-  const start = formatDate(startDate ?? new Date(2000, 0, 1));
-  const url =
-    `${BASE_URL}/instruments/${encodeURIComponent(entityType)}/${encodeURIComponent(entityValue)}/eod_history` +
-    `?idNotation=${idNotation}&range=MAX&startDate=${start}`;
-
-  const data = await fetchJSON<EodHistoryResponse>(url);
-
-  if (!data.datetimeLast || !data.last || data.datetimeLast.length !== data.last.length) {
-    return [];
-  }
-
-  const prices: PricePoint[] = [];
-  const seen = new Set<string>();
-
-  for (let i = 0; i < data.datetimeLast.length; i++) {
-    const close = data.last[i];
-    if (close == null || !isFinite(close)) continue;
-
-    const date = unixToISODate(data.datetimeLast[i]);
-    // Deduplicate by date (keep first occurrence)
-    if (seen.has(date)) continue;
-    seen.add(date);
-
-    prices.push({ date, close });
-  }
-
-  prices.sort((a, b) => a.date.localeCompare(b.date));
-  return prices;
+/** Full daily history via `eod_history` (the retired `chart_history` must not be used). */
+export async function history(hit: SearchHit, idNotation: number, startDate = '2000-01-01', opts?: RequestOptions): Promise<PricePoint[]> {
+	const url =
+		`${ONVISTA_BASE}/instruments/${encodeURIComponent(hit.entityType)}/${encodeURIComponent(hit.entityValue)}/eod_history` +
+		`?idNotation=${idNotation}&range=MAX&startDate=${startDate}`;
+	return toPricePoints(await getJSON<HistoryResponse>(url, opts));
 }
 
-/**
- * Search Onvista for a crypto asset by ticker symbol (e.g. "BTC", "ETH").
- * Filters results to the CRYPTO facet only.
- */
-export async function searchCryptoByTicker(
-  ticker: string,
-): Promise<{ entityType: string; entityValue: string; isin: string; name: string } | null> {
-  const url = `${BASE_URL}/instruments/search/facet?perType=10&searchValue=${encodeURIComponent(ticker)}`;
-  const data = await fetchJSON<SearchFacetResult>(url);
-
-  // Look specifically in the CRYPTO facet
-  for (const facet of data.facets ?? []) {
-    if (facet.type === 'CRYPTO' && facet.results && facet.results.length > 0) {
-      return facet.results[0];
-    }
-  }
-
-  // Also check direct instrument match if it's a crypto type
-  if (data.instrument && data.instrument.entityType === 'CRYPTO') {
-    return {
-      entityType: data.instrument.entityType,
-      entityValue: data.instrument.entityValue,
-      isin: data.instrument.isin,
-      name: data.instrument.name,
-    };
-  }
-
-  return null;
+async function load(hit: SearchHit, opts?: RequestOptions, crypto = false): Promise<InstrumentData> {
+	const snap = await snapshot(hit, opts);
+	const prices = await history(hit, snap.idNotation, undefined, opts);
+	if (prices.length === 0) throw new Error(`Onvista has no price history for ${hit.name}.`);
+	return {
+		prices,
+		name: snap.name ?? hit.name,
+		isin: snap.isin ?? hit.isin ?? null,
+		wkn: snap.wkn,
+		currency: snap.currency,
+		classification: crypto ? 'crypto' : classificationFor(hit.entityType),
+		source: 'onvista'
+	};
 }
 
-/**
- * Get a snapshot for a crypto instrument using entityValue (e.g. "BTCUSD").
- * Crypto snapshots use a different URL pattern than ISIN-based instruments.
- */
-export async function getCryptoSnapshot(
-  entityValue: string,
-): Promise<SnapshotResponse> {
-  const url = `${BASE_URL}/crypto/${encodeURIComponent(entityValue)}/snapshot`;
-  const raw = await fetchJSON<SnapshotRawResponse>(url);
-
-  const idNotation = raw.chart?.idNotation ?? raw.idNotation ?? 0;
-  const isoCurrency = raw.quote?.isoCurrency ?? raw.isoCurrency ?? 'EUR';
-  const name = raw.instrument?.name ?? raw.name ?? '';
-  const resolvedIsin = raw.instrument?.isin ?? raw.isin;
-  const wkn = raw.instrument?.wkn ?? raw.wkn;
-
-  return { idNotation, isoCurrency, name, isin: resolvedIsin, wkn };
+export async function fetchByIdentifier(query: string, opts?: RequestOptions): Promise<InstrumentData> {
+	const hit = await findInstrument(query, opts);
+	if (!hit) throw new Error(`Onvista found no instrument for "${query}".`);
+	return load(hit, opts);
 }
 
-/**
- * Fetch historical price data for a crypto ticker from Onvista.
- * Searches for the crypto asset, gets snapshot, and fetches chart history.
- */
-export async function fetchCryptoByTicker(ticker: string): Promise<FetchOutcome> {
-  try {
-    const instrument = await searchCryptoByTicker(ticker);
-    if (!instrument) {
-      return {
-        success: false,
-        error: {
-          message: `No cryptocurrency found on Onvista for "${ticker}".`,
-          recoverable: true,
-        },
-      };
-    }
-
-    const snapshot = await getCryptoSnapshot(instrument.entityValue);
-
-    const prices = await getChartHistory(
-      instrument.entityType,
-      instrument.entityValue,
-      snapshot.idNotation,
-    );
-
-    if (prices.length === 0) {
-      return {
-        success: false,
-        error: {
-          message: `No price data available on Onvista for "${ticker}".`,
-          recoverable: true,
-        },
-      };
-    }
-
-    const result: FetchResult = {
-      prices,
-      name: snapshot.name ?? instrument.name ?? null,
-      isin: snapshot.isin ?? instrument.isin ?? null,
-      wkn: snapshot.wkn ?? null,
-      currency: snapshot.isoCurrency ?? null,
-      classification: 'crypto',
-    };
-
-    return { success: true, data: result };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error fetching crypto from Onvista';
-    return {
-      success: false,
-      error: { message, recoverable: true },
-    };
-  }
+export async function fetchCrypto(ticker: string, opts?: RequestOptions): Promise<InstrumentData> {
+	const hit = await findCrypto(ticker, opts);
+	if (!hit) throw new Error(`Onvista found no cryptocurrency for "${ticker}".`);
+	return load(hit, opts, true);
 }
 
-/**
- * Fetch historical price data by ISIN or WKN from Onvista.
- *
- * This is the main entry point. It searches for the instrument, gets the
- * snapshot for metadata, and fetches the full chart history.
- */
-export async function fetchPriceData(query: string): Promise<FetchOutcome> {
-  try {
-    // Step 1: Search for the instrument
-    const instrument = await searchInstrument(query);
-    if (!instrument) {
-      return {
-        success: false,
-        error: {
-          message: `No instrument found on Onvista for "${query}".`,
-          recoverable: true,
-        },
-      };
-    }
-
-    // Step 2: Get snapshot for metadata and idNotation
-    const snapshot = await getSnapshot(instrument.entityType, instrument.isin);
-
-    // Step 3: Fetch chart history
-    const prices = await getChartHistory(
-      instrument.entityType,
-      instrument.entityValue,
-      snapshot.idNotation,
-    );
-
-    if (prices.length === 0) {
-      return {
-        success: false,
-        error: {
-          message: `No price data available on Onvista for "${query}".`,
-          recoverable: true,
-        },
-      };
-    }
-
-    const result: FetchResult = {
-      prices,
-      name: snapshot.name ?? instrument.name ?? null,
-      isin: snapshot.isin ?? instrument.isin ?? null,
-      wkn: snapshot.wkn ?? null,
-      currency: snapshot.isoCurrency ?? null,
-      classification: mapEntityTypeToClassification(instrument.entityType),
-    };
-
-    return { success: true, data: result };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error fetching from Onvista';
-    return {
-      success: false,
-      error: { message, recoverable: true },
-    };
-  }
+/** Metadata only (used to resolve names from filenames, AM-3b). */
+export async function lookupInfo(query: string, opts?: RequestOptions): Promise<InstrumentInfo | null> {
+	const hit = await findInstrument(query, opts);
+	if (!hit) return null;
+	try {
+		const snap = await snapshot(hit, opts);
+		return {
+			name: snap.name ?? hit.name,
+			isin: snap.isin ?? hit.isin ?? null,
+			wkn: snap.wkn,
+			currency: snap.currency,
+			classification: classificationFor(hit.entityType)
+		};
+	} catch {
+		return { name: hit.name, isin: hit.isin ?? null, wkn: null, currency: null, classification: classificationFor(hit.entityType) };
+	}
 }

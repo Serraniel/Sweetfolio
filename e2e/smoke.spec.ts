@@ -1,44 +1,54 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { collectErrors, offline } from './helpers.ts';
 
-test.describe('Smoke tests', () => {
-  test('dashboard loads', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await expect(page).toHaveTitle(/Sweetfolio/);
-  });
+const ROUTES = [
+	'/',
+	'/assets',
+	'/compare',
+	'/portfolios',
+	'/strategies',
+	'/simulation',
+	'/tools',
+	'/tools/parqet-to-pp',
+	'/settings',
+	'/changelog',
+	'/license',
+	'/licenses'
+];
 
-  test('assets page loads', async ({ page }) => {
-    await page.goto('/assets');
-    await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('heading', { name: 'Assets', exact: true })).toBeVisible();
-  });
+for (const route of ROUTES) {
+	test(`UI-9 ${route} renders without errors`, async ({ page }) => {
+		await offline(page);
+		const errors = collectErrors(page);
+		await page.goto(route);
+		await expect(page.locator('h1').first()).toBeVisible();
+		expect(errors).toEqual([]);
+	});
+}
 
-  test('portfolios page loads', async ({ page }) => {
-    await page.goto('/portfolios');
-    await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('heading', { name: 'Portfolios', exact: true })).toBeVisible();
-  });
+test('UI-9 unknown asset slug shows not found', async ({ page }) => {
+	await offline(page);
+	await page.goto('/assets/does-not-exist');
+	await expect(page.getByRole('heading', { name: 'Asset not found' })).toBeVisible();
+});
 
-  test('settings page loads', async ({ page }) => {
-    await page.goto('/settings');
-    await page.waitForLoadState('networkidle');
-    await expect(page.getByRole('heading', { name: /settings/i })).toBeVisible();
-  });
+test('UI-2 theme toggle persists', async ({ page }) => {
+	await offline(page);
+	await page.goto('/settings');
+	await page.getByRole('radio', { name: 'Dark' }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await page.reload();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+	await page.getByRole('radio', { name: 'Light' }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
 
-  test('navigation between pages works', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    // Navigate to assets via nav link
-    await page.getByRole('link', { name: /assets/i }).click();
-    await expect(page).toHaveURL(/\/assets/);
-
-    // Navigate to portfolios
-    await page.getByRole('link', { name: /portfolios/i }).click();
-    await expect(page).toHaveURL(/\/portfolios/);
-
-    // Navigate to settings
-    await page.getByRole('link', { name: /settings/i }).click();
-    await expect(page).toHaveURL(/\/settings/);
-  });
+test('DP-5 local storage hint can be dismissed', async ({ page }) => {
+	await offline(page);
+	await page.goto('/');
+	const hint = page.getByRole('note');
+	await expect(hint).toContainText('stored only in this browser');
+	await hint.getByRole('button', { name: 'Dismiss' }).click();
+	await page.reload();
+	await expect(page.getByRole('note')).toHaveCount(0);
 });

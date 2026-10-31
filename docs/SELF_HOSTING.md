@@ -1,102 +1,49 @@
-# Self-Hosting Sweetfolio
+# Self-hosting
 
-Sweetfolio is a static web application. The Docker image contains an nginx server that serves the pre-built SPA. There is no backend, database, or server-side processing required.
-
-## Docker
-
-### Quick Start
+Sweetfolio is a static site. The Docker image serves it with an unprivileged nginx on **port 8080**.
 
 ```bash
-docker pull ghcr.io/serraniel/sweetfolio:latest
-docker run -d -p 8080:80 ghcr.io/serraniel/sweetfolio:latest
+docker run -d --name sweetfolio -p 8080:8080 --read-only --tmpfs /tmp ghcr.io/serraniel/sweetfolio:latest
 ```
 
-The application will be available at `http://localhost:8080`.
+or with `docker compose up -d` using the bundled [docker-compose.yml](../docker-compose.yml).
 
-### Docker Compose
+## Image tags
 
-```yaml
-services:
-  sweetfolio:
-    image: ghcr.io/serraniel/sweetfolio:latest
-    ports:
-      - "8080:80"
-    restart: unless-stopped
-```
+| Tag                 | Meaning                                   |
+| ------------------- | ----------------------------------------- |
+| `latest`            | Latest release                            |
+| `X.Y.Z`, `X.Y`, `X` | Specific release (major tags from 1.0 on) |
+| `edge`              | Newest build of `main` (may be unstable)  |
+| `edge-<sha>`        | A specific `main` commit                  |
 
-### Port Configuration
+Images are built for `linux/amd64` and `linux/arm64`.
 
-The container exposes port 80 internally. Map it to any host port:
+> **Upgrading from ≤ 0.5.x:** the container now listens on port **8080** instead of 80 (it runs as non-root). Change your port mapping from `-p X:80` to `-p X:8080`.
 
-```bash
-docker run -d -p 3000:80 ghcr.io/serraniel/sweetfolio:latest
-```
+## Runtime configuration
 
-### Building from Source
+Mount a `config.json` to `/usr/share/nginx/html/config.json`:
 
-```bash
-git clone https://github.com/serraniel/sweetfolio.git
-cd sweetfolio
-docker build -t sweetfolio .
-docker run -d -p 8080:80 sweetfolio
-```
-
-## Reverse Proxy
-
-### nginx
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name sweetfolio.example.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+```json
+{
+	"parqetClientId": "",
+	"parqetScope": "portfolio:read"
 }
 ```
 
-### Docker Compose with Reverse Proxy
+- `parqetClientId` — enables Parqet Connect. Register an OAuth client with Parqet and add `https://<your-host>/callback` as redirect URI.
 
-```yaml
-services:
-  sweetfolio:
-    image: ghcr.io/serraniel/sweetfolio:latest
-    restart: unless-stopped
-    # No need to expose ports when using a reverse proxy on the same Docker network
-    expose:
-      - "80"
+## Reverse proxy
 
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "443:443"
-    volumes:
-      - ./nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      - sweetfolio
-    restart: unless-stopped
-```
+Serve over HTTPS (clipboard, Web Share and the File System Access API require a secure context). The image sends security headers including a Content-Security-Policy that allows outbound `https:` connections, because price data, ECB rates, Parqet and an optional user-configured CORS proxy are called directly from the browser.
 
-## Environment Variables
+Health check endpoint: `/healthz`.
 
-Sweetfolio is a fully client-side application. There are no server-side environment variables to configure. All settings (currency, theme, etc.) are managed in the browser via the settings page and stored in IndexedDB.
-
-## Updating
-
-Pull the latest image and restart:
+## Building yourself
 
 ```bash
-docker pull ghcr.io/serraniel/sweetfolio:latest
-docker compose up -d
+docker build --build-arg APP_VERSION=1.2.3 -t sweetfolio .
+# or without Docker
+npm ci && npm run build   # static files in build/ — serve with any web server using index.html as SPA fallback
 ```
-
-Your data is stored in the browser's IndexedDB, not in the container. Updating the container does not affect your data.

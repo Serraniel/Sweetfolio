@@ -2,5 +2,13 @@ node_modules
 build
 .svelte-kit
 .git
+.github
 docs
-tmp
+e2e
+test-results
+playwright-report
+coverage
+tools
+*.md
+!CHANGELOG.md
+!THIRD_PARTY_NOTICES.md

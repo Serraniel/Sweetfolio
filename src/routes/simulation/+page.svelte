@@ -1,774 +1,486 @@
 <script lang="ts">
-	import Card from '$lib/components/shared/Card.svelte';
-	import Button from '$lib/components/shared/Button.svelte';
-	import EfficientFrontier from '$lib/charts/EfficientFrontier.svelte';
-	import { assets } from '$lib/stores/assets';
-	import { settings } from '$lib/stores/settings';
-	import { currencies } from '$lib/stores/currencies';
-	import { addPortfolio } from '$lib/stores/portfolios';
-	import { benchmark as benchmarkStore } from '$lib/stores/benchmark';
-	import { simulation, updateConfig, setProgress, setResult, setRunning, saveSimulation } from '$lib/stores/simulation';
-	import { createMonteCarloWorker } from '$lib/workers/manager';
-	import { annualizedLogReturn } from '$lib/engine/returns';
-	import { annualizedVolatility } from '$lib/engine/volatility';
-	import { convertPrices } from '$lib/engine/currency';
-	import { alignPriceSeries } from '$lib/utils/dates';
-	import { logReturns, stddev } from '$lib/utils/math';
-	import { generateAssetColors } from '$lib/charts/utils';
-	import type { AssetMarker } from '$lib/charts/EfficientFrontier.svelte';
-	import type { MonteCarloWorkerRequest, MonteCarloWorkerResponse, SimulatedPortfolio, CurrencyRate, PricePoint } from '$lib/types';
-	import { slugify } from '$lib/utils/slug';
+	import type { Asset, RebalanceFrequency } from '#lib/domain/types.ts';
+	import { newPortfolio, cleanAllocations } from '#lib/domain/factories.ts';
+	import {
+		bestIndex,
+		dominatingIndices,
+		estimateSimulationBytes,
+		seriesStats,
+		validateConstraints,
+		weightsAt
+	} from '#lib/core/montecarlo.ts';
+	import { daysBetween } from '#lib/core/dates.ts';
+	import { app } from '#lib/state/app.svelte.ts';
+	import { sim } from '#lib/state/simulation.svelte.ts';
+	import { notify } from '#lib/state/toasts.svelte.ts';
+	import { runMonteCarlo } from '#lib/workers/client.ts';
+	import * as fmt from '#lib/format.ts';
+	import PageHeader from '#lib/ui/PageHeader.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Toggle from '#lib/ui/Toggle.svelte';
+	import Progress from '#lib/ui/Progress.svelte';
+	import Stat from '#lib/ui/Stat.svelte';
+	import EmptyState from '#lib/ui/EmptyState.svelte';
+	import AssetPicker from '#lib/components/AssetPicker.svelte';
+	import Frontier from '#lib/charts/Frontier.svelte';
+	import { colorAt } from '#lib/charts/palette.ts';
 
-	let simulationCount = $state(10000);
-	let worker: Worker | null = $state(null);
-	let selectedPortfolio: SimulatedPortfolio | null = $state(null);
-	let savedPortfolioSlug: string | null = $state(null);
-	let rendering = $state(false);
-	let hoveredAssetName: string | null = $state(null);
-
-	// Derive available assets with selection state
-	let assetSelections: Array<{ id: string; name: string; selected: boolean }> = $state([]);
-
-	$effect(() => {
-		assetSelections = $assets.map((a) => ({
-			id: a.id,
-			name: a.name,
-			selected: false
-		}));
-	});
-
-	const mainCurrency = $derived(($settings.mainCurrency as string) ?? 'EUR');
-
-	// Find currency conversion data for an asset
-	function findCurrencyConversion(assetCurrency: string, targetCurrency: string, rates: CurrencyRate[]) {
-		if (assetCurrency === targetCurrency) return undefined;
-		const directPair = assetCurrency + targetCurrency;
-		const inversePair = targetCurrency + assetCurrency;
-		const rate = rates.find((r) => r.pair === directPair || r.pair === inversePair);
-		if (!rate) return undefined;
-		return { currencyRate: rate, sourceCurrency: assetCurrency, targetCurrency };
-	}
-
-	// Convert asset prices to main currency, returns null if conversion fails
-	function convertAssetPrices(assetCurrency: string, prices: PricePoint[]): PricePoint[] | null {
-		if (assetCurrency === mainCurrency) return prices;
-		const conversion = findCurrencyConversion(assetCurrency, mainCurrency, $currencies);
-		if (!conversion) return null;
-		return convertPrices(prices, conversion.currencyRate, conversion.sourceCurrency, conversion.targetCurrency);
-	}
-
-	// Track which assets have currency conversion issues (independent of selection)
-	const assetConversionWarnings = $derived.by((): Set<string> => {
-		const warnings = new Set<string>();
-		for (const sel of assetSelections) {
-			const asset = $assets.find((a) => a.id === sel.id);
-			if (!asset || asset.prices.length < 2) continue;
-			if (asset.currency !== mainCurrency) {
-				const converted = convertAssetPrices(asset.currency, asset.prices);
-				if (!converted || converted.length < 2) warnings.add(sel.id);
-			}
-		}
-		return warnings;
-	});
-
-	const assetColors = $derived(generateAssetColors(assetSelections.length));
-	const isRunning = $derived($simulation.running);
-	const progress = $derived(
-		$simulation.progress
-			? ($simulation.progress.completed / $simulation.progress.total) * 100
-			: 0
+	const eligible = $derived(app.assets.filter((a) => a.prices.length > 20));
+	const warnings = $derived(
+		new Map(
+			eligible
+				.filter((a) => app.converted(a).status === 'missing')
+				.map((a) => [a.id, `No ${a.currency}→${app.settings.mainCurrency} rates — unconverted`])
+		)
 	);
-	const result = $derived($simulation.result);
-	const selectedAssets = $derived(assetSelections.filter((a) => a.selected));
-
-	// Compute benchmark as a SimulatedPortfolio for the scatter chart
-	// Use log-return-based metrics to match the MC worker's methodology
-	const benchmarkPortfolio = $derived.by((): SimulatedPortfolio | null => {
-		const bm = $benchmarkStore;
-		if (!bm || bm.prices.length < 2) return null;
-		// Convert benchmark prices to main currency if needed
-		const bmAsset = $assets.find((a) => a.id === bm.ref.id);
-		let prices = bm.prices;
-		if (bmAsset && bmAsset.currency !== mainCurrency) {
-			const converted = convertAssetPrices(bmAsset.currency, bm.prices);
-			if (converted && converted.length >= 2) prices = converted;
-		}
-		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-		const ret = annualizedLogReturn(prices);
-		const vol = annualizedVolatility(prices);
-		const sharpe = vol > 0 ? (ret - riskFreeRate) / vol : 0;
-		return {
-			weights: {},
-			annualizedReturn: ret,
-			volatility: vol,
-			sharpeRatio: sharpe
-		};
+	const selectedAssets = $derived(sim.assetIds.map((id) => app.assetById.get(id)).filter((a): a is Asset => !!a));
+	const selectedIds = $derived(selectedAssets.map((a) => a.id));
+	const parsed = $derived(sim.parsedConstraints(selectedIds));
+	// Drop assets deleted since they were selected.
+	$effect(() => {
+		if (app.ready && sim.assetIds.some((id) => !app.assetById.has(id))) sim.assetIds = sim.assetIds.filter((id) => app.assetById.has(id));
 	});
-
-	// Compute per-asset markers matching the MC worker's hybrid approach:
-	// - Expected return: full individual history (better estimate, more data)
-	// - Volatility: aligned (intersection) window (consistent with portfolio covariance)
-	const TRADING_DAYS_PER_YEAR = 252;
-	const assetMarkerList = $derived.by((): AssetMarker[] => {
-		if (!result) return [];
-
-		// Collect selected assets with converted prices (same as handleRun sends to worker)
-		const selected: Array<{ idx: number; name: string; prices: PricePoint[] }> = [];
-		for (let i = 0; i < assetSelections.length; i++) {
-			const sel = assetSelections[i];
-			if (!sel.selected) continue;
-			const asset = $assets.find((a) => a.id === sel.id);
-			if (!asset || asset.prices.length < 2) continue;
-			const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
-			if (prices.length < 2) continue;
-			selected.push({ idx: i, name: asset.name, prices });
-		}
-
-		if (selected.length < 2) {
-			return selected.map((s) => ({
-				name: s.name,
-				annualizedReturn: annualizedLogReturn(s.prices),
-				volatility: annualizedVolatility(s.prices),
-				color: assetColors[s.idx],
-			}));
-		}
-
-		// Volatility uses the aligned intersection (same as MC covariance matrix)
-		const { alignedSeries } = alignPriceSeries(selected.map((s) => s.prices));
-
-		const markers: AssetMarker[] = [];
-		for (let i = 0; i < selected.length; i++) {
-			// Return from full individual history (same as MC worker)
-			const annReturn = annualizedLogReturn(selected[i].prices);
-			// Volatility from aligned window (consistent with MC covariance)
-			const alignedRet = logReturns(alignedSeries[i]);
-			if (alignedRet.length < 2) continue;
-			const annVol = stddev(alignedRet) * Math.sqrt(TRADING_DAYS_PER_YEAR);
-			markers.push({
-				name: selected[i].name,
-				annualizedReturn: annReturn,
-				volatility: annVol,
-				color: assetColors[selected[i].idx],
-			});
-		}
-		return markers;
+	const formKey = $derived(JSON.stringify({ ids: selectedIds, count: sim.count, parsed }));
+	const validation = $derived(
+		sim.useConstraints
+			? validateConstraints(
+					parsed.constraints,
+					parsed,
+					selectedAssets.map((a) => a.name)
+				)
+			: { ok: true, errors: [] }
+	);
+	// No upper limit (MC-1); large runs get a memory estimate instead.
+	const countError = $derived(Number.isInteger(sim.count) && sim.count >= 100 ? null : 'Enter a whole number of at least 100 portfolios.');
+	const memory = $derived(countError ? 0 : estimateSimulationBytes(sim.count, Math.max(2, selectedAssets.length)));
+	const canRun = $derived(selectedAssets.length >= 2 && !countError && validation.ok);
+	const formatBytes = (b: number) => (b >= 1e9 ? `${fmt.num(b / 1e9, 1)} GB` : `${fmt.num(b / 1e6, 0)} MB`);
+	$effect(() => {
+		for (const id of sim.assetIds) if (!sim.constraints[id]) sim.constraints[id] = { min: '', max: '' };
 	});
+	let colorBySharpe = $state(true);
+	// The simulation values portfolios that keep their weights; buy & hold drifts away from them (MC-8).
+	let saveRebalance = $state<RebalanceFrequency>('monthly');
+	let showDominating = $state(false);
+	let onlyDominating = $state(false);
 
-	function handleRun() {
-		if (selectedAssets.length < 2) return;
-
-		const assetData = selectedAssets
-			.map((sel) => {
-				const asset = $assets.find((a) => a.id === sel.id);
-				if (!asset) return null;
-				// Convert prices to main currency for consistent simulation
-				const prices = convertAssetPrices(asset.currency, asset.prices) ?? asset.prices;
-				return { id: asset.id, prices };
-			})
-			.filter((a): a is NonNullable<typeof a> => a !== null);
-
-		if (assetData.length < 2) return;
-
-		const riskFreeRate = (($settings.riskFreeRate as number) ?? 0) / 100;
-
-		updateConfig({
-			simulationCount,
-			assetIds: assetData.map((a) => a.id),
-			riskFreeRate
+	function inputs(ids: string[]) {
+		return ids.map((id) => {
+			const a = app.assetById.get(id)!;
+			return { id, prices: app.converted(a).prices.map((p) => ({ date: p.date, close: p.close })) };
 		});
-		setRunning(true);
-		selectedPortfolio = null;
+	}
 
-		worker = createMonteCarloWorker();
-
-		worker.onmessage = (event: MessageEvent<MonteCarloWorkerResponse>) => {
-			const msg = event.data;
-			switch (msg.type) {
-				case 'simulation-progress':
-					setProgress(msg.payload.completed, msg.payload.total);
-					// When progress reaches 100%, show the rendering indicator immediately.
-					// The result message hasn't arrived yet (worker still computing frontier
-					// + structured clone transfer), so this bridges the visual gap.
-					if (msg.payload.completed >= msg.payload.total) {
-						rendering = true;
-						setRunning(false);
-					}
-					break;
-				case 'simulation-result': {
-					// The chart render (uPlot) is synchronous and blocks the main thread.
-					// We use setTimeout to yield to the browser so it can paint the
-					// "Rendering chart..." indicator before the heavy render starts.
-					const payload = msg.payload;
-					rendering = true;
-					setRunning(false);
-					// Persist and clean up worker immediately (non-blocking)
-					saveSimulation({
-						id: crypto.randomUUID(),
-						config: {
-							simulationCount,
-							assetIds: assetData.map((a) => a.id),
-							riskFreeRate,
-							benchmarkPortfolioId: null
-						},
-						results: payload,
-						createdAt: new Date().toISOString()
-					});
-					worker?.terminate();
-					worker = null;
-					// Yield to browser for paint, then trigger the heavy render
-					setTimeout(() => {
-						setResult(payload);
-						rendering = false;
-					}, 80);
-					break;
-				}
-				case 'error':
-					setRunning(false);
-					worker?.terminate();
-					worker = null;
-					break;
+	async function run() {
+		if (!canRun) return;
+		sim.selected = null;
+		sim.progress = { done: 0, total: sim.count, phase: 'portfolios' };
+		sim.riskFreeRate = app.riskFreeRate;
+		const ids = selectedIds;
+		const key = formKey;
+		sim.run = runMonteCarlo(
+			{
+				assets: inputs(ids),
+				count: sim.count,
+				riskFreeRate: app.riskFreeRate,
+				constraints: parsed.constraints,
+				minAssets: parsed.minAssets,
+				maxAssets: parsed.maxAssets
+			},
+			(done, total, phase) => {
+				sim.progress = { done, total, phase };
 			}
-		};
-
-		worker.onerror = () => {
-			setRunning(false);
-			worker?.terminate();
-			worker = null;
-		};
-
-		const request: MonteCarloWorkerRequest = {
-			type: 'run-simulation',
-			payload: {
-				config: {
-					simulationCount,
-					assetIds: assetData.map((a) => a.id),
-					riskFreeRate,
-					benchmarkPortfolioId: null
-				},
-				assets: assetData
-			}
-		};
-		worker.postMessage(request);
+		);
+		try {
+			sim.result = await sim.run.promise;
+			sim.resultKey = key;
+			sim.selected = bestIndex(sim.result, 'sharpe');
+		} catch (err) {
+			if (!(err instanceof DOMException && err.name === 'AbortError'))
+				notify.error(`Simulation failed: ${err instanceof Error ? err.message : String(err)}`);
+		} finally {
+			sim.progress = null;
+			sim.run = null;
+		}
 	}
 
-	function handleCancel() {
-		worker?.terminate();
-		worker = null;
-		setRunning(false);
-	}
+	const result = $derived(sim.result);
+	const resultAssets = $derived(result ? result.assetIds.map((id) => app.assetById.get(id)) : []);
 
-	function handleSelect(portfolio: SimulatedPortfolio) {
-		selectedPortfolio = portfolio;
-		savedPortfolioSlug = null;
-	}
-
-	// Resolve asset names for inspector, filtering out 0% allocations
-	function resolveWeights(weights: Record<string, number>): Array<{ name: string; weight: number }> {
-		return Object.entries(weights)
-			.filter(([, weight]) => weight > 0)
-			.map(([id, weight]) => {
-				const asset = $assets.find((a) => a.id === id);
-				return { name: asset?.name ?? id.slice(0, 8), weight };
+	// Benchmark measured over the same window as the simulation (MC-6).
+	const benchmark = $derived.by(() => {
+		const b = app.benchmarkResolved;
+		if (!b || !result) return null;
+		const series = app.benchmarkSeries();
+		const stats = series ? seriesStats(series, result.window, sim.riskFreeRate) : null;
+		return stats ? { label: b.name, ...stats } : null;
+	});
+	const windowYears = $derived(result ? daysBetween(result.window.start, result.window.end) / 365.25 : 0);
+	// Assets that cut the common history short: the latest start and the earliest end (null if all agree).
+	const windowLimits = $derived.by(() => {
+		const spans = resultAssets
+			.filter((a): a is Asset => !!a)
+			.map((a) => {
+				const p = app.converted(a).prices;
+				return { name: a.name, first: p[0]?.date ?? '', last: p.at(-1)?.date ?? '' };
 			})
-			.sort((a, b) => b.weight - a.weight);
-	}
-
-	async function handleSaveAsPortfolio() {
-		if (!selectedPortfolio) return;
-
-		const allocations = Object.entries(selectedPortfolio.weights)
-			.filter(([, weight]) => weight > 0)
-			.map(([assetId, weight]) => ({
-				assetId,
-				weight
-			}));
-
-		const names = resolveWeights(selectedPortfolio.weights).map((w) => w.name);
-		const portfolioName = `Simulated (${names.join(', ')})`.slice(0, 60);
-
-		const portfolio = {
-			id: crypto.randomUUID(),
-			name: portfolioName,
-			allocations,
-			isBenchmark: false,
-			createdAt: new Date().toISOString(),
-			updatedAt: new Date().toISOString()
+			.filter((s) => s.first);
+		if (spans.length < 2) return { start: null, end: null };
+		const latestStart = spans.reduce((m, s) => (s.first > m.first ? s : m));
+		const earliestEnd = spans.reduce((m, s) => (s.last < m.last ? s : m));
+		return {
+			start: spans.some((s) => s.first < latestStart.first) ? latestStart.name : null,
+			end: spans.some((s) => s.last > earliestEnd.last) ? earliestEnd.name : null
 		};
+	});
+	const dominating = $derived(result && benchmark && showDominating ? new Set(dominatingIndices(result, benchmark)) : null);
+	const markers = $derived([
+		...(result?.assetStats ?? []).map((s, i) => ({
+			label: app.assetById.get(s.id)?.name ?? s.id,
+			volatility: s.volatility,
+			annualizedReturn: s.annualizedReturn,
+			color: colorAt(i),
+			kind: 'asset' as const
+		})),
+		...(benchmark
+			? [
+					{
+						label: benchmark.label,
+						volatility: benchmark.volatility,
+						annualizedReturn: benchmark.annualizedReturn,
+						kind: 'benchmark' as const
+					}
+				]
+			: [])
+	]);
 
-		await addPortfolio(portfolio);
-		savedPortfolioSlug = slugify(portfolioName);
+	const inspected = $derived(
+		result && sim.selected !== null && sim.selected < result.count
+			? {
+					i: sim.selected,
+					weights: weightsAt(result, sim.selected),
+					ret: result.returns[sim.selected]!,
+					vol: result.volatilities[sim.selected]!,
+					sharpe: result.sharpes[sim.selected]!
+				}
+			: null
+	);
+
+	async function saveAsPortfolio() {
+		if (!inspected) return;
+		const allocations = cleanAllocations(
+			Object.entries(inspected.weights).map(([assetId, weight]) => ({ assetId, weight: Math.round(weight * 1000) / 1000 }))
+		);
+		const names = allocations
+			.sort((a, b) => b.weight - a.weight)
+			.map((a) => `${app.assetById.get(a.assetId)?.name.split(' ').slice(0, 2).join(' ')} ${Math.round(a.weight * 100)}%`)
+			.join(' / ');
+		const p = newPortfolio({ name: `Sim: ${names}`.slice(0, 60), allocations, rebalance: saveRebalance });
+		await app.savePortfolio(p);
+		notify.success(`Saved “${p.name}”${saveRebalance === 'none' ? '' : `, rebalanced ${saveRebalance}`}`, {
+			label: 'Open',
+			href: `/portfolios/${app.portfolioSlug(p.id)}`
+		});
 	}
+
+	const PRESETS = [1_000, 10_000, 100_000, 1_000_000];
 </script>
 
-<svelte:head>
-	<title>Simulation – Sweetfolio</title>
-</svelte:head>
+<PageHeader title="Monte Carlo simulation" subtitle="Generate random portfolios and explore the efficient frontier." />
 
-<div class="simulation-page">
-	<header class="page-header">
-		<h1>Monte Carlo Simulation</h1>
-		<p class="page-subtitle">Explore the efficient frontier with random portfolio simulations</p>
-	</header>
-
-	<div class="simulation-layout">
-		<aside class="config-panel">
-			<Card>
-				<h2>Configuration</h2>
-
-				<div class="config-form">
-					<div class="form-field">
-						<label for="sim-count">Number of Simulations</label>
+<div class="layout">
+	<Card title="Configuration">
+		<div class="stack">
+			<div>
+				<label class="label" for="mc-count">Number of portfolios</label>
+				<input id="mc-count" class="input num" type="number" min="100" step="1000" bind:value={sim.count} />
+				<div class="row presets">
+					{#each PRESETS as p (p)}<button class:active={sim.count === p} onclick={() => (sim.count = p)}>{fmt.compact(p)}</button>{/each}
+				</div>
+				{#if countError}
+					<p class="error-text">{countError}</p>
+				{:else if sim.count > 1_000_000 || memory > 500e6}
+					<p class="notice xs count-note">
+						Large run: needs about {formatBytes(memory)} of browser memory and takes a while.{#if memory > 2e9}
+							Browsers often cannot provide that much; the run may fail or the tab may crash.{/if}
+						The frontier is calculated, not sampled, so more portfolios mainly make the cloud denser.
+					</p>
+				{/if}
+			</div>
+			<div>
+				<span class="label">Assets (at least 2)</span>
+				{#if eligible.length < 2}<p class="small muted">
+						You need at least two assets with price history. <a href="/assets">Add assets</a>
+					</p>{:else}<AssetPicker assets={eligible} bind:selected={sim.assetIds} {warnings} />{/if}
+			</div>
+			<div class="constraints">
+				<Toggle
+					bind:checked={sim.useConstraints}
+					label="Weight constraints"
+					description="Limit weights for all assets or per asset (e.g. equity ≥ 40 %, gold ≤ 15 %) and the number of assets held."
+				/>
+				{#if sim.useConstraints && selectedAssets.length}
+					<div class="c-table">
+						<span class="xs muted">All assets</span><span class="xs muted">Min %</span><span class="xs muted">Max %</span>
+						<span class="small">Weight per asset</span>
 						<input
-							id="sim-count"
-							type="number"
-							min="100"
-							max="100000"
-							step="100"
-							bind:value={simulationCount}
-							disabled={isRunning}
+							class="input num"
+							inputmode="decimal"
+							placeholder="0"
+							bind:value={sim.limits.minWeight}
+							aria-label="Minimum weight per held asset"
 						/>
-						<span class="field-hint">{simulationCount.toLocaleString()} portfolios</span>
+						<input
+							class="input num"
+							inputmode="decimal"
+							placeholder="100"
+							bind:value={sim.limits.maxWeight}
+							aria-label="Maximum weight per asset"
+						/>
+						<span class="small">Number of assets</span>
+						<input
+							class="input num"
+							inputmode="numeric"
+							placeholder="1"
+							bind:value={sim.limits.minAssets}
+							aria-label="Minimum number of assets"
+						/>
+						<input
+							class="input num"
+							inputmode="numeric"
+							placeholder={String(selectedAssets.length)}
+							bind:value={sim.limits.maxAssets}
+							aria-label="Maximum number of assets"
+						/>
 					</div>
-
-					<div class="form-field">
-						<!-- svelte-ignore a11y_label_has_associated_control -->
-					<label>Assets to Include</label>
-						{#if assetSelections.length === 0}
-							<p class="muted">No assets available. Upload asset data first.</p>
-						{:else}
-							<div class="asset-checkboxes">
-								<label class="checkbox-item select-all">
-									<input
-										type="checkbox"
-										checked={assetSelections.length > 0 && assetSelections.every((a) => a.selected)}
-										indeterminate={assetSelections.some((a) => a.selected) && !assetSelections.every((a) => a.selected)}
-										onchange={() => {
-											const allSelected = assetSelections.every((a) => a.selected);
-											assetSelections.forEach((a) => (a.selected = !allSelected));
-										}}
-										disabled={isRunning}
-									/>
-									<span>Select all</span>
-								</label>
-								{#each assetSelections as asset, idx}
-									<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-									<label
-										class="checkbox-item"
-										onmouseenter={() => (hoveredAssetName = asset.name)}
-										onmouseleave={() => (hoveredAssetName = null)}
-									>
-										<input type="checkbox" bind:checked={asset.selected} disabled={isRunning} />
-										<span class="asset-color-dot" style="background: {assetColors[idx]}"></span>
-										<span>{asset.name}</span>
-										{#if assetConversionWarnings.has(asset.id)}
-											<span class="currency-warning" title="No exchange rate data to convert {$assets.find((a) => a.id === asset.id)?.currency ?? '?'} to {mainCurrency}. Simulation uses unconverted prices.">
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-													<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-													<line x1="12" y1="9" x2="12" y2="13"/>
-													<line x1="12" y1="17" x2="12.01" y2="17"/>
-												</svg>
-											</span>
-										{/if}
-									</label>
-								{/each}
-							</div>
-						{/if}
+					<p class="xs muted hint">
+						The minimum applies to assets that are held: each weight is 0 % or at least that. Entries per asset override it; a per-asset
+						minimum above 0 % means the asset is always held.
+					</p>
+					<div class="c-table">
+						<span class="xs muted">Per asset</span><span class="xs muted">Min %</span><span class="xs muted">Max %</span>
+						{#each selectedAssets as a (a.id)}
+							{#if sim.constraints[a.id]}
+								<span class="truncate small">{a.name}</span>
+								<input
+									class="input num"
+									inputmode="decimal"
+									placeholder={sim.limits.minWeight.trim() || '0'}
+									bind:value={sim.constraints[a.id]!.min}
+									aria-label="Minimum weight of {a.name}"
+								/>
+								<input
+									class="input num"
+									inputmode="decimal"
+									placeholder={sim.limits.maxWeight.trim() || '100'}
+									bind:value={sim.constraints[a.id]!.max}
+									aria-label="Maximum weight of {a.name}"
+								/>
+							{/if}
+						{/each}
 					</div>
+					{#each validation.errors as e (e)}<p class="error-text">{e}</p>{/each}
+				{/if}
+			</div>
+			{#if sim.progress}
+				<div class="stack" style="--gap: 6px">
+					<Progress value={sim.progress.done} max={sim.progress.total} label="Simulation progress" />
+					<div class="spread small">
+						<span class="muted num"
+							>{#if sim.progress.phase === 'frontier'}Efficient frontier {fmt.pct(
+									sim.progress.done / sim.progress.total,
+									0
+								)}{:else}{fmt.num(sim.progress.done, 0)} / {fmt.num(sim.progress.total, 0)} portfolios{/if}</span
+						><Button size="sm" variant="ghost" onclick={() => sim.run?.cancel()}>Cancel</Button>
+					</div>
+				</div>
+			{:else}
+				<Button variant="primary" icon="simulation" disabled={!canRun} onclick={run}>Run simulation</Button>
+			{/if}
+			<p class="xs muted">
+				Returns and risk are estimated on the assets' common history. Risk-free rate {fmt.num(app.settings.riskFreeRate, 2, 0)} %, values in {app
+					.settings.mainCurrency}.
+			</p>
+		</div>
+	</Card>
 
-					{#if isRunning}
-						<div class="progress-section">
-							<div class="progress-bar-track">
-								<div class="progress-bar" style="width: {progress}%"></div>
-							</div>
-							<span class="progress-text">{progress.toFixed(0)}%</span>
-						</div>
-						<Button variant="danger" onclick={handleCancel}>Cancel</Button>
-					{:else if rendering}
-						<div class="progress-section">
-							<span class="rendering-text">Rendering chart...</span>
-						</div>
-					{:else}
-						<Button variant="primary" onclick={handleRun} disabled={selectedAssets.length < 2}>
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-							</svg>
-							Run Simulation
-						</Button>
-						{#if selectedAssets.length < 2 && assetSelections.length > 0}
-							<p class="field-hint">Select at least 2 assets to run a simulation.</p>
-						{/if}
-					{/if}
+	<div class="stack" style="--gap: 20px">
+		{#if !result}
+			<Card
+				><EmptyState icon="simulation" title="No simulation yet">Pick assets and run a simulation to see the efficient frontier.</EmptyState
+				></Card
+			>
+		{:else}
+			{#if sim.resultKey !== formKey}
+				<p class="notice small">The settings changed since this run. Run the simulation again to apply them.</p>
+			{/if}
+			{#if windowYears < 3}
+				<p class="notice small">
+					Estimates use only {fmt.num(windowYears, 1)} years of common history{#if windowLimits.start}
+						(limited by {windowLimits.start}){/if}. Results from short periods are unreliable.
+				</p>
+			{/if}
+			<Card
+				title="Efficient frontier"
+				subtitle="{fmt.num(result.count, 0)} portfolios · estimated from {fmt.date(result.window.start)}{windowLimits.start
+					? ` (start of ${windowLimits.start})`
+					: ''} to {fmt.date(result.window.end)}{windowLimits.end ? ` (end of ${windowLimits.end})` : ''}{result.frontierApproximate
+					? ' · frontier approximated (asset counts / held minimums)'
+					: ''}"
+			>
+				{#snippet actions()}
+					<label class="row xs"><input type="checkbox" bind:checked={colorBySharpe} />Color by Sharpe</label>
+					{#if benchmark}<label class="row xs"><input type="checkbox" bind:checked={showDominating} />Beats benchmark</label
+						>{#if showDominating}<label class="row xs"><input type="checkbox" bind:checked={onlyDominating} />Only these</label>{/if}{/if}
+				{/snippet}
+				<Frontier
+					{result}
+					{colorBySharpe}
+					{markers}
+					{dominating}
+					onlyDominating={onlyDominating && !!dominating}
+					selected={sim.selected}
+					onselect={(i) => (sim.selected = i)}
+				/>
+				<div class="row picks">
+					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'sharpe'))}>Max Sharpe</Button>
+					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'minVol'))}>Min volatility</Button>
+					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'maxReturn'))}>Max return</Button>
 				</div>
 			</Card>
-		</aside>
-
-		<div class="results-area">
-			{#if rendering}
-				<Card padding="lg">
-					<div class="chart-placeholder">
-						<div class="rendering-spinner"></div>
-						<h3>Rendering chart...</h3>
-						<p>Drawing {simulationCount.toLocaleString()} portfolios</p>
+			{#if inspected}
+				<Card title="Portfolio inspector">
+					{#snippet actions()}
+						<select class="select save-rb" bind:value={saveRebalance} aria-label="Rebalancing of the saved portfolio">
+							<option value="monthly">Rebalance monthly</option>
+							<option value="quarterly">Rebalance quarterly</option>
+							<option value="annually">Rebalance annually</option>
+							<option value="none">Buy &amp; hold</option>
+						</select>
+						<Button size="sm" variant="primary" icon="plus" onclick={saveAsPortfolio}>Save as portfolio</Button>
+					{/snippet}
+					<div class="stats">
+						<Stat label="Return p.a." value={fmt.pct(inspected.ret)} tone={fmt.signClass(inspected.ret)} />
+						<Stat label="Volatility" value={fmt.pct(inspected.vol)} />
+						<Stat label="Sharpe" value={fmt.num(inspected.sharpe)} />
 					</div>
-				</Card>
-			{:else if result}
-				<Card padding="lg">
-					<EfficientFrontier
-						scatterVolatilities={result.scatterVolatilities}
-						scatterReturns={result.scatterReturns}
-						portfolioCount={result.portfolioCount}
-						efficientFrontier={result.efficientFrontier}
-						benchmark={benchmarkPortfolio}
-						assetMarkers={assetMarkerList}
-						highlightedAsset={hoveredAssetName}
-						onselect={handleSelect}
-					/>
-				</Card>
-
-				<Card>
-					<div class="inspector">
-						<h3>Portfolio Inspector</h3>
-						{#if selectedPortfolio}
-							<div class="inspector-data">
-								<div class="inspector-metrics">
-									<div class="inspector-metric">
-										<span class="inspector-label">Annualized Return</span>
-										<span class="inspector-value">{(selectedPortfolio.annualizedReturn * 100).toFixed(2)}%</span>
-									</div>
-									<div class="inspector-metric">
-										<span class="inspector-label">Volatility</span>
-										<span class="inspector-value">{(selectedPortfolio.volatility * 100).toFixed(2)}%</span>
-									</div>
-									<div class="inspector-metric">
-										<span class="inspector-label">Sharpe Ratio</span>
-										<span class="inspector-value">{selectedPortfolio.sharpeRatio.toFixed(3)}</span>
-									</div>
-								</div>
-								<div class="inspector-weights">
-									<h4>Allocation</h4>
-									{#each resolveWeights(selectedPortfolio.weights) as w}
-										<div class="weight-row">
-											<span class="weight-name">{w.name}</span>
-											<span class="weight-value">{(w.weight * 100).toFixed(1)}%</span>
-										</div>
-									{/each}
-								</div>
-								<div class="inspector-actions">
-									<Button variant="primary" size="sm" onclick={handleSaveAsPortfolio}>
-										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-											<polyline points="17 21 17 13 7 13 7 21"/>
-											<polyline points="7 3 7 8 15 8"/>
-										</svg>
-										Save as Portfolio
-									</Button>
-									{#if savedPortfolioSlug}
-										<a href="/portfolios/{savedPortfolioSlug}" class="open-portfolio-link">
-											Open
-											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-												<path d="M5 12h14"/>
-												<path d="M12 5l7 7-7 7"/>
-											</svg>
-										</a>
-									{/if}
-								</div>
-							</div>
-						{:else}
-							<p class="muted">Click on a point in the scatter plot to inspect the portfolio allocation.</p>
-						{/if}
-					</div>
-				</Card>
-			{:else}
-				<Card padding="lg">
-					<div class="chart-placeholder">
-						<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-							<circle cx="12" cy="12" r="10"/>
-							<path d="M8 12l2 2 4-4"/>
-						</svg>
-						<h3>Efficient Frontier</h3>
-						<p>Run a simulation to see the risk vs. return scatter plot with the efficient frontier overlay.</p>
-					</div>
-				</Card>
-
-				<Card>
-					<div class="inspector-placeholder">
-						<h3>Portfolio Inspector</h3>
-						<p class="muted">Click on a point in the scatter plot to inspect the portfolio allocation, return, volatility, and Sharpe ratio.</p>
-					</div>
+					<p class="xs muted rb-note">
+						Return and risk assume the weights are kept (rebalanced). Without rebalancing, strong or volatile assets grow beyond their
+						weight and the saved portfolio's risk can end up much higher.
+					</p>
+					<ul class="weights">
+						{#each resultAssets as a, i (result.assetIds[i])}
+							{@const w = inspected.weights[result.assetIds[i]!] ?? 0}
+							<li class:zero={w === 0}>
+								<span class="truncate small">{a?.name ?? 'Deleted asset'}</span>
+								<span class="bar"><span style="width: {w * 100}%; background: {colorAt(i)}"></span></span>
+								<span class="num small">{fmt.pct(w, 1)}</span>
+							</li>
+						{/each}
+					</ul>
 				</Card>
 			{/if}
-		</div>
+		{/if}
 	</div>
 </div>
 
 <style>
-	.simulation-page {
-		max-width: 1200px;
+	.notice {
+		padding: 10px 14px;
+		border-radius: var(--radius);
+		background: var(--warning-soft);
+		color: var(--warning);
 	}
-
-	.page-header {
-		margin-bottom: var(--spacing-xl);
-	}
-
-	.page-header h1 {
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.page-subtitle {
-		color: var(--color-text-muted);
-		font-size: var(--font-size-base);
-	}
-
-	.simulation-layout {
+	.layout {
 		display: grid;
-		grid-template-columns: 320px 1fr;
-		gap: var(--spacing-lg);
+		gap: var(--space-4);
 		align-items: start;
 	}
-
-	@media (max-width: 900px) {
-		.simulation-layout {
-			grid-template-columns: 1fr;
+	@media (min-width: 1100px) {
+		.layout {
+			grid-template-columns: 360px minmax(0, 1fr);
 		}
 	}
-
-	.config-panel h2 {
-		font-size: var(--font-size-lg);
-		margin-bottom: var(--spacing-lg);
+	.count-note {
+		margin: 8px 0 0;
 	}
-
-	.config-form {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-lg);
+	.presets {
+		margin-top: 8px;
+		--gap: 6px;
 	}
-
-	.form-field {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-xs);
-	}
-
-	.form-field > label {
-		font-size: var(--font-size-sm);
-		font-weight: 500;
-		color: var(--color-text-secondary);
-	}
-
-	.field-hint {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-muted);
-	}
-
-	.muted {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-muted);
-	}
-
-	.asset-checkboxes {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-sm);
-	}
-
-	.checkbox-item {
-		display: flex;
-		align-items: center;
-		gap: var(--spacing-sm);
-		cursor: pointer;
-		font-size: var(--font-size-sm);
-	}
-
-	.asset-color-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-
-	.currency-warning {
-		display: inline-flex;
-		align-items: center;
-		margin-left: auto;
-		color: var(--color-warning, #e6a700);
-		flex-shrink: 0;
-		cursor: help;
-	}
-
-	.checkbox-item.select-all {
+	.presets button {
+		border: 1px solid var(--border-strong);
+		background: var(--surface-solid);
+		border-radius: 999px;
+		padding: 4px 10px;
+		font-size: var(--text-xs);
 		font-weight: 600;
-		padding-bottom: var(--spacing-xs);
-		margin-bottom: var(--spacing-xs);
-		border-bottom: 1px solid var(--color-border);
 	}
-
-	.progress-section {
-		display: flex;
+	.presets button.active {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.c-table {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 72px 72px;
+		gap: 6px 8px;
 		align-items: center;
-		gap: var(--spacing-md);
+		margin-top: 8px;
 	}
-
-	.progress-bar-track {
-		flex: 1;
-		height: 8px;
-		background: var(--color-bg-tertiary);
-		border-radius: 4px;
-		overflow: hidden;
+	.hint {
+		margin: 6px 0 0;
 	}
-
-	.progress-bar {
-		height: 100%;
-		background: linear-gradient(90deg, var(--color-deep-teal), var(--color-miku-teal));
-		border-radius: 4px;
-		transition: width var(--transition-fast);
-	}
-
-	.progress-text {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-		color: var(--color-text-muted);
-		min-width: 40px;
+	.c-table .input {
+		min-height: 32px;
+		padding: 4px 8px;
 		text-align: right;
 	}
-
-	.rendering-text {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-muted);
-		animation: pulse 1.2s ease-in-out infinite;
+	.picks {
+		margin-top: var(--space-3);
 	}
-
-	.rendering-spinner {
-		width: 36px;
-		height: 36px;
-		border: 3px solid var(--color-border);
-		border-top-color: var(--color-accent);
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to { transform: rotate(360deg); }
-	}
-
-	@keyframes pulse {
-		0%, 100% { opacity: 0.5; }
-		50% { opacity: 1; }
-	}
-
-	.results-area {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-md);
-	}
-
-	.chart-placeholder {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: var(--spacing-md);
-		min-height: 400px;
-		color: var(--color-text-muted);
-		text-align: center;
-	}
-
-	.chart-placeholder h3 {
-		color: var(--color-text-secondary);
-		font-size: var(--font-size-lg);
-	}
-
-	.chart-placeholder p {
-		font-size: var(--font-size-sm);
-		max-width: 360px;
-	}
-
-	.inspector-placeholder {
-		padding: var(--spacing-sm) 0;
-	}
-
-	.inspector-placeholder h3 {
-		font-size: var(--font-size-base);
-		margin-bottom: var(--spacing-xs);
-	}
-
-	.inspector h3 {
-		font-size: var(--font-size-base);
-		margin-bottom: var(--spacing-md);
-	}
-
-	.inspector-data {
-		display: flex;
-		flex-direction: column;
-		gap: var(--spacing-lg);
-	}
-
-	.inspector-metrics {
+	.stats {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
-		gap: var(--spacing-md);
+		gap: var(--space-3);
+		margin-bottom: var(--space-4);
 	}
-
-	.inspector-metric {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+	.save-rb {
+		width: auto;
+		min-height: 32px;
+		padding: 4px 28px 4px 10px;
+		font-size: var(--text-xs);
 	}
-
-	.inspector-label {
-		font-size: var(--font-size-xs);
-		color: var(--color-text-muted);
-		font-weight: 500;
+	.rb-note {
+		margin: calc(-1 * var(--space-2)) 0 var(--space-3);
 	}
-
-	.inspector-value {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-sm);
-		font-weight: 600;
+	.weights {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 8px;
 	}
-
-	.inspector-weights h4 {
-		font-size: var(--font-size-sm);
-		color: var(--color-text-secondary);
-		margin-bottom: var(--spacing-sm);
-	}
-
-	.weight-row {
-		display: flex;
-		justify-content: space-between;
-		padding: var(--spacing-xs) 0;
-		font-size: var(--font-size-sm);
-		border-bottom: 1px solid var(--color-border);
-	}
-
-	.weight-name {
-		font-weight: 500;
-	}
-
-	.weight-value {
-		font-family: var(--font-mono);
-		font-size: var(--font-size-xs);
-		color: var(--color-text-muted);
-	}
-
-	.inspector-actions {
-		display: flex;
+	.weights li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(60px, 2fr) 56px;
+		gap: 10px;
 		align-items: center;
-		gap: var(--spacing-sm);
-		padding-top: var(--spacing-sm);
 	}
-
-	.open-portfolio-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: var(--font-size-xs);
-		color: var(--color-positive);
-		font-weight: 500;
-		text-decoration: none;
-		animation: fadeIn 200ms ease;
+	.weights li.zero {
+		opacity: 0.45;
 	}
-
-	.open-portfolio-link:hover {
-		text-decoration: underline;
+	.bar {
+		height: 8px;
+		border-radius: 4px;
+		background: var(--surface-2);
+		overflow: hidden;
+	}
+	.bar span {
+		display: block;
+		height: 100%;
+	}
+	.weights .num {
+		text-align: right;
 	}
 </style>

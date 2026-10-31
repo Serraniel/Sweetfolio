@@ -1,0 +1,11 @@
+build/
+.svelte-kit/
+node_modules/
+package-lock.json
+CHANGELOG.md
+THIRD_PARTY_NOTICES.md
+docs/archive/
+playwright-report/
+test-results/
+tools/mcp-server/dist/
+tools/mcp-server/node_modules/
