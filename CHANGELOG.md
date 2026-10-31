@@ -39,6 +39,67 @@
 * bump docker/login-action from 3 to 4 ([86968fd](https://github.com/Serraniel/Sweetfolio/commit/86968fd16f226c1593a7b0864a4f268ce8488aa5))
 * bump docker/metadata-action from 5 to 6 ([243443a](https://github.com/Serraniel/Sweetfolio/commit/243443a83f10d8556f7d616d745dc5ec0d6eb4f5))
 
+## [0.6.0](https://github.com/Serraniel/Sweetfolio/compare/v0.5.4...v0.6.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* rewrite Sweetfolio on SvelteKit 3 / Svelte 5 ([#155](https://github.com/Serraniel/Sweetfolio/issues/155))
+* the Docker image listens on port 8080 (non-root); backups use format version 5 (versions 1-4 can still be imported); the Portfolio Performance export is CSV in PP's import format instead of XML.
+* the container listens on port 8080 instead of 80.
+
+### Features
+
+* **charts:** logarithmic scale for value and % charts ([0b75be5](https://github.com/Serraniel/Sweetfolio/commit/0b75be5755d375749a16608e8fb9c5cc1aa1e33b))
+* **charts:** Max starts at the common history, All shows everything ([ca9fbac](https://github.com/Serraniel/Sweetfolio/commit/ca9fbacdd96fd3c4ac0d4027857c27ed97dac936))
+* **compare:** compare portfolios with each other and with assets ([f40a1f9](https://github.com/Serraniel/Sweetfolio/commit/f40a1f9e333754c9cc531b0b3a8cb1334c8600c6))
+* **export:** export to Portfolio Performance CSV and an AI export ([#88](https://github.com/Serraniel/Sweetfolio/issues/88), [#89](https://github.com/Serraniel/Sweetfolio/issues/89)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **import:** import Parqet CSV and connect to Parqet via Parqet Connect ([#48](https://github.com/Serraniel/Sweetfolio/issues/48), [#88](https://github.com/Serraniel/Sweetfolio/issues/88)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **import:** import Portfolio Performance XML including dividends ([#47](https://github.com/Serraniel/Sweetfolio/issues/47)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **import:** import Trade Republic, Scalable Capital and ING CSVs ([#49](https://github.com/Serraniel/Sweetfolio/issues/49)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **portfolios:** cash tracking for tracked portfolios ([#45](https://github.com/Serraniel/Sweetfolio/issues/45)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **portfolios:** compare metrics, drawdown and correlation with the benchmark ([9d3c1ce](https://github.com/Serraniel/Sweetfolio/commit/9d3c1cecce91afbe577a75616e77ca6d4cc2a5d9))
+* **portfolios:** drift analysis and rebalancing trades ([#46](https://github.com/Serraniel/Sweetfolio/issues/46)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **portfolios:** track real portfolios with transactions, FIFO cost basis, holdings and value history ([#42](https://github.com/Serraniel/Sweetfolio/issues/42), [#43](https://github.com/Serraniel/Sweetfolio/issues/43), [#44](https://github.com/Serraniel/Sweetfolio/issues/44)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **simulation:** limits for all assets, asset counts and frontier zoom ([a2823d6](https://github.com/Serraniel/Sweetfolio/commit/a2823d6a432b46201c8e57985a9e1de74f672c5b))
+* **simulation:** minimum and maximum weights per asset ([#39](https://github.com/Serraniel/Sweetfolio/issues/39)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **simulation:** Monte Carlo on a common estimation window with compound returns, an exactly computed constrained efficient frontier and benchmark comparison ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **simulation:** name the assets that limit the estimation window ([650bee1](https://github.com/Serraniel/Sweetfolio/commit/650bee1b359e814d5e28524c2e902ccc934a5610))
+* **simulation:** no upper limit on the number of portfolios ([be1d7df](https://github.com/Serraniel/Sweetfolio/commit/be1d7df0766d77db1eb05f0b1097eb1b830e6a30))
+* **strategies:** hierarchical allocation strategies that generate portfolios ([#41](https://github.com/Serraniel/Sweetfolio/issues/41)) ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **tools:** local MCP server for the AI export ([406954e](https://github.com/Serraniel/Sweetfolio/commit/406954e195d19ba815f4185b309e2372f0ab94c5))
+* **ui:** mobile-first redesign with light, dark and system themes ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+
+
+### Bug Fixes
+
+* **assets:** deleting an asset left orphaned transactions and benchmark references ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **currency:** ECB exchange rates were stored inverted; a one-time migration repairs stored rates ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **dates:** dates were off by one day for users west of UTC ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **import:** Parqet CSV import expected headers that Parqet does not export ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **import:** Portfolio Performance shares were scaled by 1e9 instead of 1e8 and dividends were ignored ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **metrics:** metric periods longer than the available history were silently shortened ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **portfolios:** holdings counted fees of fully sold lots and cash was not computed in date order ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **portfolios:** make benchmark values in the metrics table more subtle ([4491692](https://github.com/Serraniel/Sweetfolio/commit/4491692fe0265ce93905b46dee85ea5bee04c04a))
+* **settings:** report the outcome of fetching ECB rates ([9224615](https://github.com/Serraniel/Sweetfolio/commit/9224615c4d551ede7ed7d3aeadc23fa4208661db))
+* **simulation:** keep per-asset limits with their asset ([8fd1a86](https://github.com/Serraniel/Sweetfolio/commit/8fd1a8655525f2cb1a218750ec3cdc9bff059e17))
+* **simulation:** random portfolios in the chart can be inspected, not only frontier points ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **simulation:** save portfolios with rebalancing like the simulation values them ([4bda527](https://github.com/Serraniel/Sweetfolio/commit/4bda527696df1857e93954cbe08898495990004d))
+* **simulation:** show frontier progress and keep frontier portfolios visible ([42231e7](https://github.com/Serraniel/Sweetfolio/commit/42231e7f640bfcf53e58b3b5ac26ee3924fe8c03))
+* **strategies:** shared strategies referenced the sender's local asset ids ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* **ui:** keep long names inside portfolio and strategy cards ([fc5acfd](https://github.com/Serraniel/Sweetfolio/commit/fc5acfdcb889db24066028931dd85b7b0f42a033))
+
+
+### Refactoring
+
+* rewrite Sweetfolio on SvelteKit 3 / Svelte 5 ([4719abd](https://github.com/Serraniel/Sweetfolio/commit/4719abdf883099251d7ea90672d516a57481ecc7))
+* rewrite Sweetfolio on SvelteKit 3 / Svelte 5 ([#155](https://github.com/Serraniel/Sweetfolio/issues/155)) ([638153e](https://github.com/Serraniel/Sweetfolio/commit/638153eee066ad30cedfea3fbefaedd3d48f952c))
+
+
+### CI
+
+* replace semantic-release and merge queue with release-please and edge images ([b4d2271](https://github.com/Serraniel/Sweetfolio/commit/b4d2271d3398653c985090a5e530fdeb1e151ace))
+
 ## [0.5.3](https://github.com/Serraniel/Sweetfolio/compare/v0.5.2...v0.5.3) (2026-03-04)
 
 
