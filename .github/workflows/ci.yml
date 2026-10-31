@@ -13,9 +13,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Job names of pr-title, check and e2e are the required status checks of the
+# "Default branch Protection" ruleset; renaming them blocks every pull request.
 jobs:
   pr-title:
-    name: Conventional PR title
+    name: PR Title (Conventional Commit)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +32,7 @@ jobs:
           fi
 
   check:
-    name: Lint, typecheck, unit tests, build
+    name: build-and-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -46,7 +48,7 @@ jobs:
       - run: npm run build
 
   e2e:
-    name: End-to-end (Playwright)
+    name: e2e
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
