@@ -38,6 +38,29 @@ export interface DetectedFormat {
 export const DATE_FORMATS = ['DD.MM.YYYY', 'DD-MM-YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD', 'MM/DD/YYYY', 'MM-DD-YYYY'] as const;
 export type DateFormat = (typeof DATE_FORMATS)[number];
 
+/** Economic exposure of an asset, used by the crisis tester to pick proxy data (CR-1). */
+export const EXPOSURE_CLASSES = ['equity', 'govBond', 'corpBond', 'gold', 'commodity', 'crypto', 'cash', 'mixed', 'unknown'] as const;
+export type ExposureClass = (typeof EXPOSURE_CLASSES)[number];
+export const EXPOSURE_REGIONS = ['world', 'us', 'europe', 'germany', 'emerging', 'japan', 'other'] as const;
+export type ExposureRegion = (typeof EXPOSURE_REGIONS)[number];
+export const EQUITY_STYLES = ['broad', 'tech'] as const;
+export type EquityStyle = (typeof EQUITY_STYLES)[number];
+export const BOND_MATURITIES = ['short', 'intermediate', 'long'] as const;
+export type BondMaturity = (typeof BOND_MATURITIES)[number];
+
+export interface Exposure {
+	assetClass: ExposureClass;
+	region: ExposureRegion;
+	/** Equities only. */
+	style: EquityStyle;
+	/** Bonds only. */
+	maturity: BondMaturity;
+	/** Daily leverage factor; negative for short products. */
+	leverage: number;
+	/** `auto`: from market data, `guess`: from the name only, `manual`: set by the user. */
+	source: 'auto' | 'guess' | 'manual';
+}
+
 export interface Asset {
 	id: string;
 	name: string;
@@ -52,6 +75,8 @@ export interface Asset {
 	createdAt: string;
 	updatedAt: string;
 	lastRefreshedAt: string | null;
+	/** Missing on assets created before the crisis tester; derived on demand then. */
+	exposure?: Exposure | null;
 }
 
 export type PortfolioMode = 'model' | 'tracked' | 'both';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Asset, RebalanceFrequency } from '#lib/domain/types.ts';
+	import type { Asset } from '#lib/domain/types.ts';
 	import { newPortfolio, cleanAllocations } from '#lib/domain/factories.ts';
 	import {
 		bestIndex,
@@ -12,6 +12,9 @@
 	import { daysBetween } from '#lib/core/dates.ts';
 	import { app } from '#lib/state/app.svelte.ts';
 	import { sim } from '#lib/state/simulation.svelte.ts';
+	import { evaluateView, outcomeAt, simCrisis } from '#lib/state/sim-crisis.svelte.ts';
+	import { crisis, summarize, type CrisisRow } from '#lib/state/crisis.svelte.ts';
+	import { compareOutcome, nonDominated3 } from '#lib/core/crisis.ts';
 	import { notify } from '#lib/state/toasts.svelte.ts';
 	import { runMonteCarlo } from '#lib/workers/client.ts';
 	import * as fmt from '#lib/format.ts';
@@ -24,6 +27,8 @@
 	import EmptyState from '#lib/ui/EmptyState.svelte';
 	import AssetPicker from '#lib/components/AssetPicker.svelte';
 	import Frontier from '#lib/charts/Frontier.svelte';
+	import SimulationCrises from '#lib/components/SimulationCrises.svelte';
+	import CrisisTable, { duration } from '#lib/components/CrisisTable.svelte';
 	import { colorAt } from '#lib/charts/palette.ts';
 
 	const eligible = $derived(app.assets.filter((a) => a.prices.length > 20));
@@ -61,7 +66,7 @@
 	});
 	let colorBySharpe = $state(true);
 	// The simulation values portfolios that keep their weights; buy & hold drifts away from them (MC-8).
-	let saveRebalance = $state<RebalanceFrequency>('monthly');
+	// The same rebalancing is used by the crisis test, so saved portfolios show the same crisis results.
 	let showDominating = $state(false);
 	let onlyDominating = $state(false);
 
@@ -74,6 +79,7 @@
 
 	async function run() {
 		if (!canRun) return;
+		simCrisis.reset();
 		sim.selected = null;
 		sim.progress = { done: 0, total: sim.count, phase: 'portfolios' };
 		sim.riskFreeRate = app.riskFreeRate;
@@ -155,6 +161,41 @@
 			: [])
 	]);
 
+	// --- Crisis test of a selection (CR-7)
+	let frontierRef = $state<ReturnType<typeof Frontier> | undefined>();
+	let zoomView = $state<{ x0: number; x1: number; y0: number; y1: number } | null>(null);
+	const crisisTest = $derived(simCrisis.result && result && simCrisis.result.source === result ? simCrisis.result : null);
+	const crisisView = $derived(crisisTest ? evaluateView(crisisTest, crisis.prefs) : null);
+	const maxCrisisDD = $derived.by(() => {
+		const v = Number(simCrisis.maxDrawdown.replace(',', '.'));
+		return simCrisis.maxDrawdown.trim() && Number.isFinite(v) && v > 0 ? -v / 100 : null;
+	});
+	const minBetter = $derived(
+		crisisView?.compared.length && simCrisis.minBetter
+			? Math.min(simCrisis.minBetter === 'all' ? Infinity : simCrisis.minBetter, crisisView.compared.length)
+			: 0
+	);
+	const crisisHidden = $derived.by(() => {
+		if (!result || !crisisView || (!simCrisis.onlyHoldingUp && maxCrisisDD === null && !minBetter)) return null;
+		const mask = new Uint8Array(result.count).fill(1);
+		for (const i of crisisTest!.indices) {
+			const holds = !simCrisis.onlyHoldingUp || crisisView.holds[i] !== 0;
+			const dd = maxCrisisDD === null || crisisView.worstDrawdown[i]! >= maxCrisisDD;
+			const better = crisisView.better[i]! >= minBetter;
+			if (holds && dd && better) mask[i] = 0;
+		}
+		return mask;
+	});
+	const crisisEfficient = $derived.by(() => {
+		if (!result || !crisisView || !simCrisis.showEfficient) return null;
+		const candidates = Array.from(crisisTest!.indices).filter((i) => !crisisHidden?.[i]);
+		return nonDominated3(result.returns, result.volatilities, crisisView.scores, candidates);
+	});
+	const scoreText = (v: number) => (crisis.prefs.score === 'longestRecovery' ? duration(-v * 365.25) : fmt.pct(v, 1));
+	function selectRange(range: { x0: number; x1: number; y0: number; y1: number }) {
+		if (frontierRef) simCrisis.setSelection(frontierRef.indicesIn(range), 'Drawn range');
+	}
+
 	const inspected = $derived(
 		result && sim.selected !== null && sim.selected < result.count
 			? {
@@ -176,13 +217,47 @@
 			.sort((a, b) => b.weight - a.weight)
 			.map((a) => `${app.assetById.get(a.assetId)?.name.split(' ').slice(0, 2).join(' ')} ${Math.round(a.weight * 100)}%`)
 			.join(' / ');
-		const p = newPortfolio({ name: `Sim: ${names}`.slice(0, 60), allocations, rebalance: saveRebalance });
+		const rebalance = simCrisis.rebalance;
+		const p = newPortfolio({ name: `Sim: ${names}`.slice(0, 60), allocations, rebalance });
 		await app.savePortfolio(p);
-		notify.success(`Saved “${p.name}”${saveRebalance === 'none' ? '' : `, rebalanced ${saveRebalance}`}`, {
+		notify.success(`Saved “${p.name}”${rebalance === 'none' ? '' : `, rebalanced ${rebalance}`}`, {
 			label: 'Open',
 			href: `/portfolios/${app.portfolioSlug(p.id)}`
 		});
 	}
+
+	// Crisis rows of the inspected portfolio, in the same shape as on the portfolio page.
+	const inspectedCrises = $derived.by(() => {
+		if (!inspected || !crisisTest || !crisisView || !result) return null;
+		const r = crisisView.row[inspected.i]!;
+		if (r < 0) return null;
+		const held = result.assetIds.filter((id) => (inspected.weights[id] ?? 0) > 0).map((id) => app.assetById.get(id)!);
+		const types = new Set(crisis.prefs.types);
+		const tested: CrisisRow[] = crisisTest.crises.map((c, j) => {
+			const outcome = outcomeAt(crisisTest, r, j);
+			const b = crisisTest.benchmark[j] ?? null;
+			return {
+				crisis: c,
+				outcome,
+				benchmark: b,
+				verdict: b ? compareOutcome(outcome, b, crisis.prefs.tolerance) : null,
+				missing: [],
+				coverage: held.flatMap((a) => (c.scenario ? crisis.scenarioCoverage(a) : crisis.coverage(a, c)) ?? []),
+				included: types.has(c.type)
+			};
+		});
+		const untested: CrisisRow[] = crisisTest.excluded.map((x) => ({
+			crisis: x.crisis,
+			outcome: null,
+			benchmark: null,
+			verdict: null,
+			missing: x.missing,
+			coverage: [],
+			included: types.has(x.crisis.type)
+		}));
+		return summarize([...tested, ...untested], crisis.prefs, !!crisisTest.benchmarkName);
+	});
+	let inspectedCrisis = $state<string | null>(null);
 
 	const PRESETS = [1_000, 10_000, 100_000, 1_000_000];
 </script>
@@ -335,6 +410,8 @@
 						>{#if showDominating}<label class="row xs"><input type="checkbox" bind:checked={onlyDominating} />Only these</label>{/if}{/if}
 				{/snippet}
 				<Frontier
+					bind:this={frontierRef}
+					bind:view={zoomView}
 					{result}
 					{colorBySharpe}
 					{markers}
@@ -342,6 +419,14 @@
 					onlyDominating={onlyDominating && !!dominating}
 					selected={sim.selected}
 					onselect={(i) => (sim.selected = i)}
+					scores={crisisView?.scores ?? null}
+					colorByScore={simCrisis.colorByScore}
+					scoreLabel={scoreText}
+					hide={crisisHidden}
+					highlight={crisisEfficient}
+					selection={simCrisis.selection}
+					selectMode={simCrisis.selectMode}
+					onrange={selectRange}
 				/>
 				<div class="row picks">
 					<Button size="sm" onclick={() => (sim.selected = bestIndex(result, 'sharpe'))}>Max Sharpe</Button>
@@ -352,7 +437,7 @@
 			{#if inspected}
 				<Card title="Portfolio inspector">
 					{#snippet actions()}
-						<select class="select save-rb" bind:value={saveRebalance} aria-label="Rebalancing of the saved portfolio">
+						<select class="select save-rb" bind:value={simCrisis.rebalance} aria-label="Rebalancing of the saved portfolio">
 							<option value="monthly">Rebalance monthly</option>
 							<option value="quarterly">Rebalance quarterly</option>
 							<option value="annually">Rebalance annually</option>
@@ -379,13 +464,45 @@
 							</li>
 						{/each}
 					</ul>
+					{#if inspectedCrises}
+						<div class="inspector-crises">
+							<p class="small">
+								<strong>Crises</strong>
+								{#if inspectedCrises.holdsUp !== null}<span class={inspectedCrises.holdsUp ? 'pos' : 'neg'}
+										>— {inspectedCrises.holdsUp
+											? 'holds up like the benchmark'
+											: `worse than the benchmark in ${inspectedCrises.worse}`}</span
+									>{/if}
+							</p>
+							<CrisisTable report={inspectedCrises} benchmarkLabel={crisisTest?.benchmarkName ?? null} bind:selected={inspectedCrisis} />
+						</div>
+					{:else if crisisTest}
+						<p class="xs muted">This portfolio was not part of the crisis test.</p>
+					{/if}
 				</Card>
 			{/if}
+			<Card title="Crisis test" subtitle="Optional: how selected portfolios would hold up in different types of crises">
+				<SimulationCrises
+					{result}
+					{benchmark}
+					test={crisisTest}
+					view={crisisView}
+					hidden={crisisHidden}
+					efficient={crisisEfficient}
+					inZoom={() => frontierRef?.indicesIn(zoomView) ?? []}
+					onpick={(i) => (sim.selected = i)}
+				/>
+			</Card>
 		{/if}
 	</div>
 </div>
 
 <style>
+	.inspector-crises {
+		margin-top: var(--space-4);
+		display: grid;
+		gap: var(--space-2);
+	}
 	.notice {
 		padding: 10px 14px;
 		border-radius: var(--radius);

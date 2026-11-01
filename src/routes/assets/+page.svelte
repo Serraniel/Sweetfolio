@@ -75,7 +75,8 @@
 			currency: draft.currency,
 			classification: draft.classification,
 			prices: found.prices,
-			lastRefreshedAt: new Date().toISOString()
+			lastRefreshedAt: new Date().toISOString(),
+			exposure: found.exposure ?? null
 		});
 		await app.saveAsset(a);
 		notify.success(`Added “${a.name}”`, { label: 'Open', href: `/assets/${app.assetSlug(a.id)}` });

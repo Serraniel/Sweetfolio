@@ -1,7 +1,18 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { ASSET_CLASSIFICATIONS, COMMON_CURRENCIES, type PricePoint } from '#lib/domain/types.ts';
+	import {
+		ASSET_CLASSIFICATIONS,
+		BOND_MATURITIES,
+		COMMON_CURRENCIES,
+		EQUITY_STYLES,
+		EXPOSURE_CLASSES,
+		EXPOSURE_REGIONS,
+		type Exposure,
+		type PricePoint
+	} from '#lib/domain/types.ts';
+	import { describeExposure, exposureOf, guessExposure } from '#lib/core/exposure.ts';
+	import { proxyChain } from '#lib/core/proxies.ts';
 	import { drawdownSeries, maxDrawdown } from '#lib/core/metrics.ts';
 	import { isValidISIN, isValidWKN } from '#lib/parsers/identifiers.ts';
 	import { encodeAssetList, shareUrl } from '#lib/sharing/codec.ts';
@@ -9,6 +20,7 @@
 	import { saveText, safeFileName } from '#lib/io/download.ts';
 	import { app } from '#lib/state/app.svelte.ts';
 	import { jobs } from '#lib/state/jobs.svelte.ts';
+	import { crisis } from '#lib/state/crisis.svelte.ts';
 	import { asyncDerived } from '#lib/state/async.svelte.ts';
 	import { notify } from '#lib/state/toasts.svelte.ts';
 	import * as calc from '#lib/workers/client.ts';
@@ -76,6 +88,56 @@
 		const slug = app.assetSlug(id);
 		if (slug !== page.params.slug) await goto(`/assets/${slug}`, { replace: true });
 		void jobs.fetchCurrencyRates();
+	}
+
+	// --- Exposure for the crisis tester (CR-1)
+	const exposure = $derived(asset ? exposureOf(asset) : null);
+	$effect(() => {
+		void crisis.load();
+	});
+	const proxy = $derived(asset && crisis.loaded ? crisis.assetSeries(asset) : null);
+	let exposureOpen = $state(false);
+	let exForm = $state<Exposure>(guessExposure({ name: '', classification: 'unknown' }));
+	const CLASS_LABELS: Record<Exposure['assetClass'], string> = {
+		equity: 'Equities',
+		govBond: 'Government bonds',
+		corpBond: 'Corporate bonds',
+		gold: 'Gold',
+		commodity: 'Commodities',
+		crypto: 'Crypto',
+		cash: 'Cash / money market',
+		mixed: 'Mixed / multi-asset',
+		unknown: 'Unknown'
+	};
+	const REGION_LABELS: Record<Exposure['region'], string> = {
+		world: 'World',
+		us: 'USA',
+		europe: 'Europe',
+		germany: 'Germany',
+		emerging: 'Emerging markets',
+		japan: 'Japan',
+		other: 'Other'
+	};
+	function openExposure() {
+		if (!exposure) return;
+		exForm = { ...exposure };
+		exposureOpen = true;
+	}
+	async function saveExposure() {
+		if (!asset) return;
+		const leverage = Number(exForm.leverage);
+		await app.saveAsset({
+			...asset,
+			exposure: { ...exForm, leverage: Number.isFinite(leverage) && leverage !== 0 ? leverage : 1, source: 'manual' },
+			updatedAt: new Date().toISOString()
+		});
+		exposureOpen = false;
+	}
+	async function resetExposure() {
+		if (!asset) return;
+		await app.saveAsset({ ...asset, exposure: null, updatedAt: new Date().toISOString() });
+		exposureOpen = false;
+		if (asset.isin || asset.wkn) void jobs.refreshAssets([asset]);
 	}
 
 	async function savePrices(p: PricePoint[]) {
@@ -164,6 +226,35 @@
 			</Card>
 		{/if}
 
+		{#if exposure}
+			<Card title="Exposure" subtitle="What the asset invests in — used by the crisis tester to pick proxy data">
+				{#snippet actions()}<Button size="sm" icon="edit" aria-label="Edit exposure" onclick={openExposure}>Edit</Button>{/snippet}
+				<p>
+					<strong>{describeExposure(exposure)}</strong>
+					{#if exposure.source === 'manual'}<Badge>Set manually</Badge>{:else if exposure.source === 'guess'}<Badge tone="warning"
+							>Guessed from the name</Badge
+						>{:else}<Badge tone="accent">From market data</Badge>{/if}
+				</p>
+				{#if exposure.assetClass === 'unknown' || exposure.assetClass === 'mixed'}
+					<p class="small muted">Crises before {fmt.date(asset.prices[0]?.date)} cannot be tested for this asset: no proxy fits it.</p>
+				{:else if proxy}
+					<p class="small muted">
+						{#if proxy.segments.length}
+							Before {fmt.date(asset.prices[0]?.date)} the crisis tester uses {proxy.segments
+								.map((s) => `${s.label} from ${s.from.slice(0, 4)}${s.approximate ? ' (approximation)' : ''}`)
+								.join(', ')}{exposure.leverage !== 1 ? `, with ${exposure.leverage}× daily leverage and its financing costs modelled` : ''}.
+						{:else if proxyChain(exposure).length}
+							No proxy data yet for crises before {fmt.date(asset.prices[0]?.date)}{proxyChain(exposure).some((s) => s.kind === 'index')
+								? ' — download the crisis history in Settings'
+								: ''}.
+						{:else}
+							Crises before {fmt.date(asset.prices[0]?.date)} cannot be tested for this asset: no proxy fits it.
+						{/if}
+					</p>
+				{/if}
+			</Card>
+		{/if}
+
 		<Card title="Price data">
 			{#snippet actions()}
 				{#if rawAvailable}<Button size="sm" icon="file" onclick={() => (reparseOpen = true)}>Re-parse CSV</Button>{/if}
@@ -224,6 +315,61 @@
 		{#snippet footer()}
 			<Button variant="ghost" onclick={() => (editOpen = false)}>Cancel</Button>
 			<Button variant="primary" type="submit" form="edit-asset" disabled={!!isinError || !!wknError || !form.name.trim()}>Save</Button>
+		{/snippet}
+	</Dialog>
+
+	<Dialog bind:open={exposureOpen} title="Exposure" size="sm">
+		<form
+			class="stack"
+			style="--gap: 12px"
+			id="edit-exposure"
+			onsubmit={(e) => {
+				e.preventDefault();
+				saveExposure();
+			}}
+		>
+			<div>
+				<label class="label" for="ex-class">Invests in</label>
+				<select id="ex-class" class="select" bind:value={exForm.assetClass}
+					>{#each EXPOSURE_CLASSES as c (c)}<option value={c}>{CLASS_LABELS[c]}</option>{/each}</select
+				>
+			</div>
+			{#if exForm.assetClass === 'equity' || exForm.assetClass === 'govBond' || exForm.assetClass === 'corpBond' || exForm.assetClass === 'cash'}
+				<div>
+					<label class="label" for="ex-region">Region</label>
+					<select id="ex-region" class="select" bind:value={exForm.region}
+						>{#each EXPOSURE_REGIONS as r (r)}<option value={r}>{REGION_LABELS[r]}</option>{/each}</select
+					>
+				</div>
+			{/if}
+			{#if exForm.assetClass === 'equity'}
+				<div>
+					<label class="label" for="ex-style">Style</label>
+					<select id="ex-style" class="select" bind:value={exForm.style}
+						>{#each EQUITY_STYLES as s (s)}<option value={s}>{s === 'tech' ? 'Technology / Nasdaq' : 'Broad market'}</option>{/each}</select
+					>
+				</div>
+			{/if}
+			{#if exForm.assetClass === 'govBond' || exForm.assetClass === 'corpBond'}
+				<div>
+					<label class="label" for="ex-maturity">Maturity</label>
+					<select id="ex-maturity" class="select" bind:value={exForm.maturity}
+						>{#each BOND_MATURITIES as m (m)}<option value={m}
+								>{m === 'short' ? 'Short (1–3 years)' : m === 'intermediate' ? 'Intermediate (7–10 years)' : 'Long (20+ years)'}</option
+							>{/each}</select
+					>
+				</div>
+			{/if}
+			<div>
+				<label class="label" for="ex-lev">Daily leverage</label>
+				<input id="ex-lev" class="input" type="number" step="0.5" min="-5" max="5" bind:value={exForm.leverage} />
+				<p class="hint">1 for normal products, 2 or 3 for leveraged ETFs, −1 for short products.</p>
+			</div>
+		</form>
+		{#snippet footer()}
+			{#if asset.exposure?.source === 'manual'}<Button variant="ghost" onclick={resetExposure}>Detect automatically</Button>{/if}
+			<Button variant="ghost" onclick={() => (exposureOpen = false)}>Cancel</Button>
+			<Button variant="primary" type="submit" form="edit-exposure">Save</Button>
 		{/snippet}
 	</Dialog>
 
