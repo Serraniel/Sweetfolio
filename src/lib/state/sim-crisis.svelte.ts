@@ -45,6 +45,10 @@ export interface SimCrisisView {
 	/** Per simulated portfolio: −1 not tested (or no benchmark), 0 worse, 1 holds up. */
 	holds: Int8Array;
 	worse: Uint8Array;
+	/** Per simulated portfolio: crises in which it does better than the benchmark. */
+	better: Uint8Array;
+	/** Crisis columns compared with the benchmark (included and with benchmark data). */
+	compared: number[];
 	/** Deepest drawdown over the included crises; NaN when not tested. */
 	worstDrawdown: Float64Array;
 	/** Crisis columns included by the type filter. */
@@ -83,6 +87,7 @@ export function evaluateView(res: SimCrisisResult, prefs: CrisisPrefs): SimCrisi
 	const scores = new Float64Array(count).fill(NaN);
 	const holds = new Int8Array(count).fill(-1);
 	const worse = new Uint8Array(count);
+	const better = new Uint8Array(count);
 	const row = new Int32Array(count).fill(-1);
 	const worstDrawdown = new Float64Array(count).fill(NaN);
 	const types = new Set(prefs.types);
@@ -97,12 +102,18 @@ export function evaluateView(res: SimCrisisResult, prefs: CrisisPrefs): SimCrisi
 		worstDrawdown[i] = included.reduce((m, j) => Math.min(m, res.outcomes[(r * res.crises.length + j) * OUTCOME_STRIDE]!), 0);
 		if (res.benchmarkName && compared.length) {
 			let w = 0;
-			for (const j of compared) if (compareOutcome(outcomeAt(res, r, j), res.benchmark[j]!, prefs.tolerance) === 'worse') w++;
+			let b = 0;
+			for (const j of compared) {
+				const v = compareOutcome(outcomeAt(res, r, j), res.benchmark[j]!, prefs.tolerance);
+				if (v === 'worse') w++;
+				else if (v === 'better') b++;
+			}
 			worse[i] = w;
+			better[i] = b;
 			holds[i] = w <= prefs.allowedMisses ? 1 : 0;
 		}
 	}
-	return { scores, holds, worse, worstDrawdown, included, row };
+	return { scores, holds, worse, better, compared: res.benchmarkName ? compared : [], worstDrawdown, included, row };
 }
 
 export type Objective = 'benchmarkGoal' | 'minVol' | 'bestScore';
@@ -124,6 +135,8 @@ class SimCrisisState {
 	rebalance = $state<RebalanceFrequency>('monthly');
 	colorByScore = $state(true);
 	onlyHoldingUp = $state(false);
+	/** Only portfolios better than the benchmark in at least this many crises (0 = off). */
+	minBetter = $state<number | 'all'>(0);
 	maxDrawdown = $state('');
 	showEfficient = $state(true);
 	objective = $state<Objective>('benchmarkGoal');

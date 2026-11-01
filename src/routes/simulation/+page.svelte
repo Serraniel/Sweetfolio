@@ -170,13 +170,19 @@
 		const v = Number(simCrisis.maxDrawdown.replace(',', '.'));
 		return simCrisis.maxDrawdown.trim() && Number.isFinite(v) && v > 0 ? -v / 100 : null;
 	});
+	const minBetter = $derived(
+		crisisView?.compared.length && simCrisis.minBetter
+			? Math.min(simCrisis.minBetter === 'all' ? Infinity : simCrisis.minBetter, crisisView.compared.length)
+			: 0
+	);
 	const crisisHidden = $derived.by(() => {
-		if (!result || !crisisView || (!simCrisis.onlyHoldingUp && maxCrisisDD === null)) return null;
+		if (!result || !crisisView || (!simCrisis.onlyHoldingUp && maxCrisisDD === null && !minBetter)) return null;
 		const mask = new Uint8Array(result.count).fill(1);
 		for (const i of crisisTest!.indices) {
 			const holds = !simCrisis.onlyHoldingUp || crisisView.holds[i] !== 0;
 			const dd = maxCrisisDD === null || crisisView.worstDrawdown[i]! >= maxCrisisDD;
-			if (holds && dd) mask[i] = 0;
+			const better = crisisView.better[i]! >= minBetter;
+			if (holds && dd && better) mask[i] = 0;
 		}
 		return mask;
 	});

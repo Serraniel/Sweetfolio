@@ -220,5 +220,16 @@ test('CR-8 crisis-type scenarios with editable assumptions', async ({ page }) =>
 	await page.getByRole('button', { name: 'Efficient frontier' }).click();
 	await page.getByRole('button', { name: '2. Run crisis test' }).click();
 	await expect(page.getByText(/Tested [\d,.]+ portfolios in 7 crisis types/)).toBeVisible({ timeout: 20_000 });
+
+	// Only portfolios that beat the benchmark in a number of crisis types.
+	const better = page.getByLabel('Better than the benchmark in at least');
+	await expect(better.locator('option')).toHaveText(['any number of', ...[1, 2, 3, 4, 5, 6].map((n) => `at least ${n}`), 'all 7']);
+	await better.selectOption({ label: 'at least 1' });
+	await page.getByLabel('Best candidates').selectOption('bestScore');
+	const counts = await page
+		.locator('.ranked')
+		.getByText(/better in \d of 7/)
+		.allInnerTexts();
+	for (const t of counts) expect(Number(/better in (\d)/.exec(t)![1])).toBeGreaterThanOrEqual(1);
 	expect(errors).toEqual([]);
 });
