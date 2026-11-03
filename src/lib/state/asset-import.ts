@@ -48,7 +48,8 @@ export async function importPriceFiles(files: File[]): Promise<{ imported: Asset
 					isin: info.isin,
 					wkn: info.wkn,
 					currency: info.currency ?? 'EUR',
-					classification: info.classification ?? 'unknown'
+					classification: info.classification ?? 'unknown',
+					exposure: info.exposure ?? null
 				};
 		}
 		imported.push(assetFromParse(result, text, meta));

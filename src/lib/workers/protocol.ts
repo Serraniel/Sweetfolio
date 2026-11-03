@@ -20,3 +20,16 @@ export type MonteCarloMessage =
 	| { kind: 'progress'; done: number; total: number; phase: SimulationPhase }
 	| { kind: 'result'; result: MonteCarloResult }
 	| { kind: 'error'; error: string };
+
+export interface CrisisTestRequest {
+	matrices: Array<{ crisisId: string; dates: string[]; values: Float64Array; assets: number; endIndex: number; flags: Uint8Array }>;
+	/** Row-major `count × assets` weights of the portfolios to test. */
+	weights: Float32Array;
+	count: number;
+}
+
+export type CrisisTestMessage =
+	| { kind: 'progress'; done: number; total: number }
+	/** Per portfolio and crisis (`OUTCOME_STRIDE` values each): drawdown, recovery days (NaN = not recovered), crisis return, open days. */
+	| { kind: 'result'; outcomes: Float64Array }
+	| { kind: 'error'; error: string };

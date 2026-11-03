@@ -72,7 +72,8 @@
 						currency: outcome.data.currency ?? 'EUR',
 						classification: outcome.data.classification ?? 'unknown',
 						prices: outcome.data.prices,
-						lastRefreshedAt: new Date().toISOString()
+						lastRefreshedAt: new Date().toISOString(),
+						exposure: outcome.data.exposure ?? null
 					});
 					created.push(a);
 					item.status = 'fetched';

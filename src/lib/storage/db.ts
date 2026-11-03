@@ -1,16 +1,18 @@
 /**
- * IndexedDB access (DP-1). Database `sweetfolio`, schema v5.
+ * IndexedDB access (DP-1). Database `sweetfolio`, schema v6.
  * Upgrades are additive and idempotent: missing stores/indexes are created and
  * records from older versions are back-filled.
  *   v1 → classification on assets (v0.5)
  *   v2 → (v0.5.x current)
  *   v3/v4 → strategies, transactions, portfolio mode fields (epic branch)
  *   v5 → rewrite; normalizes all of the above
+ *   v6 → crisisData (index histories for the crisis tester; not part of backups)
  */
 import type { Asset, CurrencyRate, Portfolio, Strategy, StoredSimulation, Transaction } from '#lib/domain/types.ts';
+import type { ProxyIndexData } from '#lib/core/proxies.ts';
 
 export const DB_NAME = 'sweetfolio';
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 export interface StoreMap {
 	assets: Asset;
@@ -20,9 +22,19 @@ export interface StoreMap {
 	currencies: CurrencyRate;
 	settings: { key: string; value: unknown };
 	simulations: StoredSimulation;
+	crisisData: ProxyIndexData;
 }
 export type StoreName = keyof StoreMap;
-export const STORE_NAMES: StoreName[] = ['assets', 'portfolios', 'strategies', 'transactions', 'currencies', 'settings', 'simulations'];
+export const STORE_NAMES: StoreName[] = [
+	'assets',
+	'portfolios',
+	'strategies',
+	'transactions',
+	'currencies',
+	'settings',
+	'simulations',
+	'crisisData'
+];
 
 const SCHEMA: Record<StoreName, { keyPath: string; indexes: Array<[string, string]> }> = {
 	assets: {
@@ -45,7 +57,8 @@ const SCHEMA: Record<StoreName, { keyPath: string; indexes: Array<[string, strin
 	},
 	currencies: { keyPath: 'pair', indexes: [] },
 	settings: { keyPath: 'key', indexes: [] },
-	simulations: { keyPath: 'id', indexes: [] }
+	simulations: { keyPath: 'id', indexes: [] },
+	crisisData: { keyPath: 'key', indexes: [] }
 };
 
 export function req<T>(r: IDBRequest<T>): Promise<T> {

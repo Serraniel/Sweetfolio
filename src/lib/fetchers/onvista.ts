@@ -5,6 +5,7 @@
 import type { AssetClassification, PricePoint } from '#lib/domain/types.ts';
 import { instantToBerlinDate } from '#lib/core/dates.ts';
 import { normalizeSeries } from '#lib/core/series.ts';
+import { exposureFromSnapshot, type ExposureSnapshot } from '#lib/core/exposure.ts';
 import { getJSON, type RequestOptions } from './http.ts';
 import type { InstrumentData, InstrumentInfo } from './types.ts';
 
@@ -22,7 +23,7 @@ interface SearchResponse {
 	facets?: Array<{ type: string; results: SearchHit[] | null }>;
 }
 
-interface SnapshotResponse {
+interface SnapshotResponse extends ExposureSnapshot {
 	instrument?: { name?: string; isin?: string; wkn?: string; entityType?: string };
 	quote?: { isoCurrency?: string };
 	chart?: { idNotation?: number };
@@ -95,7 +96,8 @@ function readSnapshot(raw: SnapshotResponse) {
 		currency: raw.quote?.isoCurrency ?? raw.isoCurrency ?? null,
 		name: raw.instrument?.name ?? raw.name ?? null,
 		isin: raw.instrument?.isin ?? raw.isin ?? null,
-		wkn: raw.instrument?.wkn ?? raw.wkn ?? null
+		wkn: raw.instrument?.wkn ?? raw.wkn ?? null,
+		exposure: exposureFromSnapshot(raw)
 	};
 }
 
@@ -127,6 +129,34 @@ export async function history(hit: SearchHit, idNotation: number, startDate = '2
 	return toPricePoints(await getJSON<HistoryResponse>(url, opts));
 }
 
+/** Onvista returns at most this many points per request; longer histories are paged. */
+const PAGE_LIMIT = 19000;
+
+/** Complete daily history of an index or metal from `startDate` on, paged (crisis proxies, CR-3). */
+export async function longHistory(
+	entityType: string,
+	entityValue: string,
+	idNotation: number,
+	startDate = '1900-01-01',
+	opts?: RequestOptions
+): Promise<PricePoint[]> {
+	const all: PricePoint[] = [];
+	let start = startDate;
+	for (let page = 0; page < 20; page++) {
+		const url =
+			`${ONVISTA_BASE}/instruments/${encodeURIComponent(entityType)}/${encodeURIComponent(entityValue)}/eod_history` +
+			`?idNotation=${idNotation}&range=MAX&startDate=${start}`;
+		const data = await getJSON<HistoryResponse>(url, opts);
+		const points = toPricePoints(data);
+		all.push(...points);
+		if ((data.datetimeLast?.length ?? 0) < PAGE_LIMIT || points.length === 0) break;
+		const next = new Date(Date.parse(points[points.length - 1]!.date) + 864e5).toISOString().slice(0, 10);
+		if (next <= start) break;
+		start = next;
+	}
+	return normalizeSeries(all);
+}
+
 async function load(hit: SearchHit, opts?: RequestOptions, crypto = false): Promise<InstrumentData> {
 	const snap = await snapshot(hit, opts);
 	const prices = await history(hit, snap.idNotation, undefined, opts);
@@ -138,6 +168,7 @@ async function load(hit: SearchHit, opts?: RequestOptions, crypto = false): Prom
 		wkn: snap.wkn,
 		currency: snap.currency,
 		classification: crypto ? 'crypto' : classificationFor(hit.entityType),
+		exposure: snap.exposure,
 		source: 'onvista'
 	};
 }
@@ -165,7 +196,8 @@ export async function lookupInfo(query: string, opts?: RequestOptions): Promise<
 			isin: snap.isin ?? hit.isin ?? null,
 			wkn: snap.wkn,
 			currency: snap.currency,
-			classification: classificationFor(hit.entityType)
+			classification: classificationFor(hit.entityType),
+			exposure: snap.exposure
 		};
 	} catch {
 		return { name: hit.name, isin: hit.isin ?? null, wkn: null, currency: null, classification: classificationFor(hit.entityType) };

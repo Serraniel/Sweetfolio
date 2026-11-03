@@ -5,6 +5,7 @@
 import type { Asset, CurrencyRate } from '#lib/domain/types.ts';
 import { deriveCrossRate, mergeRates, neededEcbPairs } from '#lib/core/currency.ts';
 import { mergePrices, type PriceConflict } from '#lib/core/price-merge.ts';
+import { mergeExposure } from '#lib/core/exposure.ts';
 import { fetchEurRate } from '#lib/fetchers/ecb.ts';
 import { fetchSecurity, onvista } from '#lib/fetchers/market-data.ts';
 import { app } from './app.svelte.ts';
@@ -55,6 +56,7 @@ class Jobs {
 					...latest,
 					prices: merge.merged,
 					classification: cls,
+					exposure: mergeExposure(latest.exposure, outcome.data.exposure),
 					lastRefreshedAt: new Date().toISOString(),
 					updatedAt: merge.addedCount ? new Date().toISOString() : latest.updatedAt
 				});
@@ -275,6 +277,31 @@ const MIGRATIONS: Migration[] = [
 				}
 			}
 			notify.finishTask(task, `${changed} asset${changed === 1 ? '' : 's'} classified`);
+			return true;
+		}
+	},
+	{
+		id: 'detect-exposure-v1',
+		label: 'Detecting asset exposures',
+		async run() {
+			const todo = app.assets.filter((a) => (!a.exposure || a.exposure.source === 'guess') && (a.isin || a.wkn));
+			if (!todo.length) return true;
+			// Offline: stay quiet and try again on the next start.
+			const first = await jobsInfo(todo[0]!.isin ?? todo[0]!.wkn!);
+			if (!first) return false;
+			const task = 'exposure';
+			notify.startTask(task, 'Detecting what assets invest in', todo.length);
+			let changed = 0;
+			for (const [i, a] of todo.entries()) {
+				notify.updateTask(task, { current: i + 1, detail: a.name });
+				const info = i === 0 ? first : await jobsInfo(a.isin ?? a.wkn!);
+				const latest = app.assetById.get(a.id);
+				if (info?.exposure && latest) {
+					await app.saveAsset({ ...latest, exposure: mergeExposure(latest.exposure, info.exposure) });
+					changed++;
+				}
+			}
+			notify.finishTask(task, `${changed} asset${changed === 1 ? '' : 's'} analysed`);
 			return true;
 		}
 	}
