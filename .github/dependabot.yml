@@ -11,6 +11,11 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (native compiler) has no JS API yet; @sveltejs/kit and
+      # svelte-check only support ^6. Remove once they allow 7.
+      - dependency-name: typescript
+        versions: ['>=7.0.0']
   - package-ecosystem: github-actions
     directory: /
     schedule:
