@@ -196,12 +196,14 @@
 				onclick={() => {
 					nameDraft = strategy.name;
 					nameEdit = true;
-				}}>Rename</Button
+				}}
 			>
+				Rename
+			</Button>
 			{#if share}<ShareButton url={share} title={strategy.name} />{/if}
-			<Button size="sm" variant="primary" icon="portfolio" disabled={!flat.length} onclick={() => (sleeveOpen = true)}
-				>Generate portfolios</Button
-			>
+			<Button size="sm" variant="primary" icon="portfolio" disabled={!flat.length} onclick={() => (sleeveOpen = true)}>
+				Generate portfolios
+			</Button>
 			<Button size="sm" variant="ghost" icon="trash" aria-label="Delete strategy" onclick={remove} />
 		{/snippet}
 	</PageHeader>
@@ -233,15 +235,15 @@
 				{#if flat.length}
 					<table class="table">
 						<tbody>
-							{#each flat as a (a.assetId)}<tr
-									><td><a href="/assets/{app.assetSlug(a.assetId)}">{nameOf(a.assetId)}</a></td><td class="right num"
-										>{fmt.pct(a.weight, 2)}</td
-									></tr
-								>{/each}
+							{#each flat as a (a.assetId)}<tr>
+									<td><a href="/assets/{app.assetSlug(a.assetId)}">{nameOf(a.assetId)}</a></td><td class="right num">
+										{fmt.pct(a.weight, 2)}
+									</td>
+								</tr>{/each}
 						</tbody>
-						<tfoot
-							><tr><td>Total</td><td class="right num" class:neg={Math.abs(flatTotal - 1) > 1e-6}>{fmt.pct(flatTotal, 2)}</td></tr></tfoot
-						>
+						<tfoot>
+							<tr><td>Total</td><td class="right num" class:neg={Math.abs(flatTotal - 1) > 1e-6}>{fmt.pct(flatTotal, 2)}</td></tr>
+						</tfoot>
 					</table>
 				{:else}<p class="small muted">No assets in the tree yet.</p>{/if}
 			</Card>
@@ -250,9 +252,9 @@
 					<ul class="gen">
 						{#each generated as p (p.id)}
 							<li>
-								<a href="/portfolios/{app.portfolioSlug(p.id)}" class="truncate">{p.name}</a>{#if outOfSync(p)}<Badge tone="warning"
-										>Out of sync</Badge
-									>{:else}<Badge>In sync</Badge>{/if}
+								<a href="/portfolios/{app.portfolioSlug(p.id)}" class="truncate">{p.name}</a>{#if outOfSync(p)}<Badge tone="warning">
+										Out of sync
+									</Badge>{:else}<Badge>In sync</Badge>{/if}
 							</li>
 						{/each}
 					</ul>
@@ -283,9 +285,9 @@
 			<ul class="preview">
 				{#each sleeves as s (s.nodeId)}
 					<li>
-						<b class="small">{sleeves.length === 1 ? strategy.name : `${strategy.name} – ${s.label}`}</b><span class="xs muted"
-							>{s.allocations.map((a) => `${nameOf(a.assetId)} ${fmt.pct(a.weight, 0)}`).join(' · ')}</span
-						>
+						<b class="small">{sleeves.length === 1 ? strategy.name : `${strategy.name} – ${s.label}`}</b><span class="xs muted">
+							{s.allocations.map((a) => `${nameOf(a.assetId)} ${fmt.pct(a.weight, 0)}`).join(' · ')}
+						</span>
 					</li>
 				{/each}
 			</ul>

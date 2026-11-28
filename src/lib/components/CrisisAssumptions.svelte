@@ -40,8 +40,9 @@
 		<thead>
 			<tr>
 				<th scope="col">Asset kind</th>
-				{#each CRISIS_TYPES as t (t)}<th scope="col" class="right" title="Modelled on {SCENARIO_EXAMPLES[t]}">{CRISIS_TYPE_SHORT[t]}</th
-					>{/each}
+				{#each CRISIS_TYPES as t (t)}<th scope="col" class="right" title="Modelled on {SCENARIO_EXAMPLES[t]}">
+						{CRISIS_TYPE_SHORT[t]}
+					</th>{/each}
 			</tr>
 		</thead>
 		<tbody>
@@ -49,16 +50,16 @@
 				<tr>
 					<th scope="row" class="kind">{KIND_LABELS[k]}</th>
 					{#each CRISIS_TYPES as t (t)}
-						<td class="right"
-							><input
+						<td class="right">
+							<input
 								class="input num"
 								class:changed={changed(t, k)}
 								inputmode="decimal"
 								value={pct(a.change[t][k])}
 								aria-label="{KIND_LABELS[k]} in {CRISIS_TYPE_SHORT[t]}, change in percent"
 								onchange={(e) => setChange(t, k, e)}
-							/></td
-						>
+							/>
+						</td>
 					{/each}
 				</tr>
 			{/each}
@@ -67,29 +68,29 @@
 			<tr>
 				<th scope="row" class="kind">Months to trough</th>
 				{#each CRISIS_TYPES as t (t)}
-					<td class="right"
-						><input
+					<td class="right">
+						<input
 							class="input num"
 							inputmode="decimal"
 							value={a.toTrough[t]}
 							aria-label="{CRISIS_TYPE_SHORT[t]}, months to trough"
 							onchange={(e) => setMonths('toTrough', t, e)}
-						/></td
-					>
+						/>
+					</td>
 				{/each}
 			</tr>
 			<tr>
 				<th scope="row" class="kind">Months to recover</th>
 				{#each CRISIS_TYPES as t (t)}
-					<td class="right"
-						><input
+					<td class="right">
+						<input
 							class="input num"
 							inputmode="decimal"
 							value={a.toRecover[t]}
 							aria-label="{CRISIS_TYPE_SHORT[t]}, months to recover"
 							onchange={(e) => setMonths('toRecover', t, e)}
-						/></td
-					>
+						/>
+					</td>
 				{/each}
 			</tr>
 		</tfoot>
@@ -97,9 +98,9 @@
 </div>
 <div class="row foot">
 	<Button size="sm" variant="ghost" icon="undo" disabled={isDefault} onclick={() => crisis.resetAssumptions()}>Reset to defaults</Button>
-	<span class="xs muted"
-		>Defaults are rounded typical moves of the historical crises of each type (e.g. stagflation: 1973–74, 1980–82).</span
-	>
+	<span class="xs muted">
+		Defaults are rounded typical moves of the historical crises of each type (e.g. stagflation: 1973–74, 1980–82).
+	</span>
 </div>
 
 <style>

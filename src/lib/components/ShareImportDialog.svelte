@@ -148,9 +148,9 @@
 								<span class="small">{it.name}</span>{#if it.name !== it.isin}<span class="xs muted mono"> {it.isin}</span>{/if}
 							</div>
 							{#if it.weight !== undefined}<span class="num small">{fmt.pct(it.weight, 1)}</span>{/if}
-							<Badge tone={it.status === 'failed' ? 'negative' : it.status === 'present' || it.status === 'fetched' ? 'accent' : 'neutral'}
-								>{statusLabel[it.status]}</Badge
-							>
+							<Badge tone={it.status === 'failed' ? 'negative' : it.status === 'present' || it.status === 'fetched' ? 'accent' : 'neutral'}>
+								{statusLabel[it.status]}
+							</Badge>
 						</li>
 					{/each}
 				</ul>

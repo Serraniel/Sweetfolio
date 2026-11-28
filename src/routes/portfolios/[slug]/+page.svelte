@@ -177,19 +177,21 @@
 	<PageHeader title={portfolio.name} back={{ href: '/portfolios', label: 'Portfolios' }}>
 		{#snippet meta()}
 			<Badge tone="accent">{portfolio.mode === 'both' ? 'Model + tracked' : portfolio.mode === 'model' ? 'Model' : 'Tracked'}</Badge>
-			{#if portfolio.mode !== 'tracked' && portfolio.rebalance && portfolio.rebalance !== 'none'}<Badge
-					>Rebalanced {portfolio.rebalance}</Badge
-				>{/if}
+			{#if portfolio.mode !== 'tracked' && portfolio.rebalance && portfolio.rebalance !== 'none'}<Badge>
+					Rebalanced {portfolio.rebalance}
+				</Badge>{/if}
 			{#if isBench}<Badge tone="warning">Benchmark</Badge>{/if}
 			{#if portfolio.sourceStrategyId}{@const s = app.strategies.find((x) => x.id === portfolio.sourceStrategyId)}{#if s}<a
-						href="/strategies/{app.strategySlug(s.id)}"><Badge>From {s.name}</Badge></a
-					>{/if}{/if}
+						href="/strategies/{app.strategySlug(s.id)}"
+					>
+						<Badge>From {s.name}</Badge>
+					</a>{/if}{/if}
 		{/snippet}
 		{#snippet actions()}
 			{#if portfolio.allocations.length}
-				<Button size="sm" icon="star" onclick={() => app.toggleBenchmark('portfolio', portfolio.id)}
-					>{isBench ? 'Unset benchmark' : 'Set as benchmark'}</Button
-				>
+				<Button size="sm" icon="star" onclick={() => app.toggleBenchmark('portfolio', portfolio.id)}>
+					{isBench ? 'Unset benchmark' : 'Set as benchmark'}
+				</Button>
 				<ShareButton
 					url={shareable
 						? shareUrl(
@@ -217,11 +219,11 @@
 					No exchange rates for {backtest.unconverted.join(', ')} — these are included unconverted.
 				</p>{/if}
 			{#if prices.length < 2}
-				<Card
-					><EmptyState icon="portfolio" title="No overlapping price history"
-						>Add assets with price data covering a common period.</EmptyState
-					></Card
-				>
+				<Card>
+					<EmptyState icon="portfolio" title="No overlapping price history">
+						Add assets with price data covering a common period.
+					</EmptyState>
+				</Card>
 			{:else}
 				<Card title="Backtest" subtitle="Start value 100 on {fmt.date(prices[0]?.date)}, in {app.settings.mainCurrency}">
 					<LineChart
@@ -236,15 +238,15 @@
 						label="Portfolio backtest"
 					/>
 				</Card>
-				<Card title="Financial metrics" subtitle={benchWindow ? `Second line: ${benchName} (benchmark) over the same dates` : undefined}
-					><MetricsTable
+				<Card title="Financial metrics" subtitle={benchWindow ? `Second line: ${benchName} (benchmark) over the same dates` : undefined}>
+					<MetricsTable
 						metrics={metrics.value}
 						loading={metrics.loading}
 						benchmark={benchMetrics.value}
 						benchmarkLabel={benchName}
 						correlation={benchCorrelation}
-					/></Card
-				>
+					/>
+				</Card>
 				<div class="two">
 					<Card title="Allocation">
 						<Donut
@@ -287,13 +289,15 @@
 				<Card title="Constituents">
 					<div class="scroll-x">
 						<table class="table">
-							<thead
-								><tr
-									><th>Asset</th><th class="right">Weight</th><th class="right">Return p.a. 1Y</th><th class="right">Return p.a. all</th><th
-										class="right">Volatility</th
-									><th class="right">Max DD</th></tr
-								></thead
-							>
+							<thead>
+								<tr>
+									<th>Asset</th><th class="right">Weight</th><th class="right">Return p.a. 1Y</th><th class="right">Return p.a. all</th><th
+										class="right"
+									>
+										Volatility
+									</th><th class="right">Max DD</th>
+								</tr>
+							</thead>
 							<tbody>
 								{#each constituents as c, i (c.asset!.id)}
 									{@const m = constituentMetrics.value?.[i]}
@@ -312,13 +316,13 @@
 				</Card>
 			{/if}
 			{#if correlation.value}
-				<Card title="Correlation"
-					><Heatmap
+				<Card title="Correlation">
+					<Heatmap
 						matrix={correlation.value}
 						{labels}
 						onselect={(a, b) => goto(`/compare?slugs=${[a, b].map((id) => app.assetSlug(id)).join(',')}`)}
-					/></Card
-				>
+					/>
+				</Card>
 			{/if}
 		</div>
 	{:else if tab === 'holdings' && tracked}
@@ -330,45 +334,43 @@
 				</p>{/if}
 			<div class="stat-grid">
 				<Card><Stat label="Value" value={fmt.money(s.totalValue, cur)} /></Card>
-				<Card
-					><Stat
+				<Card>
+					<Stat
 						label="Total return"
 						value={fmt.money(s.totalReturn, cur, { signed: true })}
 						sub={fmt.pct(s.totalReturnPercent, 2, true)}
 						tone={fmt.signClass(s.totalReturn)}
-					/></Card
-				>
-				<Card
-					><Stat
-						label="Unrealized"
-						value={fmt.money(s.unrealizedGain, cur, { signed: true })}
-						tone={fmt.signClass(s.unrealizedGain)}
-					/></Card
-				>
-				<Card
-					><Stat
+					/>
+				</Card>
+				<Card>
+					<Stat label="Unrealized" value={fmt.money(s.unrealizedGain, cur, { signed: true })} tone={fmt.signClass(s.unrealizedGain)} />
+				</Card>
+				<Card>
+					<Stat
 						label="Realized + dividends"
 						value={fmt.money(s.realizedGain + s.dividends, cur, { signed: true })}
 						sub="Dividends {fmt.money(s.dividends, cur)}"
 						tone={fmt.signClass(s.realizedGain + s.dividends)}
-					/></Card
-				>
+					/>
+				</Card>
 				{#if s.cash !== null}<Card><Stat label="Cash" value={fmt.money(s.cash, cur)} tone={s.cash < 0 ? 'neg' : ''} /></Card>{/if}
 				<Card><Stat label="Fees & taxes" value={fmt.money(s.fees, cur)} /></Card>
 			</div>
 			{#if s.holdings.length === 0}
-				<Card
-					><EmptyState icon="wallet" title="No open positions"
-						>Add buy transactions or import them from your broker.{#snippet actions()}<Button
+				<Card>
+					<EmptyState icon="wallet" title="No open positions">
+						Add buy transactions or import them from your broker.{#snippet actions()}<Button
 								variant="primary"
 								icon="plus"
 								onclick={() => {
 									editing = null;
 									txOpen = true;
-								}}>Add transaction</Button
-							>{/snippet}</EmptyState
-					></Card
-				>
+								}}
+							>
+								Add transaction
+							</Button>{/snippet}
+					</EmptyState>
+				</Card>
 			{:else}
 				{#if history.length > 1}
 					<Card title="Value over time">
@@ -391,13 +393,13 @@
 				<Card title="Holdings" padded={false}>
 					<div class="scroll-x">
 						<table class="table holdings">
-							<thead
-								><tr
-									><th>Asset</th><th class="right">Qty</th><th class="right">Avg cost</th><th class="right">Price</th><th class="right"
-										>Value</th
-									><th class="right">Gain</th><th class="right">Weight</th></tr
-								></thead
-							>
+							<thead>
+								<tr>
+									<th>Asset</th><th class="right">Qty</th><th class="right">Avg cost</th><th class="right">Price</th><th class="right">
+										Value
+									</th><th class="right">Gain</th><th class="right">Weight</th>
+								</tr>
+							</thead>
 							<tbody>
 								{#each s.holdings as h (h.assetId)}
 									<tr>
@@ -406,29 +408,33 @@
 										<td class="right num">{fmt.money(h.avgCost, cur)}</td>
 										<td class="right num">{h.currentPrice === null ? '–' : fmt.money(h.currentPrice, cur)}</td>
 										<td class="right num">{fmt.money(h.currentValue, cur)}</td>
-										<td class="right num {fmt.signClass(h.unrealizedGain)}"
-											>{fmt.money(h.unrealizedGain, cur, { signed: true })}<br /><span class="xs"
-												>{fmt.pct(h.unrealizedGainPercent, 1, true)}</span
-											></td
-										>
+										<td class="right num {fmt.signClass(h.unrealizedGain)}">
+											{fmt.money(h.unrealizedGain, cur, { signed: true })}<br /><span class="xs">
+												{fmt.pct(h.unrealizedGainPercent, 1, true)}
+											</span>
+										</td>
 										<td class="right num">{fmt.pct(h.weight, 1)}</td>
 									</tr>
 								{/each}
 								{#if s.cash !== null}
-									<tr
-										><td>Cash</td><td></td><td></td><td></td><td class="right num">{fmt.money(s.cash, cur)}</td><td></td><td
-											class="right num">{fmt.pct(s.totalValue > 0 ? Math.max(0, s.cash) / s.totalValue : 0, 1)}</td
-										></tr
-									>
+									<tr>
+										<td>Cash</td><td></td><td></td><td></td><td class="right num">{fmt.money(s.cash, cur)}</td><td></td><td
+											class="right num"
+										>
+											{fmt.pct(s.totalValue > 0 ? Math.max(0, s.cash) / s.totalValue : 0, 1)}
+										</td>
+									</tr>
 								{/if}
 							</tbody>
-							<tfoot
-								><tr
-									><td>Total</td><td></td><td></td><td></td><td class="right num">{fmt.money(s.totalValue, cur)}</td><td
-										class="right num {fmt.signClass(s.unrealizedGain)}">{fmt.money(s.unrealizedGain, cur, { signed: true })}</td
-									><td></td></tr
-								></tfoot
-							>
+							<tfoot>
+								<tr>
+									<td>Total</td><td></td><td></td><td></td><td class="right num">{fmt.money(s.totalValue, cur)}</td><td
+										class="right num {fmt.signClass(s.unrealizedGain)}"
+									>
+										{fmt.money(s.unrealizedGain, cur, { signed: true })}
+									</td><td></td>
+								</tr>
+							</tfoot>
 						</table>
 					</div>
 				</Card>
@@ -473,14 +479,16 @@
 						onclick={() => {
 							editing = null;
 							txOpen = true;
-						}}>Add</Button
+						}}
 					>
+						Add
+					</Button>
 				</div>
 			</div>
 			{#if txs.length === 0}
-				<EmptyState icon="list" title="No transactions"
-					>Add your buys, sells and dividends, or import them from Portfolio Performance, Parqet or a broker CSV.</EmptyState
-				>
+				<EmptyState icon="list" title="No transactions">
+					Add your buys, sells and dividends, or import them from Portfolio Performance, Parqet or a broker CSV.
+				</EmptyState>
 			{:else}
 				<ul class="tx-list">
 					{#each txs as t (t.id)}
@@ -490,12 +498,12 @@
 								<span class="tx-type {t.type}">{TYPE_LABEL[t.type]}</span>
 								<div class="truncate">
 									<span class="small strong">{t.assetId ? nameOf(t.assetId) : t.notes || TYPE_LABEL[t.type]}</span>
-									<span class="xs muted block"
-										>{fmt.date(t.date)}{#if t.quantity}
+									<span class="xs muted block">
+										{fmt.date(t.date)}{#if t.quantity}
 											· {fmt.qty(t.quantity)} × {fmt.money(t.price, t.currency)}{/if}{#if t.fee}
 											· fee {fmt.money(t.fee, t.currency)}{/if}{#if t.withholdingTax}
-											· tax {fmt.money(t.withholdingTax, t.currency)}{/if}</span
-									>
+											· tax {fmt.money(t.withholdingTax, t.currency)}{/if}
+									</span>
 									{#if t.notes && t.assetId}<span class="xs muted block truncate">{t.notes}</span>{/if}
 								</div>
 							</div>
@@ -506,8 +514,10 @@
 									onclick={() => {
 										editing = t;
 										txOpen = true;
-									}}><Icon name="edit" size={16} /></button
+									}}
 								>
+									<Icon name="edit" size={16} />
+								</button>
 								<button aria-label="Delete transaction" onclick={() => removeTx(t)}><Icon name="trash" size={16} /></button>
 							</div>
 						</li>
@@ -531,13 +541,13 @@
 				{#if drift.trades.length}
 					<div class="scroll-x">
 						<table class="table">
-							<thead
-								><tr
-									><th>Asset</th><th>Action</th><th class="right">Amount</th><th class="right">≈ Units</th><th class="right"
-										>Now → target</th
-									></tr
-								></thead
-							>
+							<thead>
+								<tr>
+									<th>Asset</th><th>Action</th><th class="right">Amount</th><th class="right">≈ Units</th><th class="right">
+										Now → target
+									</th>
+								</tr>
+							</thead>
 							<tbody>
 								{#each drift.trades as t (t.assetId)}
 									<tr>

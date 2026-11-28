@@ -144,11 +144,11 @@
 
 <div class="settings">
 	<nav class="toc" aria-label="Settings sections">
-		<a href="#appearance">Appearance</a><a href="#calculations">Calculations</a><a href="#sources">Data sources</a><a href="#currency"
-			>Exchange rates</a
-		><a href="#crisis-assumptions">Crisis assumptions</a><a href="#crisis-data">Crisis data</a><a href="#data">Data</a><a href="#about"
-			>About</a
-		>
+		<a href="#appearance">Appearance</a><a href="#calculations">Calculations</a><a href="#sources">Data sources</a><a href="#currency">
+			Exchange rates
+		</a><a href="#crisis-assumptions">Crisis assumptions</a><a href="#crisis-data">Crisis data</a><a href="#data">Data</a><a href="#about">
+			About
+		</a>
 	</nav>
 	<div class="stack" style="--gap: 20px">
 		<section id="appearance">
@@ -186,13 +186,14 @@
 						<label class="label" for="s-bench">Benchmark</label>
 						<select id="s-bench" class="select" value={benchValue} onchange={(e) => setBench(e.currentTarget.value)}>
 							<option value="">None</option>
-							<optgroup label="Assets"
-								>{#each app.assets as a (a.id)}<option value="asset:{a.id}">{a.name}</option>{/each}</optgroup
-							>
-							<optgroup label="Portfolios"
-								>{#each app.portfolios.filter((p) => p.allocations.length) as p (p.id)}<option value="portfolio:{p.id}">{p.name}</option
-									>{/each}</optgroup
-							>
+							<optgroup label="Assets">
+								{#each app.assets as a (a.id)}<option value="asset:{a.id}">{a.name}</option>{/each}
+							</optgroup>
+							<optgroup label="Portfolios">
+								{#each app.portfolios.filter((p) => p.allocations.length) as p (p.id)}<option value="portfolio:{p.id}">
+										{p.name}
+									</option>{/each}
+							</optgroup>
 						</select>
 						<p class="hint">Overlaid on charts and marked on the efficient frontier.</p>
 					</div>
@@ -277,8 +278,10 @@
 						size="sm"
 						icon="refresh"
 						loading={jobs.fetchingRates}
-						onclick={() => jobs.fetchCurrencyRates({ manual: true })}>Fetch from ECB</Button
-					>{/snippet}
+						onclick={() => jobs.fetchCurrencyRates({ manual: true })}
+					>
+						Fetch from ECB
+					</Button>{/snippet}
 				<p class="small muted">
 					Rates for your assets' currencies are fetched automatically from the European Central Bank. You can also upload your own history;
 					your values win on overlapping dates.
@@ -288,12 +291,12 @@
 						{#each pairs as c (c.pair)}
 							<li>
 								<span class="mono strong">{c.pair.slice(0, 3)} → {c.pair.slice(3)}</span>
-								<span class="xs muted"
-									>{c.rates.length} rates · {fmt.date(c.rates[0]?.date)} – {fmt.date(c.rates.at(-1)?.date)} · last {fmt.num(
+								<span class="xs muted">
+									{c.rates.length} rates · {fmt.date(c.rates[0]?.date)} – {fmt.date(c.rates.at(-1)?.date)} · last {fmt.num(
 										c.rates.at(-1)?.rate,
 										4
-									)}</span
-								>
+									)}
+								</span>
 								<button
 									aria-label="Delete {c.pair}"
 									onclick={async () =>
@@ -302,21 +305,23 @@
 											message: `Delete ${c.pair}?`,
 											danger: true,
 											confirmLabel: 'Delete'
-										})) && app.deleteCurrency(c.pair)}><Icon name="trash" size={16} /></button
+										})) && app.deleteCurrency(c.pair)}
 								>
+									<Icon name="trash" size={16} />
+								</button>
 							</li>
 						{/each}
 					</ul>
 				{/if}
 				<div class="upload">
 					<div class="row nowrap">
-						<select class="select" bind:value={source} aria-label="Source currency"
-							>{#each currencies as c (c)}<option>{c}</option>{/each}</select
-						>
+						<select class="select" bind:value={source} aria-label="Source currency">
+							{#each currencies as c (c)}<option>{c}</option>{/each}
+						</select>
 						<span class="muted">→</span>
-						<select class="select" bind:value={target} aria-label="Target currency"
-							>{#each currencies as c (c)}<option>{c}</option>{/each}</select
-						>
+						<select class="select" bind:value={target} aria-label="Target currency">
+							{#each currencies as c (c)}<option>{c}</option>{/each}
+						</select>
 					</div>
 					<p class="hint">CSV with date and rate: how many {target} one {source} is worth.</p>
 					<FileDrop
@@ -339,25 +344,24 @@
 
 		<section id="crisis-data">
 			<Card title="Crisis data" subtitle="Long histories for the historical crises, going back before your assets' own prices.">
-				{#snippet actions()}<Button size="sm" icon="download" loading={crisis.downloading} onclick={() => crisis.downloadIndices()}
-						>{crisis.indices.size ? 'Update' : 'Download'}</Button
-					>{/snippet}
+				{#snippet actions()}<Button size="sm" icon="download" loading={crisis.downloading} onclick={() => crisis.downloadIndices()}>
+						{crisis.indices.size ? 'Update' : 'Download'}
+					</Button>{/snippet}
 				<p class="small muted">
 					Index histories are downloaded from Onvista into this browser on request (a few MB) and are not part of backups. Bond and cash
 					proxies are modelled from US treasury yields, bundled from
-					<a href="https://fred.stlouisfed.org/" rel="external noopener" target="_blank">FRED, Federal Reserve Bank of St. Louis</a
-					>{crisis.rates ? '' : ' (loading…)'}.
+					<a href="https://fred.stlouisfed.org/" rel="external noopener" target="_blank">
+						FRED, Federal Reserve Bank of St. Louis
+					</a>{crisis.rates ? '' : ' (loading…)'}.
 				</p>
 				<ul class="pairs">
 					{#each PROXY_INDICES as def (def.key)}
 						{@const d = crisis.indices.get(def.key)}
 						<li>
 							<span class="strong">{def.label}</span>
-							<span class="xs muted"
-								>{d
-									? `${fmt.date(d.prices[0]?.date)} – ${fmt.date(d.prices.at(-1)?.date)} · ${def.note}`
-									: `not downloaded · ${def.note}`}</span
-							>
+							<span class="xs muted">
+								{d ? `${fmt.date(d.prices[0]?.date)} – ${fmt.date(d.prices.at(-1)?.date)} · ${def.note}` : `not downloaded · ${def.note}`}
+							</span>
 						</li>
 					{/each}
 				</ul>
@@ -378,8 +382,10 @@
 						<div class="row">
 							<Button icon="download" onclick={() => (exportOpen = true)}>Export</Button><Button
 								icon="upload"
-								onclick={() => (importOpen = true)}>Import</Button
+								onclick={() => (importOpen = true)}
 							>
+								Import
+							</Button>
 						</div>
 						<p class="xs muted">
 							Import also reads Portfolio Performance XML, Parqet CSV and broker CSVs (Trade Republic, Scalable Capital, ING).
@@ -390,14 +396,14 @@
 						<p class="small muted">CSV files for PP's “File › Import › CSV files” (portfolio and account transactions).</p>
 						{#if tracked.length}
 							<div class="checks">
-								{#each tracked as p (p.id)}<label class="row small"
-										><input
+								{#each tracked as p (p.id)}<label class="row small">
+										<input
 											type="checkbox"
 											checked={ppSelection.includes(p.id)}
 											onchange={(e) =>
 												(ppSelection = e.currentTarget.checked ? [...ppSelection, p.id] : ppSelection.filter((x) => x !== p.id))}
-										/>{p.name}</label
-									>{/each}
+										/>{p.name}
+									</label>{/each}
 							</div>
 							<Button icon="download" disabled={!ppSelection.length} onclick={exportPP}>Export CSV</Button>
 						{:else}<p class="xs muted">No tracked portfolios yet.</p>{/if}
@@ -415,15 +421,18 @@
 						{#if s.parqetTokens}
 							<p class="small"><Badge tone="accent">Connected</Badge></p>
 							<div class="row">
-								<Button href="/tools/parqet-to-pp" icon="tools">Open Parqet tools</Button><Button variant="ghost" onclick={disconnectParqet}
-									>Disconnect</Button
+								<Button href="/tools/parqet-to-pp" icon="tools">Open Parqet tools</Button><Button
+									variant="ghost"
+									onclick={disconnectParqet}
 								>
+									Disconnect
+								</Button>
 							</div>
 						{:else if parqetAvailable}
 							<p class="small muted">Import portfolios and activities from your Parqet account (read-only).</p>
-							<Button icon="link" onclick={() => connectParqet('/settings#data').catch((e) => notify.error(e.message))}
-								>Connect Parqet</Button
-							>
+							<Button icon="link" onclick={() => connectParqet('/settings#data').catch((e) => notify.error(e.message))}>
+								Connect Parqet
+							</Button>
 						{:else}
 							<p class="small muted">
 								Not configured on this instance. Self-hosters can set <code>parqetClientId</code> in <code>config.json</code>.
@@ -451,8 +460,10 @@
 					<a href="/changelog">Changelog</a><a href="/license">License</a><a href="/licenses">Third-party notices</a><a
 						href="https://github.com/Serraniel/Sweetfolio"
 						rel="noopener"
-						target="_blank">Source code</a
+						target="_blank"
 					>
+						Source code
+					</a>
 				</div>
 			</Card>
 		</section>

@@ -16,8 +16,10 @@
 			aria-checked={value === o.value}
 			class:active={value === o.value}
 			disabled={disabled.includes(o.value)}
-			onclick={() => (value = o.value)}>{o.label}</button
+			onclick={() => (value = o.value)}
 		>
+			{o.label}
+		</button>
 	{/each}
 </div>
 

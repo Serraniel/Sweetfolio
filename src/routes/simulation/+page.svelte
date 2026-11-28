@@ -362,12 +362,12 @@
 				<div class="stack" style="--gap: 6px">
 					<Progress value={sim.progress.done} max={sim.progress.total} label="Simulation progress" />
 					<div class="spread small">
-						<span class="muted num"
-							>{#if sim.progress.phase === 'frontier'}Efficient frontier {fmt.pct(
-									sim.progress.done / sim.progress.total,
+						<span class="muted num">
+							{#if sim.progress.phase === 'frontier'}Efficient frontier {fmt.pct(sim.progress.done / sim.progress.total, 0)}{:else}{fmt.num(
+									sim.progress.done,
 									0
-								)}{:else}{fmt.num(sim.progress.done, 0)} / {fmt.num(sim.progress.total, 0)} portfolios{/if}</span
-						><Button size="sm" variant="ghost" onclick={() => sim.run?.cancel()}>Cancel</Button>
+								)} / {fmt.num(sim.progress.total, 0)} portfolios{/if}
+						</span><Button size="sm" variant="ghost" onclick={() => sim.run?.cancel()}>Cancel</Button>
 					</div>
 				</div>
 			{:else}
@@ -382,10 +382,9 @@
 
 	<div class="stack" style="--gap: 20px">
 		{#if !result}
-			<Card
-				><EmptyState icon="simulation" title="No simulation yet">Pick assets and run a simulation to see the efficient frontier.</EmptyState
-				></Card
-			>
+			<Card>
+				<EmptyState icon="simulation" title="No simulation yet">Pick assets and run a simulation to see the efficient frontier.</EmptyState>
+			</Card>
 		{:else}
 			{#if sim.resultKey !== formKey}
 				<p class="notice small">The settings changed since this run. Run the simulation again to apply them.</p>
@@ -406,8 +405,11 @@
 			>
 				{#snippet actions()}
 					<label class="row xs"><input type="checkbox" bind:checked={colorBySharpe} />Color by Sharpe</label>
-					{#if benchmark}<label class="row xs"><input type="checkbox" bind:checked={showDominating} />Beats benchmark</label
-						>{#if showDominating}<label class="row xs"><input type="checkbox" bind:checked={onlyDominating} />Only these</label>{/if}{/if}
+					{#if benchmark}<label class="row xs">
+							<input type="checkbox" bind:checked={showDominating} />Beats benchmark
+						</label>{#if showDominating}<label class="row xs">
+								<input type="checkbox" bind:checked={onlyDominating} />Only these
+							</label>{/if}{/if}
 				{/snippet}
 				<Frontier
 					bind:this={frontierRef}
@@ -468,11 +470,9 @@
 						<div class="inspector-crises">
 							<p class="small">
 								<strong>Crises</strong>
-								{#if inspectedCrises.holdsUp !== null}<span class={inspectedCrises.holdsUp ? 'pos' : 'neg'}
-										>— {inspectedCrises.holdsUp
-											? 'holds up like the benchmark'
-											: `worse than the benchmark in ${inspectedCrises.worse}`}</span
-									>{/if}
+								{#if inspectedCrises.holdsUp !== null}<span class={inspectedCrises.holdsUp ? 'pos' : 'neg'}>
+										— {inspectedCrises.holdsUp ? 'holds up like the benchmark' : `worse than the benchmark in ${inspectedCrises.worse}`}
+									</span>{/if}
 							</p>
 							<CrisisTable report={inspectedCrises} benchmarkLabel={crisisTest?.benchmarkName ?? null} bind:selected={inspectedCrisis} />
 						</div>

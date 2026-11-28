@@ -96,51 +96,55 @@
 						<button
 							class="name"
 							aria-pressed={selected === r.crisis.id}
-							onclick={() => (selected = selected === r.crisis.id ? null : r.crisis.id)}>{r.crisis.name}</button
+							onclick={() => (selected = selected === r.crisis.id ? null : r.crisis.id)}
 						>
-						<span class="xs muted"
-							>{#if r.crisis.scenario}like {r.crisis.examples}{:else}{CRISIS_TYPE_SHORT[r.crisis.type]} · {r.crisis.start.slice(0, 7)} – {r.crisis.end.slice(
+							{r.crisis.name}
+						</button>
+						<span class="xs muted">
+							{#if r.crisis.scenario}like {r.crisis.examples}{:else}{CRISIS_TYPE_SHORT[r.crisis.type]} · {r.crisis.start.slice(0, 7)} – {r.crisis.end.slice(
 									0,
 									7
-								)}{/if}</span
-						>
+								)}{/if}
+						</span>
 					</th>
-					<td class="right num neg"
-						>{fmt.pct(r.outcome!.drawdown, 1)}{#if r.benchmark}<span class="bench {ddClass(r)}">{fmt.pct(r.benchmark.drawdown, 1)}</span
-							>{/if}</td
-					>
+					<td class="right num neg">
+						{fmt.pct(r.outcome!.drawdown, 1)}{#if r.benchmark}<span class="bench {ddClass(r)}">
+								{fmt.pct(r.benchmark.drawdown, 1)}
+							</span>{/if}
+					</td>
 					<td
 						class="right num"
 						title={r.outcome!.recoveryDate
 							? `Back at the previous high on ${fmt.date(r.outcome!.recoveryDate)}`
 							: `Not back at the previous high by ${fmt.date(r.outcome!.dataEnd)}`}
-						>{duration(r.outcome!.recoveryDays)}{#if r.benchmark}<span class="bench {recClass(r)}"
-								>{duration(r.benchmark.recoveryDays)}</span
-							>{/if}</td
 					>
+						{duration(r.outcome!.recoveryDays)}{#if r.benchmark}<span class="bench {recClass(r)}">
+								{duration(r.benchmark.recoveryDays)}
+							</span>{/if}
+					</td>
 					{#if showReturn}
-						<td class="right num {fmt.signClass(r.outcome!.crisisReturn)}"
-							>{fmt.pct(r.outcome!.crisisReturn, 1)}{#if r.benchmark}<span class="bench">{fmt.pct(r.benchmark.crisisReturn, 1)}</span
-								>{/if}</td
-						>
+						<td class="right num {fmt.signClass(r.outcome!.crisisReturn)}">
+							{fmt.pct(r.outcome!.crisisReturn, 1)}{#if r.benchmark}<span class="bench">{fmt.pct(r.benchmark.crisisReturn, 1)}</span>{/if}
+						</td>
 					{/if}
 					{#if benchmarkLabel}
-						<td
-							>{#if r.verdict}<span class="verdict {r.verdict}">{VERDICT[r.verdict]}</span><span class="reason xs muted">{reason(r)}</span
-								>{:else}<span class="xs muted">no benchmark data</span>{/if}</td
-						>
+						<td>
+							{#if r.verdict}<span class="verdict {r.verdict}">{VERDICT[r.verdict]}</span><span class="reason xs muted">
+									{reason(r)}
+								</span>{:else}<span class="xs muted">no benchmark data</span>{/if}
+						</td>
 					{/if}
-					<td
-						><span class="source" title={sourceText(r)}
-							>{r.crisis.scenario
+					<td>
+						<span class="source" title={sourceText(r)}>
+							{r.crisis.scenario
 								? 'Assumed'
 								: r.coverage.some((c) => c.kind === 'proxy')
 									? r.coverage.some((c) => c.approximate || c.coarse)
 										? 'Proxy ≈'
 										: 'Proxy'
-									: 'Real'}</span
-						></td
-					>
+									: 'Real'}
+						</span>
+					</td>
 				</tr>
 			{/each}
 		</tbody>

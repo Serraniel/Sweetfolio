@@ -520,8 +520,9 @@
 		</div>
 	{/if}
 	<div class="legend xs muted">
-		{#if byScore}<span class="grad"><i></i>Crisis score worse → better</span><span><i class="dot untested"></i>Not crisis-tested</span
-			>{:else if colorBySharpe}<span class="grad"><i></i>Sharpe low → high</span>{/if}
+		{#if byScore}<span class="grad"><i></i>Crisis score worse → better</span><span>
+				<i class="dot untested"></i>Not crisis-tested
+			</span>{:else if colorBySharpe}<span class="grad"><i></i>Sharpe low → high</span>{/if}
 		{#if highlight?.length}<span><i class="dot ring"></i>Crisis-aware efficient ({highlight.length})</span>{/if}
 		{#if selection?.length && !byScore}<span><i class="dot sel"></i>Selected for crisis test ({selection.length})</span>{/if}
 		<span><i class="line"></i>Efficient frontier</span>

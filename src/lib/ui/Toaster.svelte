@@ -44,8 +44,10 @@
 						onclick={() => {
 							t.action?.run?.();
 							notify.dismiss(t.id);
-						}}>{t.action.label}</button
+						}}
 					>
+						{t.action.label}
+					</button>
 				{/if}
 			{/if}
 			<button class="x" aria-label="Dismiss" onclick={() => notify.dismiss(t.id)}><Icon name="x" size={14} /></button>

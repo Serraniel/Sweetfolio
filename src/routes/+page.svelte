@@ -87,9 +87,9 @@
 		<a class="stat-card" href="/assets"><Stat label="Assets" value={String(app.assets.length)} /></a>
 		<a class="stat-card" href="/portfolios"><Stat label="Portfolios" value={String(app.portfolios.length)} /></a>
 		<a class="stat-card" href="/strategies"><Stat label="Strategies" value={String(app.strategies.length)} /></a>
-		<a class="stat-card" href="/settings"
-			><Stat label="Currency" value={main} sub={`Risk-free ${fmt.num(app.settings.riskFreeRate, 2, 0)} %`} /></a
-		>
+		<a class="stat-card" href="/settings">
+			<Stat label="Currency" value={main} sub={`Risk-free ${fmt.num(app.settings.riskFreeRate, 2, 0)} %`} />
+		</a>
 	</div>
 
 	{#if empty || steps.filter((s) => s.done).length < 3}
@@ -97,9 +97,9 @@
 			<ol class="steps">
 				{#each steps as s, i (s.title)}
 					<li class:done={s.done}>
-						<span class="badge"
-							>{#if s.done}<Icon name="check" size={14} />{:else}{i + 1}{/if}</span
-						>
+						<span class="badge">
+							{#if s.done}<Icon name="check" size={14} />{:else}{i + 1}{/if}
+						</span>
 						<div>
 							<h3>{s.title}</h3>
 							<p class="small muted">{s.text}</p>
@@ -118,9 +118,9 @@
 					<a class="tracked-item" href="/portfolios/{app.portfolioSlug(p.id)}">
 						<span class="truncate strong">{p.name}</span>
 						<span class="num big">{fmt.money(s.totalValue, p.cashCurrency)}</span>
-						<span class="num small {fmt.signClass(s.totalReturn)}"
-							>{fmt.money(s.totalReturn, p.cashCurrency, { signed: true })} · {fmt.pct(s.totalReturnPercent, 1, true)}</span
-						>
+						<span class="num small {fmt.signClass(s.totalReturn)}">
+							{fmt.money(s.totalReturn, p.cashCurrency, { signed: true })} · {fmt.pct(s.totalReturnPercent, 1, true)}
+						</span>
 					</a>
 				{/each}
 			</div>
@@ -135,8 +135,10 @@
 					variant="ghost"
 					href={app.benchmarkResolved?.kind === 'asset'
 						? `/assets/${app.assetSlug(app.benchmarkResolved.ref.id)}`
-						: `/portfolios/${app.portfolioSlug(app.benchmarkResolved?.ref.id ?? '')}`}>Open</Button
+						: `/portfolios/${app.portfolioSlug(app.benchmarkResolved?.ref.id ?? '')}`}
 				>
+					Open
+				</Button>
 			{/snippet}
 			<div class="bench-stats">
 				{#each [['1y', '1Y'], ['5y', '5Y'], ['all', 'All']] as const as [k, l] (k)}

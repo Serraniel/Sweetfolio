@@ -199,12 +199,12 @@
 			<div class="row add">
 				<select class="select" bind:value={adding} aria-label="Add to comparison">
 					<option value="">Add asset or portfolio…</option>
-					{#if addableAssets.length}<optgroup label="Assets"
-							>{#each addableAssets as a (a.id)}<option value="a:{a.id}">{a.name}</option>{/each}</optgroup
-						>{/if}
-					{#if addablePortfolios.length}<optgroup label="Portfolios"
-							>{#each addablePortfolios as p (p.id)}<option value="p:{p.id}">{p.name}</option>{/each}</optgroup
-						>{/if}
+					{#if addableAssets.length}<optgroup label="Assets">
+							{#each addableAssets as a (a.id)}<option value="a:{a.id}">{a.name}</option>{/each}
+						</optgroup>{/if}
+					{#if addablePortfolios.length}<optgroup label="Portfolios">
+							{#each addablePortfolios as p (p.id)}<option value="p:{p.id}">{p.name}</option>{/each}
+						</optgroup>{/if}
 				</select>
 				<Button size="sm" icon="plus" disabled={!adding} onclick={add}>Add</Button>
 			</div>
@@ -212,11 +212,11 @@
 	</Card>
 
 	{#if items.length === 0}
-		<Card
-			><EmptyState icon="compare" title="Nothing to compare yet"
-				>Select two or more <a href="/assets">assets</a> or <a href="/portfolios">portfolios</a> and choose Compare, or add them above.</EmptyState
-			></Card
-		>
+		<Card>
+			<EmptyState icon="compare" title="Nothing to compare yet">
+				Select two or more <a href="/assets">assets</a> or <a href="/portfolios">portfolios</a> and choose Compare, or add them above.
+			</EmptyState>
+		</Card>
 	{:else}
 		<Card title="Financial metrics">
 			{#snippet actions()}
@@ -233,8 +233,9 @@
 					<thead>
 						<tr>
 							<th>Metric</th>
-							{#each items as item, i (item.key)}<th class="right"><span class="dot" style="background: {colorAt(i)}"></span>{item.name}</th
-								>{/each}
+							{#each items as item, i (item.key)}<th class="right">
+									<span class="dot" style="background: {colorAt(i)}"></span>{item.name}
+								</th>{/each}
 						</tr>
 					</thead>
 					<tbody>
@@ -244,9 +245,9 @@
 								<th scope="row" class="metric">{row.label}</th>
 								{#each items as item, i (item.key)}
 									{@const v = metrics.value?.[i]?.[period]?.[row.key] as number | undefined}
-									<td class="right num {row.key === 'volatility' ? '' : fmt.signClass(v)}" class:best={b === i}
-										>{row.kind === 'pct' ? fmt.pct(v) : fmt.num(v)}</td
-									>
+									<td class="right num {row.key === 'volatility' ? '' : fmt.signClass(v)}" class:best={b === i}>
+										{row.kind === 'pct' ? fmt.pct(v) : fmt.num(v)}
+									</td>
 								{/each}
 							</tr>
 						{/each}
@@ -289,35 +290,39 @@
 						<thead>
 							<tr>
 								<th>Crisis</th>
-								{#each items as item, i (item.key)}<th class="right"
-										><span class="dot" style="background: {colorAt(i)}"></span>{item.name}</th
-									>{/each}
+								{#each items as item, i (item.key)}<th class="right">
+										<span class="dot" style="background: {colorAt(i)}"></span>{item.name}
+									</th>{/each}
 								{#if bench}<th class="right muted">{bench.name} (benchmark)</th>{/if}
 							</tr>
 						</thead>
 						<tbody>
 							{#each crisisRows as x (x.row.crisis.id)}
 								<tr>
-									<th scope="row" class="metric"
-										>{x.row.crisis.name}<span class="xs muted block"
-											>{x.row.crisis.scenario
+									<th scope="row" class="metric">
+										{x.row.crisis.name}<span class="xs muted block">
+											{x.row.crisis.scenario
 												? `like ${x.row.crisis.examples}`
-												: `${CRISIS_TYPE_SHORT[x.row.crisis.type]} · ${x.row.crisis.start.slice(0, 4)}`}</span
-										></th
-									>
+												: `${CRISIS_TYPE_SHORT[x.row.crisis.type]} · ${x.row.crisis.start.slice(0, 4)}`}
+										</span>
+									</th>
 									{#each x.cells as c, i (items[i]!.key)}
-										<td class="right num" style={heat(c?.drawdown, x)}
-											>{#if c}{fmt.pct(c.drawdown, 1)}<span class="xs muted block">{duration(c.recoveryDays)}</span>{:else}<span
-													class="xs muted">no data</span
-												>{/if}</td
-										>
+										<td class="right num" style={heat(c?.drawdown, x)}>
+											{#if c}{fmt.pct(c.drawdown, 1)}<span class="xs muted block">{duration(c.recoveryDays)}</span>{:else}<span
+													class="xs muted"
+												>
+													no data
+												</span>{/if}
+										</td>
 									{/each}
 									{#if bench}
-										<td class="right num muted" style={heat(x.bench?.drawdown, x)}
-											>{#if x.bench}{fmt.pct(x.bench.drawdown, 1)}<span class="xs block">{duration(x.bench.recoveryDays)}</span>{:else}<span
-													class="xs">no data</span
-												>{/if}</td
-										>
+										<td class="right num muted" style={heat(x.bench?.drawdown, x)}>
+											{#if x.bench}{fmt.pct(x.bench.drawdown, 1)}<span class="xs block">{duration(x.bench.recoveryDays)}</span>{:else}<span
+													class="xs"
+												>
+													no data
+												</span>{/if}
+										</td>
 									{/if}
 								</tr>
 							{/each}
@@ -325,29 +330,29 @@
 						<tfoot>
 							<tr>
 								<td>{SCORE_LABELS[crisis.prefs.score]}</td>
-								{#each crisisReports as rep, i (items[i]!.key)}<td class="right num"
-										>{Number.isFinite(rep.score)
+								{#each crisisReports as rep, i (items[i]!.key)}<td class="right num">
+										{Number.isFinite(rep.score)
 											? crisis.prefs.score === 'longestRecovery'
 												? duration(-rep.score * 365.25)
 												: fmt.pct(rep.score, 1)
-											: '–'}</td
-									>{/each}
-								{#if bench}<td class="right num muted"
-										>{Number.isFinite(crisisReports[0]!.benchmarkScore)
+											: '–'}
+									</td>{/each}
+								{#if bench}<td class="right num muted">
+										{Number.isFinite(crisisReports[0]!.benchmarkScore)
 											? crisis.prefs.score === 'longestRecovery'
 												? duration(-crisisReports[0]!.benchmarkScore * 365.25)
 												: fmt.pct(crisisReports[0]!.benchmarkScore, 1)
-											: '–'}</td
-									>{/if}
+											: '–'}
+									</td>{/if}
 							</tr>
 							{#if bench}
 								<tr>
 									<td>vs. benchmark</td>
-									{#each crisisReports as rep, i (items[i]!.key)}<td class="right"
-											>{#if rep.holdsUp === null}–{:else}<span class="verdict {rep.holdsUp ? 'ok' : 'bad'}"
-													>{rep.holdsUp ? 'Holds up' : `Worse in ${rep.worse}`}</span
-												>{/if}</td
-										>{/each}
+									{#each crisisReports as rep, i (items[i]!.key)}<td class="right">
+											{#if rep.holdsUp === null}–{:else}<span class="verdict {rep.holdsUp ? 'ok' : 'bad'}">
+													{rep.holdsUp ? 'Holds up' : `Worse in ${rep.worse}`}
+												</span>{/if}
+										</td>{/each}
 									<td></td>
 								</tr>
 							{/if}
@@ -366,33 +371,34 @@
 		<Card title="Details">
 			<div class="scroll-x">
 				<table class="table">
-					<thead
-						><tr
-							><th>Detail</th>{#each items as item (item.key)}<th>{item.name}</th>{/each}</tr
-						></thead
-					>
+					<thead>
+						<tr>
+							<th>Detail</th>{#each items as item (item.key)}<th>{item.name}</th>{/each}
+						</tr>
+					</thead>
 					<tbody>
-						<tr
-							><th scope="row" class="metric">Type</th>{#each items as item (item.key)}<td>{item.type}</td>{/each}</tr
-						>
-						<tr
-							><th scope="row" class="metric">Currency</th>{#each items as item (item.key)}<td>{item.currency}</td>{/each}</tr
-						>
-						<tr
-							><th scope="row" class="metric">ISIN</th>{#each items as item (item.key)}<td class="mono">{item.isin ?? '–'}</td>{/each}</tr
-						>
-						<tr
-							><th scope="row" class="metric">WKN</th>{#each items as item (item.key)}<td class="mono">{item.wkn ?? '–'}</td>{/each}</tr
-						>
-						<tr
-							><th scope="row" class="metric">History</th>{#each items as item (item.key)}<td class="num"
-									>{fmt.date(item.prices[0]?.date)} – {fmt.date(item.prices.at(-1)?.date)}</td
-								>{/each}</tr
-						>
-						<tr
-							><th scope="row" class="metric">Data points</th>{#each items as item (item.key)}<td class="num">{item.prices.length}</td
-								>{/each}</tr
-						>
+						<tr>
+							<th scope="row" class="metric">Type</th>{#each items as item (item.key)}<td>{item.type}</td>{/each}
+						</tr>
+						<tr>
+							<th scope="row" class="metric">Currency</th>{#each items as item (item.key)}<td>{item.currency}</td>{/each}
+						</tr>
+						<tr>
+							<th scope="row" class="metric">ISIN</th>{#each items as item (item.key)}<td class="mono">{item.isin ?? '–'}</td>{/each}
+						</tr>
+						<tr>
+							<th scope="row" class="metric">WKN</th>{#each items as item (item.key)}<td class="mono">{item.wkn ?? '–'}</td>{/each}
+						</tr>
+						<tr>
+							<th scope="row" class="metric">History</th>{#each items as item (item.key)}<td class="num">
+									{fmt.date(item.prices[0]?.date)} – {fmt.date(item.prices.at(-1)?.date)}
+								</td>{/each}
+						</tr>
+						<tr>
+							<th scope="row" class="metric">Data points</th>{#each items as item (item.key)}<td class="num">
+									{item.prices.length}
+								</td>{/each}
+						</tr>
 					</tbody>
 				</table>
 			</div>

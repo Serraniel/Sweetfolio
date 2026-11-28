@@ -164,9 +164,9 @@
 <PageHeader title="Assets" subtitle="Price histories for securities, funds and crypto.">
 	{#snippet actions()}
 		{#if app.assets.some((a) => a.isin || a.wkn)}
-			<Button icon="refresh" loading={jobs.refreshing} onclick={() => jobs.refreshAssets(app.assets.filter((a) => a.isin || a.wkn))}
-				>Refresh all</Button
-			>
+			<Button icon="refresh" loading={jobs.refreshing} onclick={() => jobs.refreshAssets(app.assets.filter((a) => a.isin || a.wkn))}>
+				Refresh all
+			</Button>
 		{/if}
 	{/snippet}
 </PageHeader>
@@ -256,8 +256,10 @@
 							variant="primary"
 							icon="compare"
 							disabled={selected.length < 2}
-							onclick={() => goto(`/compare?slugs=${selected.map((id) => app.assetSlug(id)).join(',')}`)}>Compare</Button
+							onclick={() => goto(`/compare?slugs=${selected.map((id) => app.assetSlug(id)).join(',')}`)}
 						>
+							Compare
+						</Button>
 						<ShareButton
 							url={shareUrl(encodeAssetList(selectedIsins))}
 							title="Shared assets"
@@ -288,20 +290,22 @@
 							<span class="num xs muted" title="Volatility">σ {fmt.pct(h.volatility, 0)}</span>
 						</div>
 						<div class="acts">
-							{#if h.warnings.length}<span class="warn-icon" title={h.warnings.map((w) => w.message).join('\n')}
-									><Icon name="alert" size={16} /></span
-								>{/if}
+							{#if h.warnings.length}<span class="warn-icon" title={h.warnings.map((w) => w.message).join('\n')}>
+									<Icon name="alert" size={16} />
+								</span>{/if}
 							<button
 								class="icon-btn"
 								class:on={app.isBenchmark('asset', a.id)}
 								aria-pressed={app.isBenchmark('asset', a.id)}
 								title="Benchmark"
 								aria-label="Use {a.name} as benchmark"
-								onclick={() => app.toggleBenchmark('asset', a.id)}><Icon name="star" size={16} /></button
+								onclick={() => app.toggleBenchmark('asset', a.id)}
 							>
-							<button class="icon-btn" title="Delete" aria-label="Delete {a.name}" onclick={() => remove(a)}
-								><Icon name="trash" size={16} /></button
-							>
+								<Icon name="star" size={16} />
+							</button>
+							<button class="icon-btn" title="Delete" aria-label="Delete {a.name}" onclick={() => remove(a)}>
+								<Icon name="trash" size={16} />
+							</button>
 						</div>
 					</li>
 				{:else}

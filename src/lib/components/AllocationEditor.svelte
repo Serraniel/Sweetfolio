@@ -47,9 +47,9 @@
 						onchange={(e) => setWeight(i, fmt.parseInput(e.currentTarget.value) ?? 0)}
 					/>
 					<span class="muted small">%</span>
-					<button type="button" class="rm" aria-label="Remove {byId.get(a.assetId)?.name}" onclick={() => remove(i)}
-						><Icon name="x" size={16} /></button
-					>
+					<button type="button" class="rm" aria-label="Remove {byId.get(a.assetId)?.name}" onclick={() => remove(i)}>
+						<Icon name="x" size={16} />
+					</button>
 				</div>
 			</div>
 			<input

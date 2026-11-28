@@ -115,9 +115,9 @@
 	<form id="tx-form" class="stack" style="--gap: 14px" onsubmit={save}>
 		<div class="types" role="radiogroup" aria-label="Transaction type">
 			{#each TRANSACTION_TYPES as t (t)}
-				<button type="button" role="radio" aria-checked={f.type === t} class:active={f.type === t} onclick={() => (f.type = t)}
-					>{TYPE_LABELS[t]}</button
-				>
+				<button type="button" role="radio" aria-checked={f.type === t} class:active={f.type === t} onclick={() => (f.type = t)}>
+					{TYPE_LABELS[t]}
+				</button>
 			{/each}
 		</div>
 		<div class="grid" style="--min: 160px">
@@ -201,9 +201,9 @@
 				</div>{/if}
 			<div>
 				<label class="label" for="tx-cur">Currency</label>
-				<select id="tx-cur" class="select" bind:value={f.currency}
-					>{#each [...new Set([f.currency, portfolio.cashCurrency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}</select
-				>
+				<select id="tx-cur" class="select" bind:value={f.currency}>
+					{#each [...new Set([f.currency, portfolio.cashCurrency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}
+				</select>
 			</div>
 		</div>
 		<div><label class="label" for="tx-notes">Notes</label><input id="tx-notes" class="input" bind:value={f.notes} /></div>

@@ -28,7 +28,9 @@
 		<Button
 			variant={req?.danger ? 'danger' : 'primary'}
 			disabled={!!req?.typed && typed.trim() !== req.typed}
-			onclick={() => confirmService.answer(true)}>{req?.confirmLabel ?? 'Confirm'}</Button
+			onclick={() => confirmService.answer(true)}
 		>
+			{req?.confirmLabel ?? 'Confirm'}
+		</Button>
 	{/snippet}
 </Dialog>
