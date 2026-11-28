@@ -46,11 +46,12 @@
 				/>
 			{/if}
 		{/each}
-		<text x="50" y="47" text-anchor="middle" class="c-label">{hover !== null ? items[hover]?.label.slice(0, 18) : (centerLabel ?? '')}</text
-		>
-		<text x="50" y="58" text-anchor="middle" class="c-value"
-			>{hover !== null ? fmt.pct(arcs[hover]?.share ?? 0, 1) : (centerValue ?? '')}</text
-		>
+		<text x="50" y="47" text-anchor="middle" class="c-label">
+			{hover !== null ? items[hover]?.label.slice(0, 18) : (centerLabel ?? '')}
+		</text>
+		<text x="50" y="58" text-anchor="middle" class="c-value">
+			{hover !== null ? fmt.pct(arcs[hover]?.share ?? 0, 1) : (centerValue ?? '')}
+		</text>
 	</svg>
 	<ul class="legend">
 		{#each items as it, i (i)}

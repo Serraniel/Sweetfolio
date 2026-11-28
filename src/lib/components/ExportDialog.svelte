@@ -41,13 +41,13 @@
 	<div class="stack" style="--gap: 8px">
 		<p class="small muted">A JSON file you can import again on any device. API keys and connection tokens are never included.</p>
 		{#each ALL_SCOPES as s (s)}
-			<label class="row small"
-				><input
+			<label class="row small">
+				<input
 					type="checkbox"
 					checked={scopes.includes(s)}
 					onchange={(e) => (scopes = e.currentTarget.checked ? [...scopes, s] : scopes.filter((x) => x !== s))}
-				/>{LABELS[s]}</label
-			>
+				/>{LABELS[s]}
+			</label>
 		{/each}
 	</div>
 	{#snippet footer()}

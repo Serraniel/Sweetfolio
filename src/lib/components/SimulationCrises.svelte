@@ -167,8 +167,10 @@
 				variant="primary"
 				icon="target"
 				disabled={!simCrisis.selection?.length || (simCrisis.model === 'historical' && !crisis.loaded)}
-				onclick={() => simCrisis.start(result)}>2. Run crisis test</Button
+				onclick={() => simCrisis.start(result)}
 			>
+				2. Run crisis test
+			</Button>
 		{/if}
 	</div>
 
@@ -203,12 +205,12 @@
 		</div>
 		<div class="row filters">
 			<label class="row xs"><input type="checkbox" bind:checked={simCrisis.colorByScore} />Colour by crisis score</label>
-			{#if test.benchmarkName}<label class="row xs"
-					><input type="checkbox" bind:checked={simCrisis.onlyHoldingUp} />Only those that hold up like the benchmark</label
-				>{/if}
+			{#if test.benchmarkName}<label class="row xs">
+					<input type="checkbox" bind:checked={simCrisis.onlyHoldingUp} />Only those that hold up like the benchmark
+				</label>{/if}
 			{#if view.compared.length}
-				<label class="row xs"
-					>Better than the benchmark in <select
+				<label class="row xs">
+					Better than the benchmark in <select
 						class="select better"
 						bind:value={simCrisis.minBetter}
 						aria-label="Better than the benchmark in at least"
@@ -217,23 +219,23 @@
 						{#each Array.from({ length: view.compared.length - 1 }, (_, k) => k + 1) as n (n)}<option value={n}>at least {n}</option>{/each}
 						<option value="all">all {view.compared.length}</option>
 					</select>
-					{test.model === 'scenarios' ? 'crisis types' : 'crises'}</label
-				>
+					{test.model === 'scenarios' ? 'crisis types' : 'crises'}
+				</label>
 			{/if}
-			<label class="row xs"
-				>Max crisis drawdown <input
+			<label class="row xs">
+				Max crisis drawdown <input
 					class="input num dd"
 					inputmode="decimal"
 					placeholder="–"
 					bind:value={simCrisis.maxDrawdown}
 					aria-label="Maximum crisis drawdown in percent"
-				/> %</label
-			>
-			<label class="row xs"
-				><input type="checkbox" bind:checked={simCrisis.showEfficient} />Crisis-aware efficient set{efficient
+				/> %
+			</label>
+			<label class="row xs">
+				<input type="checkbox" bind:checked={simCrisis.showEfficient} />Crisis-aware efficient set{efficient
 					? ` (${efficient.length})`
-					: ''}</label
-			>
+					: ''}
+			</label>
 		</div>
 		<div>
 			<label class="label" for="crisis-objective">Best candidates</label>
@@ -248,9 +250,9 @@
 								<span class="num">{fmt.pct(result.returns[i]!, 1)}</span>
 								<span class="num muted">vol {fmt.pct(result.volatilities[i]!, 1)}</span>
 								<span class="num">{SCORE_LABELS[crisis.prefs.score].toLowerCase()} {scoreText(view.scores[i]!)}</span>
-								{#if test.benchmarkName}<span class="xs {view.worse[i] ? 'neg' : 'pos'}"
-										>{view.worse[i] ? `worse in ${view.worse[i]}` : 'holds up'}</span
-									><span class="xs muted">better in {view.better[i]} of {view.compared.length}</span>{/if}
+								{#if test.benchmarkName}<span class="xs {view.worse[i] ? 'neg' : 'pos'}">
+										{view.worse[i] ? `worse in ${view.worse[i]}` : 'holds up'}
+									</span><span class="xs muted">better in {view.better[i]} of {view.compared.length}</span>{/if}
 							</button>
 						</li>
 					{/each}

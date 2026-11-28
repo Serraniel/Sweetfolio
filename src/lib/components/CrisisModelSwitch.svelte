@@ -14,8 +14,10 @@
 	<p class="xs muted">
 		{#if crisis.model === 'scenarios'}
 			Assumed behaviour of each kind of asset in each type of crisis, combined by the portfolio's weights. <a
-				href="/settings#crisis-assumptions">Edit the assumptions</a
-			>.
+				href="/settings#crisis-assumptions"
+			>
+				Edit the assumptions
+			</a>.
 		{:else}
 			Replays real crises with real prices and, before an asset's own history, proxies matched to what it invests in.
 		{/if}

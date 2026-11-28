@@ -33,9 +33,14 @@
 <div class="node" style="--depth: {depth}">
 	<div class="line" class:group={node.type === 'group'}>
 		{#if node.type === 'group'}
-			<button class="tgl" aria-label={collapsed ? 'Expand' : 'Collapse'} aria-expanded={!collapsed} onclick={() => (collapsed = !collapsed)}
-				><Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={16} /></button
+			<button
+				class="tgl"
+				aria-label={collapsed ? 'Expand' : 'Collapse'}
+				aria-expanded={!collapsed}
+				onclick={() => (collapsed = !collapsed)}
 			>
+				<Icon name={collapsed ? 'chevronRight' : 'chevronDown'} size={16} />
+			</button>
 			<input
 				class="input label-in"
 				value={node.label}
@@ -44,9 +49,9 @@
 			/>
 		{:else}
 			<span class="leaf-dot" aria-hidden="true"></span>
-			<a class="truncate leaf-name" href="/assets/{app.assetSlug(node.assetId)}"
-				>{app.assetById.get(node.assetId)?.name ?? 'Unknown asset'}</a
-			>
+			<a class="truncate leaf-name" href="/assets/{app.assetSlug(node.assetId)}">
+				{app.assetById.get(node.assetId)?.name ?? 'Unknown asset'}
+			</a>
 		{/if}
 		{#if depth > 0}
 			<div class="w">

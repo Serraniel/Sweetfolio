@@ -21,9 +21,9 @@
 				<article id="v{r.version}" class="release">
 					<header class="row">
 						<h2>v{r.version}</h2>
-						{#if r.date}<span class="muted small">{fmt.date(r.date)}</span>{/if}{#if r.version === __APP_VERSION__}<Badge tone="accent"
-								>Current</Badge
-							>{/if}
+						{#if r.date}<span class="muted small">{fmt.date(r.date)}</span>{/if}{#if r.version === __APP_VERSION__}<Badge tone="accent">
+								Current
+							</Badge>{/if}
 					</header>
 					<div class="md">{@html render(r.body)}</div>
 				</article>

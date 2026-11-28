@@ -85,8 +85,9 @@
 							{#if benchmark && b !== undefined}<span
 									class="bench {compareClass(row.key, v, b)}"
 									title="{benchmarkLabel}: {row.kind === 'pct' ? fmt.pct(b) : fmt.num(b)}"
-									>{row.kind === 'pct' ? fmt.pct(b) : fmt.num(b)}</span
-								>{/if}
+								>
+									{row.kind === 'pct' ? fmt.pct(b) : fmt.num(b)}
+								</span>{/if}
 						</td>
 					{/each}
 				</tr>

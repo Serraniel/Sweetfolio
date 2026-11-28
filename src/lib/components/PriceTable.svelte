@@ -65,10 +65,9 @@
 	{#if error}<p class="error-text">{error}</p>{/if}
 	<div class="scroll-x">
 		<table class="table">
-			<thead
-				><tr><th>Date</th><th class="right">Close ({asset.currency})</th><th class="right"><span class="sr-only">Actions</span></th></tr
-				></thead
-			>
+			<thead>
+				<tr><th>Date</th><th class="right">Close ({asset.currency})</th><th class="right"><span class="sr-only">Actions</span></th></tr>
+			</thead>
 			<tbody>
 				{#each visible as p (p.date)}
 					<tr>
@@ -95,8 +94,10 @@
 									onclick={() => {
 										editing = p.date;
 										editValue = String(p.close);
-									}}><Icon name="edit" size={16} /></button
+									}}
 								>
+									<Icon name="edit" size={16} />
+								</button>
 								<button aria-label="Delete price of {p.date}" onclick={() => remove(p.date)}><Icon name="trash" size={16} /></button>
 							{/if}
 						</td>

@@ -73,10 +73,10 @@
 	<fieldset class="types">
 		<legend class="label">Crisis types included</legend>
 		{#each CRISIS_TYPES as t (t)}
-			<label class="check small"
-				><input type="checkbox" checked={p.types.includes(t)} onchange={(e) => toggleType(t, e.currentTarget.checked)} />
-				{CRISIS_TYPE_LABELS[t]}</label
-			>
+			<label class="check small">
+				<input type="checkbox" checked={p.types.includes(t)} onchange={(e) => toggleType(t, e.currentTarget.checked)} />
+				{CRISIS_TYPE_LABELS[t]}
+			</label>
 		{/each}
 	</fieldset>
 	<p class="xs muted">

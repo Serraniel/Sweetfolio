@@ -27,9 +27,9 @@
 </script>
 
 <div class="share">
-	<Button size="sm" icon={copied ? 'check' : 'link'} onclick={copy} {disabled} title={disabled ? reason : 'Copy share link'}
-		>{copied ? 'Copied' : 'Copy link'}</Button
-	>
+	<Button size="sm" icon={copied ? 'check' : 'link'} onclick={copy} {disabled} title={disabled ? reason : 'Copy share link'}>
+		{copied ? 'Copied' : 'Copy link'}
+	</Button>
 	{#if canShare}<Button
 			size="sm"
 			icon="share"

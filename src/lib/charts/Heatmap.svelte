@@ -45,8 +45,10 @@
 									aria-label="{name(i)} and {name(j)}: {fmt.num(v, 2)}"
 									onpointerenter={() => (active = [i, j])}
 									onfocus={() => (active = [i, j])}
-									onclick={() => i !== j && onselect?.(matrix.ids[i]!, matrix.ids[j]!)}>{n <= 12 ? fmt.num(v, 2) : ''}</button
+									onclick={() => i !== j && onselect?.(matrix.ids[i]!, matrix.ids[j]!)}
 								>
+									{n <= 12 ? fmt.num(v, 2) : ''}
+								</button>
 							</td>
 						{/each}
 					</tr>

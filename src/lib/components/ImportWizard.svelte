@@ -286,9 +286,9 @@
 			<Button variant="primary" onclick={() => (open = false)}>Close</Button>
 		{:else}
 			<Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
-			{#if step === 'options'}<Button variant="primary" loading={busy} disabled={kind === 'backup' && !scopes.length} onclick={review}
-					>Review</Button
-				>{/if}
+			{#if step === 'options'}<Button variant="primary" loading={busy} disabled={kind === 'backup' && !scopes.length} onclick={review}>
+					Review
+				</Button>{/if}
 			{#if step === 'review'}<Button
 					variant="primary"
 					loading={busy}
@@ -296,8 +296,10 @@
 						counts.added +
 							(report ? ALL_SCOPES.reduce((s, sc) => s + report![sc].conflicts.filter((c) => c.resolution === 'replace').length, 0) : 0) ===
 							0}
-					onclick={apply}>Import</Button
-				>{/if}
+					onclick={apply}
+				>
+					Import
+				</Button>{/if}
 		{/if}
 	{/snippet}
 </Dialog>

@@ -115,9 +115,9 @@
 		{#if mode !== 'model'}
 			<div>
 				<label class="label" for="pf-cur">Portfolio currency</label>
-				<select id="pf-cur" class="select" bind:value={cashCurrency}
-					>{#each [...new Set([cashCurrency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}</select
-				>
+				<select id="pf-cur" class="select" bind:value={cashCurrency}>
+					{#each [...new Set([cashCurrency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}
+				</select>
 			</div>
 			<Toggle
 				bind:checked={trackCash}

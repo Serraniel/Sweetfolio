@@ -177,12 +177,12 @@
 			{#if isBench}<Badge tone="warning">Benchmark</Badge>{/if}
 		{/snippet}
 		{#snippet actions()}
-			{#if asset.isin || asset.wkn}<Button icon="refresh" size="sm" loading={jobs.refreshing} onclick={() => jobs.refreshAssets([asset])}
-					>Refresh</Button
-				>{/if}
-			<Button icon="star" size="sm" onclick={() => app.toggleBenchmark('asset', asset.id)}
-				>{isBench ? 'Unset benchmark' : 'Set as benchmark'}</Button
-			>
+			{#if asset.isin || asset.wkn}<Button icon="refresh" size="sm" loading={jobs.refreshing} onclick={() => jobs.refreshAssets([asset])}>
+					Refresh
+				</Button>{/if}
+			<Button icon="star" size="sm" onclick={() => app.toggleBenchmark('asset', asset.id)}>
+				{isBench ? 'Unset benchmark' : 'Set as benchmark'}
+			</Button>
 			{#if asset.isin}<ShareButton url={shareUrl(encodeAssetList([asset.isin]))} title={asset.name} />{/if}
 			<Button icon="edit" size="sm" onclick={openEdit}>Edit</Button>
 			<Button icon="trash" size="sm" variant="ghost" onclick={remove} aria-label="Delete asset" />
@@ -231,9 +231,9 @@
 				{#snippet actions()}<Button size="sm" icon="edit" aria-label="Edit exposure" onclick={openExposure}>Edit</Button>{/snippet}
 				<p>
 					<strong>{describeExposure(exposure)}</strong>
-					{#if exposure.source === 'manual'}<Badge>Set manually</Badge>{:else if exposure.source === 'guess'}<Badge tone="warning"
-							>Guessed from the name</Badge
-						>{:else}<Badge tone="accent">From market data</Badge>{/if}
+					{#if exposure.source === 'manual'}<Badge>Set manually</Badge>{:else if exposure.source === 'guess'}<Badge tone="warning">
+							Guessed from the name
+						</Badge>{:else}<Badge tone="accent">From market data</Badge>{/if}
 				</p>
 				{#if exposure.assetClass === 'unknown' || exposure.assetClass === 'mixed'}
 					<p class="small muted">Crises before {fmt.date(asset.prices[0]?.date)} cannot be tested for this asset: no proxy fits it.</p>
@@ -300,15 +300,15 @@
 			<div class="grid" style="--min: 140px">
 				<div>
 					<label class="label" for="ea-cur">Currency</label>
-					<select id="ea-cur" class="select" bind:value={form.currency}
-						>{#each [...new Set([form.currency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}</select
-					>
+					<select id="ea-cur" class="select" bind:value={form.currency}>
+						{#each [...new Set([form.currency, ...COMMON_CURRENCIES])] as c (c)}<option>{c}</option>{/each}
+					</select>
 				</div>
 				<div>
 					<label class="label" for="ea-cls">Type</label>
-					<select id="ea-cls" class="select" bind:value={form.classification}
-						>{#each ASSET_CLASSIFICATIONS as c (c)}<option value={c}>{c.toUpperCase()}</option>{/each}</select
-					>
+					<select id="ea-cls" class="select" bind:value={form.classification}>
+						{#each ASSET_CLASSIFICATIONS as c (c)}<option value={c}>{c.toUpperCase()}</option>{/each}
+					</select>
 				</div>
 			</div>
 		</form>
@@ -330,34 +330,34 @@
 		>
 			<div>
 				<label class="label" for="ex-class">Invests in</label>
-				<select id="ex-class" class="select" bind:value={exForm.assetClass}
-					>{#each EXPOSURE_CLASSES as c (c)}<option value={c}>{CLASS_LABELS[c]}</option>{/each}</select
-				>
+				<select id="ex-class" class="select" bind:value={exForm.assetClass}>
+					{#each EXPOSURE_CLASSES as c (c)}<option value={c}>{CLASS_LABELS[c]}</option>{/each}
+				</select>
 			</div>
 			{#if exForm.assetClass === 'equity' || exForm.assetClass === 'govBond' || exForm.assetClass === 'corpBond' || exForm.assetClass === 'cash'}
 				<div>
 					<label class="label" for="ex-region">Region</label>
-					<select id="ex-region" class="select" bind:value={exForm.region}
-						>{#each EXPOSURE_REGIONS as r (r)}<option value={r}>{REGION_LABELS[r]}</option>{/each}</select
-					>
+					<select id="ex-region" class="select" bind:value={exForm.region}>
+						{#each EXPOSURE_REGIONS as r (r)}<option value={r}>{REGION_LABELS[r]}</option>{/each}
+					</select>
 				</div>
 			{/if}
 			{#if exForm.assetClass === 'equity'}
 				<div>
 					<label class="label" for="ex-style">Style</label>
-					<select id="ex-style" class="select" bind:value={exForm.style}
-						>{#each EQUITY_STYLES as s (s)}<option value={s}>{s === 'tech' ? 'Technology / Nasdaq' : 'Broad market'}</option>{/each}</select
-					>
+					<select id="ex-style" class="select" bind:value={exForm.style}>
+						{#each EQUITY_STYLES as s (s)}<option value={s}>{s === 'tech' ? 'Technology / Nasdaq' : 'Broad market'}</option>{/each}
+					</select>
 				</div>
 			{/if}
 			{#if exForm.assetClass === 'govBond' || exForm.assetClass === 'corpBond'}
 				<div>
 					<label class="label" for="ex-maturity">Maturity</label>
-					<select id="ex-maturity" class="select" bind:value={exForm.maturity}
-						>{#each BOND_MATURITIES as m (m)}<option value={m}
-								>{m === 'short' ? 'Short (1–3 years)' : m === 'intermediate' ? 'Intermediate (7–10 years)' : 'Long (20+ years)'}</option
-							>{/each}</select
-					>
+					<select id="ex-maturity" class="select" bind:value={exForm.maturity}>
+						{#each BOND_MATURITIES as m (m)}<option value={m}>
+								{m === 'short' ? 'Short (1–3 years)' : m === 'intermediate' ? 'Intermediate (7–10 years)' : 'Long (20+ years)'}
+							</option>{/each}
+					</select>
 				</div>
 			{/if}
 			<div>

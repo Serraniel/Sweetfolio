@@ -39,9 +39,9 @@
 
 <div class="tree-chart">
 	<p class="readout small" aria-live="polite">
-		{#if active}<b>{active.label}</b> · <span class="num">{fmt.pct(active.weight, 1)}</span> of total{:else}<span class="muted"
-				>Hover or tap a segment</span
-			>{/if}
+		{#if active}<b>{active.label}</b> · <span class="num">{fmt.pct(active.weight, 1)}</span> of total{:else}<span class="muted">
+				Hover or tap a segment
+			</span>{/if}
 	</p>
 	{#if nodes.length === 0}
 		<p class="muted small">Add groups and assets to see the visualization.</p>
@@ -75,9 +75,9 @@
 						opacity={hover && hover !== n.id ? 0.55 : 1}
 					/>
 					{#if (n.end - n.start) * 400 > 50}
-						<text x={n.start * 400 + 6} y={(n.depth - 1) * 44 + 18} class="t"
-							>{n.label.slice(0, Math.floor(((n.end - n.start) * 400) / 6))}</text
-						>
+						<text x={n.start * 400 + 6} y={(n.depth - 1) * 44 + 18} class="t">
+							{n.label.slice(0, Math.floor(((n.end - n.start) * 400) / 6))}
+						</text>
 						<text x={n.start * 400 + 6} y={(n.depth - 1) * 44 + 33} class="t sub">{fmt.pct(n.weight, 1)}</text>
 					{/if}
 				</g>

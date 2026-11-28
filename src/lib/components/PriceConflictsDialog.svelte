@@ -34,20 +34,20 @@
 					: 's'}. Choose which value to keep.
 			</p>
 			<div class="row">
-				<Button size="sm" onclick={() => (useNew = Object.fromEntries(current.conflicts.map((c) => [c.date, false])))}
-					>Keep all stored</Button
-				>
-				<Button size="sm" onclick={() => (useNew = Object.fromEntries(current.conflicts.map((c) => [c.date, true])))}
-					>Use all fetched</Button
-				>
+				<Button size="sm" onclick={() => (useNew = Object.fromEntries(current.conflicts.map((c) => [c.date, false])))}>
+					Keep all stored
+				</Button>
+				<Button size="sm" onclick={() => (useNew = Object.fromEntries(current.conflicts.map((c) => [c.date, true])))}>
+					Use all fetched
+				</Button>
 			</div>
 			<div class="scroll-x list">
 				<table class="table">
-					<thead
-						><tr
-							><th>Date</th><th class="right">Stored</th><th class="right">Fetched</th><th class="right">Diff.</th><th>Use fetched</th></tr
-						></thead
-					>
+					<thead>
+						<tr>
+							<th>Date</th><th class="right">Stored</th><th class="right">Fetched</th><th class="right">Diff.</th><th>Use fetched</th>
+						</tr>
+					</thead>
 					<tbody>
 						{#each current.conflicts as c (c.date)}
 							<tr>

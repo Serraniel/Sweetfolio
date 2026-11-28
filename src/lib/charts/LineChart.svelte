@@ -263,8 +263,10 @@
 						class:on={log}
 						aria-pressed={log}
 						title="Logarithmic scale: equal percentage moves have equal height"
-						onclick={() => chartPrefs.setLog(!chartPrefs.log)}>Log</button
+						onclick={() => chartPrefs.setLog(!chartPrefs.log)}
 					>
+						Log
+					</button>
 				{/if}
 			</div>
 		</div>
@@ -273,9 +275,9 @@
 		<div class="legend" aria-live="off">
 			<span class="xs muted">{fmt.date(legend.date)}</span>
 			{#each legend.values as v (v.label)}
-				<span class="item small"
-					><i style="background: {v.color}"></i><span class="truncate">{v.label}</span> <b class="num">{formatValue(v.value)}</b></span
-				>
+				<span class="item small">
+					<i style="background: {v.color}"></i><span class="truncate">{v.label}</span> <b class="num">{formatValue(v.value)}</b>
+				</span>
 			{/each}
 		</div>
 	{/if}

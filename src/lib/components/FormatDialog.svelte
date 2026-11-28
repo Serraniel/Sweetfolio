@@ -159,10 +159,10 @@
 						{#each headerNames as h, i (i)}<option value={i}>{h}</option>{/each}
 					</select>
 				</div>
-				<label class="row checkbox small"
-					><input type="checkbox" checked={result.format.hasHeader} onchange={(e) => set('hasHeader', e.currentTarget.checked)} />First row
-					is a header</label
-				>
+				<label class="row checkbox small">
+					<input type="checkbox" checked={result.format.hasHeader} onchange={(e) => set('hasHeader', e.currentTarget.checked)} />First row
+					is a header
+				</label>
 			</div>
 
 			<div class="row" style="--gap: 6px">
@@ -200,8 +200,10 @@
 				onclick={() => {
 					open = false;
 					onskip?.();
-				}}>Skip file</Button
-			>{/if}
+				}}
+			>
+				Skip file
+			</Button>{/if}
 		<Button
 			variant="primary"
 			disabled={!result || result.prices.length < 2 || (showMeta && !name.trim())}
@@ -209,8 +211,10 @@
 				if (!result) return;
 				open = false;
 				onconfirm({ result, name: name.trim(), currency, classification });
-			}}>Import</Button
+			}}
 		>
+			Import
+		</Button>
 	{/snippet}
 </Dialog>
 

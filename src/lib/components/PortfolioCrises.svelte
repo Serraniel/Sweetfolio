@@ -69,11 +69,11 @@
 			<span class="small muted">worse in {report.worse} of {report.tested.filter((r) => r.benchmark).length} crises</span>
 		{/if}
 		{#if Number.isFinite(report.score)}
-			<span class="small"
-				>{SCORE_LABELS[crisis.prefs.score]}:
+			<span class="small">
+				{SCORE_LABELS[crisis.prefs.score]}:
 				<strong class="num">{scoreText(report.score)}</strong>{#if bench && Number.isFinite(report.benchmarkScore)}
-					<span class="muted"> · benchmark {scoreText(report.benchmarkScore)}</span>{/if}</span
-			>
+					<span class="muted"> · benchmark {scoreText(report.benchmarkScore)}</span>{/if}
+			</span>
 		{/if}
 	</div>
 	<CrisisTable {report} benchmarkLabel={bench?.name ?? null} bind:selected />

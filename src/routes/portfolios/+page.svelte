@@ -49,8 +49,10 @@
 	<Card>
 		<EmptyState icon="portfolio" title="No portfolios yet">
 			Create a model portfolio from your assets, track real transactions, or import from Portfolio Performance, Parqet or your broker in <a
-				href="/settings#data">Settings</a
-			>.
+				href="/settings#data"
+			>
+				Settings
+			</a>.
 			{#snippet actions()}<Button variant="primary" icon="plus" onclick={() => (createOpen = true)}>New portfolio</Button>{/snippet}
 		</EmptyState>
 	</Card>
@@ -64,8 +66,10 @@
 					variant="primary"
 					icon="compare"
 					disabled={selected.length < 2}
-					onclick={() => goto(`/compare?portfolios=${selected.map((id) => app.portfolioSlug(id)).join(',')}`)}>Compare</Button
+					onclick={() => goto(`/compare?portfolios=${selected.map((id) => app.portfolioSlug(id)).join(',')}`)}
 				>
+					Compare
+				</Button>
 				<Button size="sm" variant="ghost" onclick={() => (selected = [])}>Clear</Button>
 			</div>
 		</div>
@@ -87,13 +91,9 @@
 					{#if tv}
 						<div class="value">
 							<span class="num big">{fmt.money(tv.summary.totalValue, p.cashCurrency)}</span>
-							<span class="num small {fmt.signClass(tv.summary.totalReturn)}"
-								>{fmt.money(tv.summary.totalReturn, p.cashCurrency, { signed: true })} ({fmt.pct(
-									tv.summary.totalReturnPercent,
-									1,
-									true
-								)})</span
-							>
+							<span class="num small {fmt.signClass(tv.summary.totalReturn)}">
+								{fmt.money(tv.summary.totalReturn, p.cashCurrency, { signed: true })} ({fmt.pct(tv.summary.totalReturnPercent, 1, true)})
+							</span>
 						</div>
 					{/if}
 					{#if p.allocations.length}
@@ -103,9 +103,9 @@
 						<ul class="allocs xs">
 							{#each p.allocations.slice(0, 4) as a (a.assetId)}
 								<li>
-									<span class="truncate">{app.assetById.get(a.assetId)?.name ?? 'Unknown'}</span><span class="num muted"
-										>{fmt.pct(a.weight, 1)}</span
-									>
+									<span class="truncate">{app.assetById.get(a.assetId)?.name ?? 'Unknown'}</span><span class="num muted">
+										{fmt.pct(a.weight, 1)}
+									</span>
 								</li>
 							{/each}
 							{#if p.allocations.length > 4}<li class="muted">+{p.allocations.length - 4} more</li>{/if}
@@ -113,14 +113,14 @@
 					{/if}
 				</a>
 				<div class="foot">
-					<label class="pick xs muted"
-						><input
+					<label class="pick xs muted">
+						<input
 							type="checkbox"
 							checked={selected.includes(p.id)}
 							onchange={() => toggle(p.id)}
 							aria-label="Select {p.name} for comparison"
-						/>Compare</label
-					>
+						/>Compare
+					</label>
 					<span class="spacer"></span>
 					<button
 						class="icon-btn"
@@ -129,11 +129,13 @@
 						aria-label="Use {p.name} as benchmark"
 						aria-pressed={app.isBenchmark('portfolio', p.id)}
 						disabled={!p.allocations.length}
-						onclick={() => app.toggleBenchmark('portfolio', p.id)}><Icon name="star" size={16} /></button
+						onclick={() => app.toggleBenchmark('portfolio', p.id)}
 					>
-					<button class="icon-btn" title="Delete" aria-label="Delete {p.name}" onclick={() => remove(p)}
-						><Icon name="trash" size={16} /></button
-					>
+						<Icon name="star" size={16} />
+					</button>
+					<button class="icon-btn" title="Delete" aria-label="Delete {p.name}" onclick={() => remove(p)}>
+						<Icon name="trash" size={16} />
+					</button>
 				</div>
 			</article>
 		{/each}

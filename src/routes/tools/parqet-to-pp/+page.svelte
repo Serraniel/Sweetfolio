@@ -89,26 +89,28 @@
 />
 
 {#if configured === false}
-	<Card
-		><EmptyState icon="link" title="Parqet is not configured here"
-			>The instance owner can enable it by setting <code>parqetClientId</code> in <code>config.json</code> (see the self-hosting guide).</EmptyState
-		></Card
-	>
+	<Card>
+		<EmptyState icon="link" title="Parqet is not configured here">
+			The instance owner can enable it by setting <code>parqetClientId</code> in <code>config.json</code> (see the self-hosting guide).
+		</EmptyState>
+	</Card>
 {:else if !connected}
 	<Card>
 		<EmptyState icon="link" title="Connect your Parqet account">
 			You'll be redirected to Parqet to grant read-only access. Tokens are stored only in this browser.
 			{#snippet actions()}<Button
 					variant="primary"
-					onclick={() => connectParqet('/tools/parqet-to-pp').catch((e) => notify.error(e.message))}>Connect Parqet</Button
-				>{/snippet}
+					onclick={() => connectParqet('/tools/parqet-to-pp').catch((e) => notify.error(e.message))}
+				>
+					Connect Parqet
+				</Button>{/snippet}
 		</EmptyState>
 	</Card>
 {:else}
 	<Card title="Your Parqet portfolios">
-		{#snippet actions()}<Badge tone="accent">Connected</Badge><Button size="sm" variant="ghost" onclick={disconnectParqet}
-				>Disconnect</Button
-			>{/snippet}
+		{#snippet actions()}<Badge tone="accent">Connected</Badge><Button size="sm" variant="ghost" onclick={disconnectParqet}>
+				Disconnect
+			</Button>{/snippet}
 		{#if loading && !portfolios.length}
 			<p class="muted small">Loading…</p>
 		{:else if !portfolios.length}
@@ -117,19 +119,21 @@
 			<div class="row xs actions-top">
 				<button class="link" onclick={() => (selected = portfolios.map((p) => p.id))}>Select all</button><button
 					class="link"
-					onclick={() => (selected = [])}>Clear</button
+					onclick={() => (selected = [])}
 				>
+					Clear
+				</button>
 			</div>
 			<ul class="list">
 				{#each portfolios as p (p.id)}
 					<li>
-						<label class="row"
-							><input
+						<label class="row">
+							<input
 								type="checkbox"
 								checked={selected.includes(p.id)}
 								onchange={(e) => (selected = e.currentTarget.checked ? [...selected, p.id] : selected.filter((x) => x !== p.id))}
-							/><span class="strong">{p.name}</span><span class="xs muted">{p.currency}</span></label
-						>
+							/><span class="strong">{p.name}</span><span class="xs muted">{p.currency}</span>
+						</label>
 					</li>
 				{/each}
 			</ul>
